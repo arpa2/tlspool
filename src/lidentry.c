@@ -152,6 +152,7 @@ void register_lidentry_command (struct command *cmd) {
 				// The wait for new client access has passed
 				lidentry_cmd = cmd;
 				lidentry_client = cmd->clientfd;
+				lidentry_regflags = 0;
 				tlog (TLOG_USER | TLOG_UNIXSOCK, LOG_NOTICE, "Registered new client's command for LID entry");
 			} else {
 				// The previous client still is privileged
@@ -160,7 +161,7 @@ void register_lidentry_command (struct command *cmd) {
 			}
 		}
 		if (error == 0) {
-			lidentry_regflags = cmd->cmd.pio_data.pioc_lidentry.flags;
+			lidentry_regflags |= cmd->cmd.pio_data.pioc_lidentry.flags;
 			lidentry_timeout = cmd->cmd.pio_data.pioc_lidentry.timeout;
 			lidentry_rereg_timeout = now + lidentry_timeout;
 		}
@@ -298,7 +299,7 @@ printf ("DEBUG: lidentry_database_callback() was asked not to return DBENTRY\n")
 	// Fill the command structure with the database feedback information
 	lidentry_rereg_timeout = time (NULL) + lidentry_timeout;
 	cmd->cmd.pio_cmd = PIOC_LIDENTRY_CALLBACK_V2;
-	cmd->cmd.pio_data.pioc_lidentry.flags = PIOF_LIDENTRY_DBENTRY;
+	cmd->cmd.pio_data.pioc_lidentry.flags = PIOF_LIDENTRY_DBENTRY | (lidentry_regflags & PIOF_LIDENTRY_REGFLAGS);
 	cmd->cmd.pio_data.pioc_lidentry.maxlevels = maxlevels;
 	cmd->cmd.pio_data.pioc_lidentry.timeout = lidentry_rereg_timeout;
 	memset (cmd->cmd.pio_data.pioc_lidentry.localid, 0, 128);
@@ -345,7 +346,7 @@ success_t lidentry_inquiry_callback (char remoteid [128], int maxlevels, char lo
 	// Fill the command structure with the database feedback information
 	lidentry_rereg_timeout = time (NULL) + lidentry_timeout;
 	cmd->cmd.pio_cmd = PIOC_LIDENTRY_CALLBACK_V2;
-	cmd->cmd.pio_data.pioc_lidentry.flags = 0; // not.PIOF_LIDENTRY_DBENTRY
+	cmd->cmd.pio_data.pioc_lidentry.flags = (lidentry_regflags & PIOF_LIDENTRY_REGFLAGS); // not.PIOF_LIDENTRY_DBENTRY
 	cmd->cmd.pio_data.pioc_lidentry.maxlevels = maxlevels;
 	cmd->cmd.pio_data.pioc_lidentry.timeout = lidentry_rereg_timeout;
 	memcpy (cmd->cmd.pio_data.pioc_lidentry.localid, localid, 128);
@@ -383,7 +384,10 @@ printf ("DEBUG: Got back clientfd=%d (should be %d)\n", cmd->clientfd, lidentry_
 	}
 	//
 	// Free our hold on the callback sequence resource, broadcast it
-	lidentry_cbseq_release ();
+	if (lidentry_cmd == cmd) {
+		// Reduced chances of funny behaviour due to takeover async
+		lidentry_cbseq_release ();
+	}
 	//
 	// Report back to the caller
 	return retval;

@@ -1,4 +1,4 @@
-/* tlspool/localid.c -- Map the keys of local identities to credentials */
+/* tlspool/donai.c -- Map the keys of local identities to credentials */
 
 #include <config.h>
 
@@ -158,7 +158,16 @@ db_error dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_loca
 			// Got the selector pattern!
 			at_root = (remotesel->domlen == 1) && (*remotesel->domain == '.');
 			// Return immediately, IF no need for lidentry callbacks
-			if ((db_errno != 0) || (lidentry_database_mayskip (levels_up, at_root))) {
+			if (db_errno == 0) {
+				if (! lidentry_database_mayskip (levels_up, at_root)) {
+					db_errno = crs_localid->get (
+							crs_localid,
+							keydata,
+							creddata,
+							DB_SET);
+				}
+			}
+			if (db_errno != 0) {
 				return db_errno;
 			} else {
 				lid_callback = 1;
@@ -196,7 +205,7 @@ printf ("DEBUG: Generating LID-entry menu for %s:\n", remoteid);
 				lidlen = keydata->size;
 			}
 			memcpy (localid, keydata->data, lidlen);
-	printf ("DEBUG: LID-entry %.*s\n", lidlen, localid);
+printf ("DEBUG: LID-entry %.*s\n", lidlen, localid);
 			lidentry_database_callback (remoteid, maxlevels, localid);
 		} else {
 			tlog (TLOG_DB, LOG_INFO, "Skipping disclosed localid %.*s with not entries", keydata->size, keydata->data);
