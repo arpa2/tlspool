@@ -123,7 +123,7 @@ int main (int argc, char *argv []) {
 	// Declare & initialise
 	struct data data;
 	data.dblidctr = 0;
-	uint32_t regflags = PIOF_LIDENTRY_DBENTRY;
+	uint32_t regflags = PIOF_LIDENTRY_WANT_DBENTRY;
 	int responsetime_sec = 300;
 
 	//
