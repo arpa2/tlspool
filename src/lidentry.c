@@ -234,7 +234,7 @@ success_t lidentry_database_mayskip (int levels_up, int at_root) {
 	//SEE-COMMENT// pthread_mutex_unlock (&lidentry_lock);
 	if (retval != -1) {
 		; // retval has been decided on, keep it as it as
-	} else if (regfl & PIOF_LIDENTRY_SKIP_WANT_DBENTRY) {
+	} else if (regfl & PIOF_LIDENTRY_SKIP_DBENTRY) {
 		retval = 1;  // Assume success but AND the various skip checks
 		if (regfl & PIOF_LIDENTRY_SKIP_DOMAIN_SUB) {
 			retval = 0;  // Assume failure but OR these two checks

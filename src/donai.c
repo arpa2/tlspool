@@ -159,18 +159,21 @@ db_error dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_loca
 			at_root = (remotesel->domlen == 1) && (*remotesel->domain == '.');
 			// Return immediately, IF no need for lidentry callbacks
 			if (db_errno == 0) {
-				if (! lidentry_database_mayskip (levels_up, at_root)) {
+				if (lidentry_database_mayskip (levels_up, at_root)) {
+					// Simply set & return the first localid
 					db_errno = crs_localid->get (
 							crs_localid,
 							keydata,
 							creddata,
 							DB_SET);
+				} else {
+					// Use LIDENTRY's DB callbacks, so fall through
+					lid_callback = 1;
 				}
 			}
 			if (db_errno != 0) {
 				return db_errno;
 			} else {
-				lid_callback = 1;
 				break;
 			}
 		} else if (fnd != DB_NOTFOUND) {
