@@ -114,7 +114,7 @@ struct tlspool_command {
 		struct pioc_lidentry {
 			uint32_t flags;		// PIOF_LIDENTRY_xxx below
 			uint16_t maxlevels;	// Max # iterations for concrete ID
-			time_t timeout;		// Regtimeout[s] or resptimeout
+			uint32_t timeout;	// Regtimeout[s] or resptimeout
 			char localid [128];	// Local ID or empty string
 			char remoteid [128];	// Remote ID or empty string
 		} pioc_lidentry;
@@ -521,7 +521,7 @@ typedef struct pioc_starttls starttls_t;
 #define PIOF_LIDENTRY_SKIP_NOTROOT		0x00000088
 
 
-/* PIOF_LIDENTRY_DBENTRY is used as a flag during PIOC_LIDENTRY_REGISTER_V2
+/* PIOF_LIDENTRY_LIST_DBENTRY is used as a flag during PIOC_LIDENTRY_REGISTER_V2
  * and will cause PIOC_LIDENTRY_CALLBACK_V2 callbacks for database entries at
  * the most concrete level above the considered remoteid.
  *
@@ -542,7 +542,20 @@ typedef struct pioc_starttls starttls_t;
  *  - remoteid is the given concrete, or no more than maxlevels iterations up
  *  - localid is the concrete identity to disclose, unrelated to the suggested
  */
-#define PIOF_LIDENTRY_DBENTRY			0x00000100
+#define PIOF_LIDENTRY_WANT_DBENTRY		0x00000100
+#define PIOF_LIDENTRY_DBENTRY			0x00001000
+
+
+/* The mask PIOF_LIDENTRY_REGFLAGS is used to mask the flags that will be
+ * reproduced in the callback flags, and should be left alone by applications
+ * as these flags will be used during re-registration.  Note that this must
+ * pass through the callback interface, because the re-registration may occur
+ * after a timeout and should then ideally behave the same (if not overtaken
+ * by another process) as a timely re-registration.  Modification of these
+ * flags in the callback in case of timely callback is undefined and any
+ * reliance of that is subject to possible future breakage without warning.
+ */
+#define PIOF_LIDENTRY_REGFLAGS			0x00000fff
 
 
 /* PIOF_LIDENTRY_DBAPPEND and PIOF_LIDENTRY_DBINSERT indicate that the provided
@@ -567,9 +580,9 @@ typedef struct pioc_starttls starttls_t;
  *  - a localid with _DBINSERT/_DBAPPEND if it is not yet setup in the database
  *  - a localid whose position must be updated under _DBREORDER
  */
-#define PIOF_LIDENTRY_DBINSERT			0x00000200
-#define PIOF_LIDENTRY_DBAPPEND			0x00000400
-#define PIOF_LIDENTRY_DBREORDER			0x00000800
+#define PIOF_LIDENTRY_DBINSERT			0x00002000
+#define PIOF_LIDENTRY_DBAPPEND			0x00004000
+#define PIOF_LIDENTRY_DBREORDER			0x00008000
 
 
 /* PIOF_LIDENTRY_NEW indicates in a response to a callback that the selected
@@ -584,7 +597,7 @@ typedef struct pioc_starttls starttls_t;
  *
  * TODO: This is unimplemented behaviour; the flag is merely allocated.
  */
-// #define PIOF_LIDENTRY_NEW			0x00010000
+// #define PIOF_LIDENTRY_NEW			0x00100000
 
 
 /* PIOF_LIDENTRY_ONTHEFLY indicates in a response to callback that the selected
@@ -608,7 +621,7 @@ typedef struct pioc_starttls starttls_t;
  *
  * TODO: This is unimplemented behaviour; the flag is merely allocated.
  */
-// #define PIOF_LIDENTRY_ONTHEFLY		0x00030000
+// #define PIOF_LIDENTRY_ONTHEFLY		0x00300000
 
 
 #endif //TLSPOOL_COMMANDS_H
