@@ -1,0 +1,28 @@
+
+sock = create_bind_socket()
+sock.listen(1)
+
+while True:
+	conn = sock.accept()
+	try:
+		ret, msg = passfd.recvfd(conn)
+		if msg == "start-tls":
+			fd = start_tls(ret)
+		elif msg == "accept-tls":
+			fd = accept_tls(ret)
+		else:
+			return error()
+
+		return_local_comm_fd(fd)
+
+	except OSError:
+		pass
+
+
+
+# This function builds up the TLS for the client side
+def start_tls():
+	
+
+# This function builds up the TLS for the server side
+def accept_tls();
