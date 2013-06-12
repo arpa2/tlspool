@@ -25,13 +25,22 @@ f.listen(5)
 print "Listening on port 443"
 
 while True:
-    session, address = f.accept()
-    print "Incoming", address
-    session.handshake()
+    try:
+        session, address = f.accept()
+        print "Incoming", address
+        session.handshake()
 
-    #session.send("test\r\n")
-    buf = session.recv(1024)
-    print 'Received: ', buf.rstrip()
-    session.bye()
-    session.close()
+        while(True):
+            try:
+                buf = session.recv(1024)
+                print 'Received: %d %s' % (len(buf), buf.rstrip())
+                if(len(buf) <= 0):
+                    break
+            except:
+                print "Unexpected error:", sys.exc_info()[0]
+                break
 
+        session.bye()
+        session.close()
+    except:
+        print "Unexpected error:", sys.exc_info()[0]
