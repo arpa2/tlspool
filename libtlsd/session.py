@@ -73,16 +73,17 @@ class SessionHandler(Thread):
         handler1.start()
         handler2 = DataSessionHandler(self.session, self.clnt_data)
         handler2.start()
+        logger.info("connection established")
 
         while(True):
             command = self.clnt_cmd.recv(4096)
             if(command == 'quit'):
-                 # Stopping of data session threads can be improved
+                 # Stopping of data session threads can possibly be improved
 
                 logger.debug("closing client data socket")
                 self.clnt_data.close()
 
-                logger.debug("closing tls session")
+                logger.info("closing tls session")
                 self.session.bye()
                 self.session.close()
                 
@@ -113,7 +114,10 @@ class DataSessionHandler(Thread):
     def run(self):
         while(not self.stop):
             try:
-                self.dst.send(self.src.recv(4096))
+                buf = self.src.recv(4096)
+                if(len(buf) <= 0):
+                    break
+                self.dst.send(buf)
             except:
                 logger.error("Unexpected error: %s", sys.exc_info()[0])
                 self.stop = True

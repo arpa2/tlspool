@@ -40,6 +40,7 @@ while True:
                 print "Unexpected error:", sys.exc_info()[0]
                 break
 
+        print "Closing session"
         session.bye()
         session.close()
     except:
