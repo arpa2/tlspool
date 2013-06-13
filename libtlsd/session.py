@@ -12,7 +12,7 @@ import PyKCS11
 logger = logging.getLogger(__name__)
 
 script_path = os.path.realpath(os.path.dirname(sys.argv[0]))
-certs_path = os.path.join(script_path, 'util/certs')
+certs_path = os.path.join(script_path, 'certs')
 
 cert = OpenPGPCertificate(open(certs_path + '/valid-pgp.pub').read())
 key = OpenPGPPrivateKey(open(certs_path + '/valid-pgp.key').read())
