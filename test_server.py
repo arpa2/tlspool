@@ -5,34 +5,26 @@
 import sys
 import os
 import socket
-
-from gnutls.crypto import *
-from gnutls.connection import *
-
-script_path = os.path.realpath(os.path.dirname(sys.argv[0]))
-certs_path = os.path.join(script_path, 'certs')
-
-cert = OpenPGPCertificate(open(certs_path + '/valid-pgp.pub').read())
-key = OpenPGPPrivateKey(open(certs_path + '/valid-pgp.key').read())
-cred = OpenPGPCredentials(cert, key)
+import libtlsd
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-f = ServerSessionFactory(sock, cred)
-f.bind(('127.0.0.1', 443))
-f.listen(5)
+HOST = '127.0.0.1'
+PORT = 10000
+sock.bind((HOST, PORT))
+sock.listen(1)
 
-print "Listening on port 443"
+print "Listening on port %d" % PORT
 
 while True:
     try:
-        session, address = f.accept()
+        conn, address = sock.accept()
         print "Incoming", address
-        session.handshake()
+        conn, cmd = libtlsd.pass_to_daemon(conn, 'recv-tls')
 
         while(True):
             try:
-                buf = session.recv(1024)
+                buf = conn.recv(1024)
                 print 'Received: %d %s' % (len(buf), buf.rstrip())
                 if(len(buf) <= 0):
                     break
@@ -41,7 +33,6 @@ while True:
                 break
 
         print "Closing session"
-        session.bye()
-        session.close()
+        conn.close()
     except:
         print "Unexpected error:", sys.exc_info()[0]

@@ -3,7 +3,7 @@
 
 """GNUTLS connection support"""
 
-__all__ = ['X509Credentials', 'OpenPGPCredentials', 'ClientSession', 'ServerSession', 'ServerSessionFactory']
+__all__ = ['X509Credentials', 'ClientSession', 'ServerSession', 'ServerSessionFactory']
 
 from time import time
 from socket import SHUT_RDWR as SOCKET_SHUT_RDWR
@@ -16,7 +16,7 @@ from gnutls.constants import *
 from gnutls.crypto import *
 from gnutls.errors import *
 
-from gnutls.library.constants import GNUTLS_SERVER, GNUTLS_CLIENT, GNUTLS_CRT_X509, GNUTLS_CRT_OPENPGP
+from gnutls.library.constants import GNUTLS_SERVER, GNUTLS_CLIENT, GNUTLS_CRT_X509
 from gnutls.library.constants import GNUTLS_CERT_INVALID, GNUTLS_CERT_REVOKED, GNUTLS_CERT_INSECURE_ALGORITHM
 from gnutls.library.constants import GNUTLS_CERT_SIGNER_NOT_FOUND, GNUTLS_CERT_SIGNER_NOT_CA
 from gnutls.library.constants import GNUTLS_AL_FATAL, GNUTLS_A_BAD_CERTIFICATE
@@ -29,7 +29,7 @@ from gnutls.library.functions import *
 
 
 @gnutls_certificate_server_retrieve_function
-def _retrieve_x509_server_certificate(c_session, retr_st):
+def _retrieve_server_certificate(c_session, retr_st):
     session = PyObj_FromPtr(gnutls_session_get_ptr(c_session))
     identity = session.credentials.select_server_identity(session)
     retr_st.contents.type = GNUTLS_CRT_X509
@@ -42,22 +42,8 @@ def _retrieve_x509_server_certificate(c_session, retr_st):
         retr_st.contents.key.x509 = identity.key._c_object
     return 0
 
-@gnutls_certificate_server_retrieve_function
-def _retrieve_openpgp_server_certificate(c_session, retr_st):
-    session = PyObj_FromPtr(gnutls_session_get_ptr(c_session))
-    identity = session.credentials.select_server_identity(session)
-    retr_st.contents.type = GNUTLS_CRT_OPENPGP
-    retr_st.contents.deinit_all = 0
-    if identity is None:
-        retr_st.contents.ncerts = 0
-    else:
-        retr_st.contents.ncerts = 1
-        retr_st.contents.cert.pgp = identity.cert._c_object
-        retr_st.contents.key.pgp = identity.key._c_object
-    return 0
 
-
-class _ServerNameX509Identities(dict):
+class _ServerNameIdentities(dict):
     """Used internally by X509Credentials to map server names to X509 identities for the server name extension"""
     def __init__(self, identities):
         dict.__init__(self)
@@ -81,32 +67,8 @@ class _ServerNameX509Identities(dict):
                 return self[name]
         return default
 
-class _ServerNameOpenPGPIdentities(dict):
-    """Used internally by OpenPGPCredentials to map server names to OpenPGP identities for the server name extension"""
-    def __init__(self, identities):
-        dict.__init__(self)
-        for identity in identities:
-            self.add(identity)
-    def add(self, identity):
-        for name in identity.cert.uid().name:
-            self[name.lower()] = identity
-    def get(self, server_name, default=None):
-        server_name = server_name.lower()
-        if server_name in self:
-            return self[server_name]
-        for name in (n for n in self if n.startswith('*.')):
-            suffix = name[1:]
-            if server_name.endswith(suffix) and '.' not in server_name[:-len(suffix)]:
-                return self[name]
-        return default
 
-
-class TLSCredentials(object):
-    """Implement this to be a credential class."""
-    pass
-
-
-class X509Credentials(TLSCredentials):
+class X509Credentials(object):
     DH_BITS  = 1024
     RSA_BITS = 1024
 
@@ -129,7 +91,7 @@ class X509Credentials(TLSCredentials):
             gnutls_certificate_set_x509_key(self._c_object, byref(cert._c_object), 1, key._c_object)
         elif (cert, key) != (None, None):
             raise ValueError("Specify neither or both the certificate and private key")
-        gnutls_certificate_server_set_retrieve_function(self._c_object, _retrieve_x509_server_certificate)
+        gnutls_certificate_server_set_retrieve_function(self._c_object, _retrieve_server_certificate)
         self._max_depth = 5
         self._max_bits  = 8200
         self._type = CRED_CERTIFICATE
@@ -139,10 +101,10 @@ class X509Credentials(TLSCredentials):
         self._trusted = ()
         self.add_trusted(trusted)
         self.crl_list = crl_list
-        self.server_name_identities = _ServerNameX509Identities(identities)
+        self.server_name_identities = _ServerNameIdentities(identities)
         if cert and key:
             self.server_name_identities.add(X509Identity(cert, key))
-        self.session_params = SessionParams(self._type, 'NORMAL:+CTYPE-X.509')
+        self.session_params = SessionParams(self._type)
 
     def __del__(self):
         self.__deinit(self._c_object)
@@ -187,7 +149,7 @@ class X509Credentials(TLSCredentials):
 
     def _get_crl_list(self):
         return self._crl_list
-    @method_args(list_of(X509CRL))
+    @method_args(list_of(X509CRL)) 
     def _set_crl_list(self, crl_list):
         self._crl_list = tuple(crl_list)
     crl_list = property(_get_crl_list, _set_crl_list)
@@ -195,7 +157,7 @@ class X509Credentials(TLSCredentials):
 
     def _get_max_verify_length(self):
         return self._max_depth
-    @method_args(int)
+    @method_args(int) 
     def _set_max_verify_length(self, max_depth):
         gnutls_certificate_set_verify_limits(self._c_object, self._max_bits, max_depth)
         self._max_depth = max_depth
@@ -204,7 +166,7 @@ class X509Credentials(TLSCredentials):
 
     def _get_max_verify_bits(self):
         return self._max_bits
-    @method_args(int)
+    @method_args(int) 
     def _set_max_verify_bits(self, max_bits):
         gnutls_certificate_set_verify_limits(self._c_object, max_bits, self._max_depth)
         self._max_bits = max_bits
@@ -235,105 +197,6 @@ class X509Credentials(TLSCredentials):
             return None
 
 
-class OpenPGPCredentials(TLSCredentials):
-    DH_BITS  = 1024
-    RSA_BITS = 1024
-
-    dh_params  = None
-    rsa_params = None
-
-    def __new__(cls, *args, **kwargs):
-        c_object = gnutls_certificate_credentials_t()
-        gnutls_certificate_allocate_credentials(byref(c_object))
-        instance = object.__new__(cls)
-        instance.__deinit = gnutls_certificate_free_credentials
-        instance._c_object = c_object
-        return instance
-
-    @method_args((OpenPGPCertificate, none), (OpenPGPPrivateKey, none), (str, none), list_of(OpenPGPIdentity))
-    def __init__(self, cert=None, key=None, keyring=None, identities=[]):
-        """Credentials contain an OpenPGP certificate, a list of trusted signers and a private key (all optional).
-        An optional list of additional OpenPGP identities can be specified for applications that need more that one identity"""
-        if cert and key:
-            gnutls_certificate_set_openpgp_key(self._c_object, cert._c_object, key._c_object)
-        elif (cert, key) != (None, None):
-            raise ValueError("Specify neither or both the certificate and private key")
-        self._max_depth = 5
-        self._max_bits  = 8200
-        self._type = CRED_CERTIFICATE
-        self._cert = cert
-        self._key = key
-        self._identities = tuple(identities)
-        self._keyring = keyring
-        if keyring:
-            gnutls_certificate_set_openpgp_keyring_file(self._c_object, keyring, OPENPGP_FMT_RAW)
-
-        # enable server name extension only if identities are supplied
-        if identities:
-            gnutls_certificate_server_set_retrieve_function(self._c_object, _retrieve_openpgp_server_certificate)
-            self.server_name_identities = _ServerNameOpenPGPIdentities(identities)
-            if cert and key:
-                self.server_name_identities.add(OpenPGPIdentity(cert, key))
-
-        self.session_params = SessionParams(self._type, 'NORMAL:+CTYPE-OPENPGP')
-        # regenerate dh params
-        self.generate_dh_params()
-        gnutls_certificate_set_dh_params(self._c_object, OpenPGPCredentials.dh_params)
-
-    def __del__(self):
-        self.__deinit(self._c_object)
-
-    def generate_dh_params(self, bits=DH_BITS):
-        reference = self.dh_params ## keep a reference to preserve it until replaced
-        OpenPGPCredentials.dh_params  = DHParams(bits)
-        del reference
-
-    def generate_rsa_params(self, bits=RSA_BITS):
-        reference = self.rsa_params ## keep a reference to preserve it until replaced
-        OpenPGPCredentials.rsa_params = RSAParams(bits)
-        del reference
-
-    # Properties
-
-    @property
-    def cert(self):
-        return self._cert
-
-    @property
-    def key(self):
-        return self._key
-
-    @property
-    def identities(self):
-        return self._identities
-
-    @property
-    def trusted(self):
-        return self._trusted
-
-    # Methods to select and validate certificates
-
-    def check_certificate(self, cert, cert_name='certificate'):
-        """Verify activation, expiration and revocation for the given certificate"""
-        now = time()
-        if cert.creation_time > now:
-            raise CertificateExpiredError("%s is not yet activated" % cert_name)
-        exp = cert.expiration_time
-        if exp > 0 and exp < now:
-            raise CertificateExpiredError("%s has expired" % cert_name)
-
-    def select_server_identity(self, session):
-        """Select which identity the server will use for a given session. The default selection algorithm uses
-        the server name extension. A subclass can overwrite it if a different selection algorithm is desired."""
-        server_name = session.server_name
-        if server_name is not None:
-            return self.server_name_identities.get(server_name)
-        elif self.cert and self.key:
-            return self ## since we have the cert and key attributes we can behave like a OpenPGPIdentity
-        else:
-            return None
-
-
 class SessionParams(object):
     _default_kx_algorithms = {
         CRED_CERTIFICATE: (KX_RSA, KX_DHE_DSS, KX_DHE_RSA),
@@ -342,22 +205,18 @@ class SessionParams(object):
         CRED_CERTIFICATE: set((KX_RSA, KX_DHE_DSS, KX_DHE_RSA, KX_RSA_EXPORT)),
         CRED_ANON: set((KX_ANON_DH,))}
 
-    def __new__(cls, credentials_type, priority=None):
+    def __new__(cls, credentials_type):
         if credentials_type not in cls._default_kx_algorithms:
             raise TypeError("Unknown credentials type: %r" % credentials_type)
         return object.__new__(cls)
 
-    def __init__(self, credentials_type, priority=None):
+    def __init__(self, credentials_type):
         self._credentials_type = credentials_type
-        self._direct = priority
-        # manual parameters
-        if not priority:
-            self._protocols = (PROTO_TLS1_2, PROTO_TLS1_1, PROTO_TLS1_0, PROTO_SSL3)
-            self._kx_algorithms = self._default_kx_algorithms[credentials_type]
-            self._ciphers = (CIPHER_AES_128_CBC, CIPHER_3DES_CBC, CIPHER_ARCFOUR_128)
-            self._mac_algorithms = (MAC_SHA1, MAC_MD5, MAC_RMD160)
-            self._compressions = (COMP_NULL,)
-            self._certificate_types = (GNUTLS_CRT_X509, GNUTLS_CRT_OPENPGP)
+        self._protocols = (PROTO_TLS1_1, PROTO_TLS1_0, PROTO_SSL3)
+        self._kx_algorithms = self._default_kx_algorithms[credentials_type]
+        self._ciphers = (CIPHER_AES_128_CBC, CIPHER_3DES_CBC, CIPHER_ARCFOUR_128)
+        self._mac_algorithms = (MAC_SHA1, MAC_MD5, MAC_RMD160)
+        self._compressions = (COMP_NULL,)
 
     def _get_protocols(self):
         return self._protocols
@@ -399,13 +258,6 @@ class SessionParams(object):
     compressions = property(_get_compressions, _set_compressions)
     del _get_compressions, _set_compressions
 
-    def _get_certificate_types(self):
-        return self._certificate_types
-    def _set_certificate_types(self, certificate_types):
-        self._certificate_types = OneOfValidator([GNUTLS_CRT_X509, GNUTLS_CRT_OPENPGP])
-    certificate_types = property(_get_certificate_types, _set_certificate_types)
-    del _get_certificate_types, _set_certificate_types
-
 
 class Session(object):
     """Abstract class representing a TLS session created from a TCP socket
@@ -443,7 +295,7 @@ class Session(object):
 
     def _get_credentials(self):
         return self._credentials
-    @method_args(TLSCredentials)
+    @method_args(X509Credentials)
     def _set_credentials(self, credentials):
         ## Release all credentials, otherwise gnutls will only release an existing credential of
         ## the same type as the one being set and we can end up with multiple credentials in C.
@@ -475,17 +327,14 @@ class Session(object):
 
     @property
     def peer_certificate(self):
-        if not gnutls_certificate_type_get(self._c_object) in (GNUTLS_CRT_X509, GNUTLS_CRT_OPENPGP):
+        if gnutls_certificate_type_get(self._c_object) != GNUTLS_CRT_X509:
             return None
         list_size = c_uint()
         cert_list = gnutls_certificate_get_peers(self._c_object, byref(list_size))
         if list_size.value == 0:
             return None
         cert = cert_list[0]
-        if isinstance(self.credentials, X509Credentials):
-            return X509Certificate(string_at(cert.data, cert.size), X509_FMT_DER)
-        elif isinstance(self.credentials, OpenPGPCredentials):
-            return OpenPGPCertificate(string_at(cert.data, cert.size), OPENPGP_FMT_RAW)
+        return X509Certificate(string_at(cert.data, cert.size), X509_FMT_DER)
 
     # Status checking after an operation was interrupted (these properties are
     # only useful to check after an operation was interrupted, otherwise their
@@ -509,17 +358,13 @@ class Session(object):
             size = len(priorities) + 1
             return (c_int * size)(*priorities)
         session_params = self.credentials.session_params
-        if session_params._direct:
-            gnutls_priority_set_direct(self._c_object, session_params._direct, None)
-        else:
-            # protocol order in the priority list is irrelevant (it always uses newer protocols first)
-            # the protocol list only specifies what protocols are to be enabled.
-            gnutls_protocol_set_priority(self._c_object, c_priority_list(session_params.protocols))
-            gnutls_kx_set_priority(self._c_object, c_priority_list(session_params.kx_algorithms))
-            gnutls_cipher_set_priority(self._c_object, c_priority_list(session_params.ciphers))
-            gnutls_mac_set_priority(self._c_object, c_priority_list(session_params.mac_algorithms))
-            gnutls_compression_set_priority(self._c_object, c_priority_list(session_params.compressions))
-            gnutls_certificate_type_set_priority(self._c_object, c_priority_list(session_params.certificate_types))
+        # protocol order in the priority list is irrelevant (it always uses newer protocols first)
+        # the protocol list only specifies what protocols are to be enabled.
+        gnutls_protocol_set_priority(self._c_object, c_priority_list(session_params.protocols))
+        gnutls_kx_set_priority(self._c_object, c_priority_list(session_params.kx_algorithms))
+        gnutls_cipher_set_priority(self._c_object, c_priority_list(session_params.ciphers))
+        gnutls_mac_set_priority(self._c_object, c_priority_list(session_params.mac_algorithms))
+        gnutls_compression_set_priority(self._c_object, c_priority_list(session_params.compressions))
 
     def handshake(self):
         gnutls_handshake(self._c_object)

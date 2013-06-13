@@ -37,11 +37,13 @@ class TLSDaemon(Daemon):
             s.close()
             return 1
 
+        sess_id = 1
         while True:
             conn, addr = s.accept()
             logger.debug("Incoming connection. Starting SessionHandler thread")
-            handler = SessionHandler(conn, addr)
+            handler = SessionHandler(conn, addr, sess_id)
             handler.start()
+            sess_id+=1
 
 def main():
     parser = argparse.ArgumentParser(description='RP2 TLS daemon')

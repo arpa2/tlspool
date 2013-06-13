@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Dwonloaded from: http://www.jejik.com/files/examples/daemon.py
+# Downloaded from: http://www.jejik.com/files/examples/daemon.py
 
 import sys, os, time, atexit
 from signal import SIGTERM 
