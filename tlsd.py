@@ -27,7 +27,7 @@ class TLSDaemon(Daemon):
             pass
 
         try:
-            logger.debug("Binding to socket: %s" % self.args.socket)
+            logger.info("Binding to socket: %s" % self.args.socket)
             s.bind(self.args.socket)
 
             logger.info("Waiting for connection")
@@ -39,6 +39,7 @@ class TLSDaemon(Daemon):
 
         while True:
             conn, addr = s.accept()
+            logger.debug("Incoming connection. Starting SessionHandler thread")
             handler = SessionHandler(conn, addr)
             handler.start()
 
@@ -46,8 +47,16 @@ def main():
     parser = argparse.ArgumentParser(description='RP2 TLS daemon')
     parser.add_argument('-s', dest='socket', default='/tmp/tlsd.sock', help='the socket file to use')
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', help='show debug output')
+    parser.add_argument('-l', '--logfile', dest='logfile', help='write log to a file')
     parser.add_argument('command', choices=['start', 'stop', 'restart', 'foreground'])
     args = parser.parse_args()
+
+    if(args.logfile != None):
+        hdlr = logging.FileHandler(args.logfile)
+        formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+        hdlr.setFormatter(formatter)
+        logger.addHandler(hdlr)
+        logging.getLogger('libtlsd').addHandler(hdlr)
 
     if(args.verbose):
         logger.setLevel(logging.DEBUG)

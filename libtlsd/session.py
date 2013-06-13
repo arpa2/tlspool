@@ -7,6 +7,8 @@ from threading import Thread
 from gnutls.crypto import *
 from gnutls.connection import *
 
+import PyKCS11
+
 logger = logging.getLogger(__name__)
 
 script_path = os.path.realpath(os.path.dirname(sys.argv[0]))
@@ -59,7 +61,7 @@ class SessionHandler(Thread):
         logger.debug("Waiting for fd")
         fd, msg = passfd.recvfd(self.clnt_cmd)
 
-        logger.debug("Received fd:\n\tfd: %s\n\tmessage: %s", fd, msg)
+        logger.debug("Received fd: %s; message: %s", fd, msg)
 
         self.connection = socket.fromfd(fd, socket.AF_INET, socket.SOCK_STREAM)
 
@@ -68,6 +70,8 @@ class SessionHandler(Thread):
             logger.debug("Sending substitute fd: %s", fd)
             passfd.sendfd(self.clnt_cmd, clnt_fd)
 
+
+        # data threads should be replaced with asyncore
         logger.debug("starting data handlers")
         handler1 = DataSessionHandler(self.clnt_data, self.session)
         handler1.start()
@@ -78,8 +82,6 @@ class SessionHandler(Thread):
         while(True):
             command = self.clnt_cmd.recv(4096)
             if(command == 'quit'):
-                 # Stopping of data session threads can possibly be improved
-
                 logger.debug("closing client data socket")
                 self.clnt_data.close()
 
