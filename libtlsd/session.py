@@ -4,6 +4,7 @@ import logging
 import os, sys
 import select
 from threading import Thread
+import libtlsd.validation
 
 from gnutls.crypto import *
 from gnutls.connection import *
@@ -27,6 +28,7 @@ class SessionHandler(Thread):
         self.clnt_data = None
         self.sess_id = sess_id
         self.stop = False
+        self.server_name = None
 
     def start_tls(self, server_name=None):
         cert = X509Certificate(open(certs_path + '/valid.crt').read())
@@ -61,7 +63,6 @@ class SessionHandler(Thread):
                 +"  Cipher: %s \n"
                 +"  MAC algorithm: %s \n"
                 +"  Compression: %s",
-                self.sess_id,
                 self.session.protocol,
                 self.session.kx_algorithm,
                 self.session.cipher,
@@ -72,19 +73,13 @@ class SessionHandler(Thread):
             logger.error('Handshake failed: %s', e)
             return 0
 
-        self.validate_certificate(self.session.peer_certificate)
+        libtlsd.validation.check_cert(self.session.peer_certificate, self.server_name, self.session.getpeername()[1])
 
         self.clnt_data, clnt_fd = socket.socketpair(socket.AF_UNIX)
         return clnt_fd
 
-    def validate_certificate(self, cert):
-        if(type(cert) == OpenPGPCertificate):
-            logger.debug("validating PGP certificate with uid: %s", cert.uid())
-        if(type(cert) == X509Certificate):
-            logger.debug("validating X.509 certificate with subject: %s", cert.subject)
-
     def process_cmd(self, data):
-        logger.debug("processing CMD: %s", data)
+        logger.debug("Processing CMD: %s", data)
         if(data == 'quit'):
             self.clnt_cmd.sendall("OK")
             self.close_connections()        
@@ -133,7 +128,8 @@ class SessionHandler(Thread):
             clnt_fd = self.start_tls()
         if msg.startswith("start-tls "):
             logger.debug("SNI: %s", msg.split()[1])
-            clnt_fd = self.start_tls(msg.split()[1])
+            self.server_name=msg.split()[1]
+            clnt_fd = self.start_tls()
         if msg == "recv-tls":
             clnt_fd = self.recv_tls()
 
