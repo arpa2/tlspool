@@ -10,7 +10,7 @@ import logging
 from libtlsd.session import SessionHandler
 from daemon import Daemon
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(thread)d:%(name)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 class TLSDaemon(Daemon):
@@ -40,7 +40,7 @@ class TLSDaemon(Daemon):
         sess_id = 1
         while True:
             conn, addr = s.accept()
-            logger.debug("Incoming connection. Starting SessionHandler thread")
+            logger.info("Incoming connection. Starting SessionHandler thread with id: %d",sess_id)
             handler = SessionHandler(conn, addr, sess_id)
             handler.start()
             sess_id+=1
@@ -55,11 +55,11 @@ def main():
 
     if(args.logfile != None):
         hdlr = logging.FileHandler(args.logfile)
-        formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+        formatter = logging.Formatter('%(asctime)s %(thread)d %(levelname)s %(message)s')
         hdlr.setFormatter(formatter)
         logger.addHandler(hdlr)
         logging.getLogger('libtlsd').addHandler(hdlr)
-
+        
     if(args.verbose):
         logger.setLevel(logging.DEBUG)
         logging.getLogger('libtlsd').setLevel(logging.DEBUG)

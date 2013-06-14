@@ -54,7 +54,7 @@ def load_library(name, version):
         raise RuntimeError('cannot find lib%s on this system' % name)
 
 
-def initialize_gcrypt():
+def initialize_gcrypt(required_ver):
     from ctypes import c_void_p
     from gnutls.library._init import gcrypt_thread_callbacks_ptr
 
@@ -100,14 +100,20 @@ def initialize_gcrypt():
         else:
             raise RuntimeError('cannot obtain the process modules: %s' % FormatError())
         gcry_control = libgcrypt.gcry_control
+        gcry_check_version = libgcrypt.gcry_check_version
     elif system == 'cygwin':
         libgcrypt = load_library(name='gcrypt', version=11)
         gcry_control = libgcrypt.gcry_control
+        gcry_check_version = libgcrypt.gcry_check_version
     else:
         gcry_control = libgnutls.gcry_control
+        gcry_check_version = libgnutls.gcry_check_version
 
     gcry_control(GCRYCTL_SET_THREAD_CBS, c_void_p(gcrypt_thread_callbacks_ptr))
-    libgnutls.gcry_check_version('1.2.4') # GNUTLS_MIN_LIBGCRYPT_VERSION
+    if gcry_check_version(required_ver) is None:
+        version = gcry_check_version(None)
+        raise RuntimeError("Found gcrypt library version %s, but at least version %s is required" % (version, required_ver))
+
     if system == 'cygwin':
         gcry_control(GCRYCTL_DISABLE_SECMEM, 0)
     else:
@@ -117,11 +123,12 @@ def initialize_gcrypt():
     gcry_control(GCRYCTL_INITIALIZATION_FINISHED, 0)
 
 
+__need_gcry_version__ = '1.2.4'
 
 libgnutls = load_library(name='gnutls', version=26)
 libgnutls_extra = load_library(name='gnutls-extra', version=26)
 
-initialize_gcrypt()
+initialize_gcrypt(__need_gcry_version__)
 libgnutls.gnutls_global_init()
 libgnutls_extra.gnutls_global_init_extra()
 
