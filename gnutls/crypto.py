@@ -335,7 +335,8 @@ class OpenPGPUid(str):
                 str.__setattr__(self, 'name', name)
                 str.__setattr__(self, 'email', email)
             except:
-                raise ValueError("Invalid OpenPGP uid: %s" % dname)
+                str.__setattr__(self, 'name', m)
+                #raise ValueError("Invalid OpenPGP uid: %s" % dname)
 
         for name in OpenPGPUid.ids:
             if not hasattr(self, name):

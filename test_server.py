@@ -9,7 +9,7 @@ import libtlsd
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-HOST = '127.0.0.1'
+HOST = '0.0.0.0'
 PORT = 10000
 sock.bind((HOST, PORT))
 sock.listen(1)

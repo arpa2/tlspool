@@ -29,25 +29,24 @@ class SessionHandler(Thread):
         self.sess_id = sess_id
         self.stop = False
         self.server_name = None
+        self.remote_port = None
 
     def start_tls(self, server_name=None):
-        cert = X509Certificate(open(certs_path + '/valid.crt').read())
-        key = X509PrivateKey(open(certs_path + '/valid.key').read())
-        ca = X509Certificate(open(certs_path + '/ca.pem').read())
-        crl = X509CRL(open(certs_path + '/crl.pem').read())
-        cred = X509Credentials(cert, key, [ca], [crl])
-#        cert = OpenPGPCertificate(open(certs_path + '/valid-pgp.pub').read())
-#        key = OpenPGPPrivateKey(open(certs_path + '/valid-pgp.key').read())
-#        cred = OpenPGPCredentials(cert, key)
+        #cert = X509Certificate(open(certs_path + '/localhost.crt').read())
+        #key = X509PrivateKey(open(certs_path + '/localhost.key').read())
+        #ca = X509Certificate(open(certs_path + '/ca.pem').read())
+        #crl = X509CRL(open(certs_path + '/crl.pem').read())
+        #cred = X509Credentials(cert, key)#, [ca], [crl])
+        cert = OpenPGPCertificate(open(certs_path + '/personal-pgp.pub').read())
+        key = OpenPGPPrivateKey(open(certs_path + '/personal-pgp.key').read())
+        cred = OpenPGPCredentials(cert, key)
         self.session = ClientSession(self.connection, cred, server_name)
         return self.setup_tls()
 
     def recv_tls(self):
-        cert = X509Certificate(open(certs_path + '/localhost.crt').read())
-        key = X509PrivateKey(open(certs_path + '/localhost.key').read())
-        ca = X509Certificate(open(certs_path + '/ca.pem').read())
-        crl = X509CRL(open(certs_path + '/crl.pem').read())
-        cred = X509Credentials(cert, key, [ca], [crl])
+        cert = OpenPGPCertificate(open(certs_path + '/server-pgp.pub').read())
+        key = OpenPGPPrivateKey(open(certs_path + '/server-pgp.key').read())
+        cred = OpenPGPCredentials(cert, key)
         self.session = ServerSession(self.connection, cred)
         return self.setup_tls()
         
@@ -73,7 +72,7 @@ class SessionHandler(Thread):
             logger.error('Handshake failed: %s', e)
             return 0
 
-        libtlsd.validation.check_cert(self.session.peer_certificate, self.server_name, self.session.getpeername()[1])
+        libtlsd.validation.check_cert(self.session.peer_certificate, self.server_name, self.remote_port)
 
         self.clnt_data, clnt_fd = socket.socketpair(socket.AF_UNIX)
         return clnt_fd
@@ -122,6 +121,7 @@ class SessionHandler(Thread):
         # TODO: find out type of socket
 
         self.connection = socket.fromfd(fd, socket.AF_INET, socket.SOCK_STREAM)
+        self.remote_port = self.connection.getpeername()[1]
 
         clnt_fd = 0
         if msg == 'start-tls':

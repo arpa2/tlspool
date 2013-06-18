@@ -6,13 +6,13 @@ import time
 import libtlsd
 
 print "Creating connection to server"
-HOST = 'localhost'    # The remote host
+HOST = 'rp2.oslo.practicum.os3.nl'    # The remote host
 PORT = 10000
 USER_INPUT = False
 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 try:
     conn.connect((HOST, PORT))
-    conn, cmd = libtlsd.pass_to_daemon(conn, 'start-tls localhost')
+    conn, cmd = libtlsd.pass_to_daemon(conn, 'start-tls '+HOST)
 
     while USER_INPUT: 
         x = raw_input(">") 
