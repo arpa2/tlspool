@@ -28,8 +28,6 @@ def parse_dns_labels(s):
 
 
 def check_cert(cert, server_name=None, port=None):
-    logger.debug("entering check_cert %s", type(cert))
-    
     if(type(cert) == OpenPGPCertificate):
         check_pgp_cert(cert, server_name, port)
 
@@ -37,7 +35,7 @@ def check_cert(cert, server_name=None, port=None):
         check_x509_cert(cert, server_name, port)
 
     else:
-        logger.debug("No valid certificate found")
+        logger.debug("No valid certificate found %s", type(cert))
 
 def check_pgp_cert(cert, server_name=None, port=None):
     logger.debug("Validating PGP certificate with uid: %s", cert.uid())
@@ -70,22 +68,31 @@ def check_pgp_cert(cert, server_name=None, port=None):
             base_dn = 'dc=%s' % ',dc='.join((mailaddr_split[1].split('.')))
             result = None
             for record in records:
-                logger.debug('Lookup user %s on LDAP server %s with basedn %s', cert.uid().email, record.target, base_dn)
+                logger.debug('Resolving LDAP server %s', record.target)
+                
                 s2, r2 = ctx.resolve(record.target)
-        
-                l = ldap.initialize('ldap://%s:%s' % (record.target, record.port))
-                try:
-                    result = l.search_s(
-                        base_dn,
-                        ldap.SCOPE_SUBTREE,
-                        '(&(|(pgpUserID=*<%s>*)(pgpUserID=%s))(pgpDisabled=0))' % (cert.uid().email,cert.uid().email))
-                    break;
-                except ldap.TIMEOUT, ldap.SERVERDOWN:
-                    logger.debug('TIMEOUT or SERVERDOWN; Trying next server if available')
-                    pass
-                except ldap.NO_SUCH_OBJECT:
-                    logger.debug('The user was not found')
-                    break;
+                
+                if not r2.secure:
+                    logger.warning('Query data is not secure.')
+
+                if s2 == 0 and r2.havedata:
+                    for addr in r2.data.address_list:
+                        logger.debug('Lookup user %s on LDAP server %s with basedn %s', cert.uid().email, addr, base_dn)
+                        l = ldap.initialize('ldap://%s:%s' % (addr, record.port))
+                        try:
+                            result = l.search_s(
+                                base_dn,
+                                ldap.SCOPE_SUBTREE,
+                                '(&(|(pgpUserID=*<%s>*)(pgpUserID=%s))(pgpDisabled=0))' % (cert.uid().email,cert.uid().email))
+                            break;
+                        except ldap.TIMEOUT, ldap.SERVERDOWN:
+                            logger.debug('TIMEOUT or SERVERDOWN on %s:%s; Trying next server if available', addr, record.port)
+                            pass
+                        except ldap.NO_SUCH_OBJECT:
+                            logger.debug('The user was not found')
+                            break;
+                else:
+                    logger.debug('Unsuccessful lookup or no data returned for %s', record.target)
             
             #Validate certificate
             if result:
@@ -100,9 +107,9 @@ def check_pgp_cert(cert, server_name=None, port=None):
     else:
         if server_name:
             if(cert.uid() == server_name):
-                logger.debug("UID matches servername")
+                logger.debug("Certificate UID matches servername")
             else:
-                logger.warning("UID does not match server_name")
+                logger.warning("Certificate UID does not match server_name")
 
             check_dane(cert, server_name, port)
         else:
@@ -114,9 +121,9 @@ def check_x509_cert(cert, server_name=None, port=None):
     
     if server_name:
         if cert.subject.CN == server_name:
-            logger.debug("CN matches servername")
+            logger.debug("Certificate CN matches servername")
         else:
-            logger.warning("CN does not match server_name")
+            logger.warning("Certificate CN does not match server_name")
 
         check_dane(cert, server_name, port)
     else:
@@ -125,8 +132,6 @@ def check_x509_cert(cert, server_name=None, port=None):
 
 def check_dane(cert, server_name, port, protocol='tcp'):
     RR_TYPE_TLSA = 52
-    logger.debug(cert_hash(cert, 1))
-
     logger.debug("Resolving: _%d._%s.%s", port, protocol, server_name)
     s, r = ctx.resolve('_%d._%s.%s' % (port, protocol, server_name), rrtype=RR_TYPE_TLSA)
 
