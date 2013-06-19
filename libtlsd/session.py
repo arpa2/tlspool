@@ -32,11 +32,6 @@ class SessionHandler(Thread):
         self.remote_port = None
 
     def start_tls(self, server_name=None):
-        #cert = X509Certificate(open(certs_path + '/localhost.crt').read())
-        #key = X509PrivateKey(open(certs_path + '/localhost.key').read())
-        #ca = X509Certificate(open(certs_path + '/ca.pem').read())
-        #crl = X509CRL(open(certs_path + '/crl.pem').read())
-        #cred = X509Credentials(cert, key)#, [ca], [crl])
         cert = OpenPGPCertificate(open(certs_path + '/personal-pgp.pub').read())
         key = OpenPGPPrivateKey(open(certs_path + '/personal-pgp.key').read())
         cred = OpenPGPCredentials(cert, key)
@@ -118,9 +113,18 @@ class SessionHandler(Thread):
 
         logger.debug("Received fd: %s; message: %s", fd, msg)
 
-        # TODO: find out type of socket
+        # Find out type of socket
+        temp_s = socket.fromfd(fd, socket.AF_UNIX, socket.SOCK_STREAM)
+        styp = temp_s.getsockopt(socket.SOL_SOCKET, socket.SO_TYPE)
+        # IPv6 or IPv4?
+        if ':' in temp_s.getsockname()[0]:
+            sfam = socket.AF_INET6
+        else:
+            sfam = socket.AF_INET
+        del temp_s
 
-        self.connection = socket.fromfd(fd, socket.AF_INET, socket.SOCK_STREAM)
+        logger.debug("Creating socket from fd %s with family %d and type %d", fd, sfam, styp)
+        self.connection = socket.fromfd(fd, sfam, styp)
         self.remote_port = self.connection.getpeername()[1]
 
         clnt_fd = 0
