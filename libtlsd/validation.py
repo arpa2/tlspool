@@ -3,13 +3,29 @@ from gnutls.constants import X509_FMT_DER, X509_FMT_PEM
 
 import logging
 import ldap
-from unbound import ub_ctx,RR_TYPE_SRV
+import socket
+from unbound import ub_ctx,RR_TYPE_SRV,RR_TYPE_A,RR_TYPE_AAAA
 from binascii import a2b_hex, b2a_hex
 from hashlib import sha256, sha512
 
 logger = logging.getLogger(__name__)
 ctx = ub_ctx()
 ctx.add_ta_file('root.key')
+
+flag_dnssec = False
+flag_dane =  False
+flag_ldap = False
+
+def parse_flags(s):
+    flags = s.split(';')
+    for flag in flags:
+        if flag == 'dnssec':
+            flag_dnssec = True
+        elif flag == 'dane':
+            flag_dnssec = True
+            flag_dane = True
+        elif flag == 'ldap':
+            flag_ldap = True
 
 def parse_dns_labels(s):
     ptr = 0
@@ -42,67 +58,7 @@ def check_pgp_cert(cert, server_name=None, port=None):
     
     if cert.uid().email:
         logger.debug("Validating user PGP cert")
-        mailaddr_split = cert.uid().email.split('@')
-
-        #Do NS lokup for LDAP server
-        logger.debug("Finding PGP key server for %s", mailaddr_split[1])
-        s, r = ctx.resolve('_pgpkey-ldap._tcp.%s' % 'openfortress.nl', rrtype=RR_TYPE_SRV)
-        
-        if s == 0 and r.havedata:
-            #Find UID in LDAP
-            if not r.secure:
-                logger.warning('Query data is not secure.')
-
-            records=[]
-            for record in r.data.raw:
-                hexdata = b2a_hex(record)
-                records.append(
-                    SRVRecord(
-                        int(hexdata[0:4], 16),
-                        int(hexdata[4:8], 16),
-                        int(hexdata[8:12], 16),
-                        '.'.join(parse_dns_labels(record[6:]))))
-
-            records.sort()
-
-            base_dn = 'dc=%s' % ',dc='.join((mailaddr_split[1].split('.')))
-            result = None
-            for record in records:
-                logger.debug('Resolving LDAP server %s', record.target)
-                
-                s2, r2 = ctx.resolve(record.target)
-                
-                if not r2.secure:
-                    logger.warning('Query data is not secure.')
-
-                if s2 == 0 and r2.havedata:
-                    for addr in r2.data.address_list:
-                        logger.debug('Lookup user %s on LDAP server %s with basedn %s', cert.uid().email, addr, base_dn)
-                        l = ldap.initialize('ldap://%s:%s' % (addr, record.port))
-                        try:
-                            result = l.search_s(
-                                base_dn,
-                                ldap.SCOPE_SUBTREE,
-                                '(&(|(pgpUserID=*<%s>*)(pgpUserID=%s))(pgpDisabled=0))' % (cert.uid().email,cert.uid().email))
-                            break;
-                        except ldap.TIMEOUT, ldap.SERVERDOWN:
-                            logger.debug('TIMEOUT or SERVERDOWN on %s:%s; Trying next server if available', addr, record.port)
-                            pass
-                        except ldap.NO_SUCH_OBJECT:
-                            logger.debug('The user was not found')
-                            break;
-                else:
-                    logger.debug('Unsuccessful lookup or no data returned for %s', record.target)
-            
-            #Validate certificate
-            if result:
-                for dn,entry in result:
-                    for pgpKey in entry['pgpKey']:
-                        if cert.fingerprint == OpenPGPCertificate(pgpKey).fingerprint:
-                            logger.debug('The users certificate matches the one in LDAP')
-        
-        else:
-            logger.warning('Unsuccessful lookup or no data returned for rrtype %s.', RR_TYPE_SRV)
+        check_ldap(cert.uid().email, cert)
 
     else:
         if server_name:
@@ -129,6 +85,83 @@ def check_x509_cert(cert, server_name=None, port=None):
     else:
         logger.debug("Cannot validate certificate without having a server name to match")
 
+def check_ldap(mailaddr, cert):
+    mailaddr_split = mailaddr.split('@')
+    #Do NS lokup for LDAP server
+    logger.debug("Finding PGP key server for %s", mailaddr_split[1])
+    s, r = ctx.resolve('_pgpkey-ldap._tcp.%s' % 'openfortress.nl', rrtype=RR_TYPE_SRV)
+    
+    if s == 0 and r.havedata:
+        #Find UID in LDAP
+        if not r.secure:
+            logger.warning('Query data is not secure.')
+            if flag_dnssec:
+                raise InsecureLookupException
+            if r.bogus:
+                raise InsecureLookupException
+
+
+        records=[]
+        for record in r.data.raw:
+            hexdata = b2a_hex(record)
+            records.append(
+                SRVRecord(
+                    int(hexdata[0:4], 16),
+                    int(hexdata[4:8], 16),
+                    int(hexdata[8:12], 16),
+                    '.'.join(parse_dns_labels(record[6:]))))
+
+        records.sort()
+
+        base_dn = 'dc=%s' % ',dc='.join((mailaddr_split[1].split('.')))
+        result = None
+        try:
+            for record in records:
+                logger.debug('Resolving LDAP server %s', record.target)
+                
+                #if socket.has_ipv6 :
+                #    result = find_in_ldap(mailaddr, base_dn, record.target, record.port, rrtype=RR_TYPE_AAAA)
+                result = find_in_ldap(mailaddr, base_dn, record.target, record.port)
+                
+
+            #Validate certificate
+            if result:
+                for dn,entry in result:
+                    for pgpKey in entry['pgpKey']:
+                        if cert.fingerprint == OpenPGPCertificate(pgpKey).fingerprint:
+                            logger.debug('The users certificate matches the one in LDAP')
+        except LDAPUserNotFound:
+            logger.warning('The user was not found')
+    else:
+        logger.warning('Unsuccessful lookup or no data returned for rrtype %s.', RR_TYPE_SRV)
+
+def find_in_ldap(mailaddr, base_dn, target_name, target_port, rrtype=RR_TYPE_A):
+    s, r = ctx.resolve(target_name, rrtype)
+            
+    if not r.secure:
+        logger.warning('Query data is not secure.')
+
+    if s == 0 and r.havedata:
+        for addr in r.data.address_list:
+            logger.debug('Lookup user %s on LDAP server %s with basedn %s', mailaddr, addr, base_dn)
+            l = ldap.initialize('ldap://%s:%s' % (addr, target_port))
+            try:
+                result = l.search_s(
+                    base_dn,
+                    ldap.SCOPE_SUBTREE,
+                    '(&(|(pgpUserID=*<%s>*)(pgpUserID=%s))(pgpDisabled=0))' % (mailaddr,mailaddr))
+                return result
+            except ldap.TIMEOUT:
+                logger.debug('TIMEOUT on %s:%s; Trying next server if available', addr, target_port)
+                pass
+            except ldap.SERVERDOWN:
+                logger.debug('SERVERDOWN on %s:%s; Trying next server if available', addr, target_port)
+                pass
+            except ldap.NO_SUCH_OBJECT:
+                raise LDAPUserNotFound()
+    else:
+        return None
+        
 
 def check_dane(cert, server_name, port, protocol='tcp'):
     RR_TYPE_TLSA = 52
@@ -181,3 +214,13 @@ class SRVRecord:
     def __lt__(self, other):
         return self.priority < other.priority
 
+
+# Exceptions
+class LDAPUserNotFound(Exception):
+    pass
+
+class InsecureLookupException(Exception):
+    pass
+
+class DNSLookupError(Exception):
+    pass

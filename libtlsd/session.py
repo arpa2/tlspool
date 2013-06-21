@@ -127,14 +127,18 @@ class SessionHandler(Thread):
         self.connection = socket.fromfd(fd, sfam, styp)
         self.remote_port = self.connection.getpeername()[1]
 
-        clnt_fd = 0
-        if msg == 'start-tls':
+        clnt_fd = -1
+        msg_split = msg.split()
+        if msg_split[0] == 'start-tls':
+            #format of msg is: start-tls [server_name [flags]]
+            if len(msg_split) > 1:
+                logger.debug("SNI: %s", msg_split[1])
+                self.server_name = msg_split[1]
+            if len(msg_split) > 2:
+                validation.parse_flags(msg_split[2])
             clnt_fd = self.start_tls()
-        if msg.startswith("start-tls "):
-            logger.debug("SNI: %s", msg.split()[1])
-            self.server_name=msg.split()[1]
-            clnt_fd = self.start_tls()
-        if msg == "recv-tls":
+        if msg_split[0] == "recv-tls":
+            #format of msg is: recv-tls [flags]
             clnt_fd = self.recv_tls()
 
         logger.debug("Sending substitute fd: %s", clnt_fd)
@@ -162,6 +166,11 @@ class SessionHandler(Thread):
                         self.clnt_data.send(data)
                 else:
                     # Interpret empty result as closed connection and close all
-                    self.close_connections()
+                    # Ignore termination of cmd socket
+                    if s is self.clnt_cmd:
+                        logger.info('Client cmd socket was closed')
+                        inputs.remove(self.clnt_cmd)
+                    else:
+                        self.close_connections()
 
         logger.debug("Terminating %s", self.name)

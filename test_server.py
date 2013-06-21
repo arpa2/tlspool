@@ -28,11 +28,16 @@ while True:
                 print 'Received: %d %s' % (len(buf), buf.rstrip())
                 if(len(buf) <= 0):
                     break
+            except KeyboardInterrupt:
+                print "Ctrl C - Terminating Session; Press Ctrl+C again to stop the server"
             except:
                 print "Unexpected error:", sys.exc_info()[0]
                 break
 
         print "Closing session"
         conn.close()
+    except KeyboardInterrupt:
+        print "Ctrl C - Stopping server"
+        sys.exit(1)
     except:
         print "Unexpected error:", sys.exc_info()[0]
