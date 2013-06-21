@@ -12,20 +12,19 @@ logger = logging.getLogger(__name__)
 ctx = ub_ctx()
 ctx.add_ta_file('root.key')
 
-flag_dnssec = False
-flag_dane =  False
-flag_ldap = False
+flag_dnssec = True
+flag_dane =  True
+flag_ldap = True
 
 def parse_flags(s):
     flags = s.split(';')
     for flag in flags:
-        if flag == 'dnssec':
-            flag_dnssec = True
-        elif flag == 'dane':
-            flag_dnssec = True
-            flag_dane = True
-        elif flag == 'ldap':
-            flag_ldap = True
+        if flag == 'no-dnssec':
+            flag_dnssec = False
+        elif flag == 'no-dane':
+            flag_dane = False
+        elif flag == 'no-ldap':
+            flag_ldap = False
 
 def parse_dns_labels(s):
     ptr = 0
@@ -40,8 +39,6 @@ def parse_dns_labels(s):
             new_label += s[ptr]
         ret.append(new_label)
         ptr += 1
-
-
 
 def check_cert(cert, server_name=None, port=None):
     if(type(cert) == OpenPGPCertificate):
@@ -58,7 +55,8 @@ def check_pgp_cert(cert, server_name=None, port=None):
     
     if cert.uid().email:
         logger.debug("Validating user PGP cert")
-        check_ldap(cert.uid().email, cert)
+        if flag_ldap:
+            check_ldap(cert.uid().email, cert)
 
     else:
         if server_name:
@@ -67,7 +65,8 @@ def check_pgp_cert(cert, server_name=None, port=None):
             else:
                 logger.warning("Certificate UID does not match server_name")
 
-            check_dane(cert, server_name, port)
+            if flag_dane:
+                check_dane(cert, server_name, port)
         else:
             logger.debug("Cannot validate certificate without having a server name to match")
 
@@ -75,13 +74,16 @@ def check_x509_cert(cert, server_name=None, port=None):
     logger.debug("Validating X.509 certificate with serial: %s", cert.serial_number)
     logger.debug("Subject: %s", cert.subject)
     
+    # TODO: Distinguish user/domain and validate user in ldap
+
     if server_name:
         if cert.subject.CN == server_name:
             logger.debug("Certificate CN matches servername")
         else:
             logger.warning("Certificate CN does not match server_name")
 
-        check_dane(cert, server_name, port)
+        if flag_dane:
+            check_dane(cert, server_name, port)
     else:
         logger.debug("Cannot validate certificate without having a server name to match")
 
@@ -93,13 +95,7 @@ def check_ldap(mailaddr, cert):
     
     if s == 0 and r.havedata:
         #Find UID in LDAP
-        if not r.secure:
-            logger.warning('Query data is not secure.')
-            if flag_dnssec:
-                raise InsecureLookupException
-            if r.bogus:
-                raise InsecureLookupException
-
+        check_secure(r)
 
         records=[]
         for record in r.data.raw:
@@ -138,9 +134,8 @@ def check_ldap(mailaddr, cert):
 def find_in_ldap(mailaddr, base_dn, target_name, target_port, rrtype=RR_TYPE_A):
     s, r = ctx.resolve(target_name, rrtype)
             
-    if not r.secure:
-        logger.warning('Query data is not secure.')
-
+    check_secure(r)
+    
     if s == 0 and r.havedata:
         for addr in r.data.address_list:
             logger.debug('Lookup user %s on LDAP server %s with basedn %s', mailaddr, addr, base_dn)
@@ -169,8 +164,7 @@ def check_dane(cert, server_name, port, protocol='tcp'):
     s, r = ctx.resolve('_%d._%s.%s' % (port, protocol, server_name), rrtype=RR_TYPE_TLSA)
 
     if s == 0 and r.havedata:
-        if not r.secure:
-            logger.warning('Query data is not secure.')
+        check_secure(r)
         for record in r.data.raw:
             hexdata = b2a_hex(record)
             cert_usage = int(hexdata[0:2], 16)
@@ -202,6 +196,14 @@ def cert_hash(cert, match_type):
         return sha512(cert_der).hexdigest()
     else:
         return False
+
+def check_secure(r):
+    if not r.secure:
+        logger.warning('Query data is not secure.')
+        if flag_dnssec:
+            raise InsecureLookupException
+        if r.bogus:
+            raise InsecureLookupException
 
 
 class SRVRecord:
