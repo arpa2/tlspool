@@ -20,7 +20,7 @@ while True:
     try:
         conn, address = sock.accept()
         print "Incoming", address
-        conn, cmd = libtlsd.pass_to_daemon(conn, 'recv-tls')
+        conn, cmd = libtlsd.pass_to_daemon(conn, 'recv-tls no-dnssec')
 
         while(True):
             try:

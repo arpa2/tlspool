@@ -12,6 +12,7 @@ from gnutls.connection import *
 import PyKCS11
 
 logger = logging.getLogger(__name__)
+validator = libtlsd.validation.Validator()
 
 script_path = os.path.realpath(os.path.dirname(sys.argv[0]))
 certs_path = os.path.join(script_path, 'certs')
@@ -65,9 +66,9 @@ class SessionHandler(Thread):
       
         except Exception, e:
             logger.error('Handshake failed: %s', e)
-            return -1
+            return 0
 
-        libtlsd.validation.check_cert(self.session.peer_certificate, self.server_name, self.remote_port)
+        validator.check_cert(self.session.peer_certificate, self.server_name, self.remote_port)
 
         self.clnt_data, clnt_fd = socket.socketpair(socket.AF_UNIX)
         return clnt_fd
@@ -127,25 +128,41 @@ class SessionHandler(Thread):
         self.connection = socket.fromfd(fd, sfam, styp)
         self.remote_port = self.connection.getpeername()[1]
 
-        clnt_fd = -1
-        msg_split = msg.split()
-        if msg_split[0] == 'start-tls':
-            #format of msg is: start-tls [server_name [flags]]
-            if len(msg_split) > 1:
-                logger.debug("SNI: %s", msg_split[1])
-                self.server_name = msg_split[1]
-            if len(msg_split) > 2:
-                validation.parse_flags(msg_split[2])
-            clnt_fd = self.start_tls()
-        if msg_split[0] == "recv-tls":
-            #format of msg is: recv-tls [flags]
-            clnt_fd = self.recv_tls()
+        clnt_fd = 0
+        ret_msg = "OK"
+        try:
+            msg_split = msg.split()
+            if msg_split[0] == 'start-tls':
+                #format of msg is: start-tls [server_name [flags]]
+                if len(msg_split) > 1:
+                    logger.debug("SNI: %s", msg_split[1])
+                    self.server_name = msg_split[1]
+                if len(msg_split) > 2:
+                    validator.parse_flags(msg_split[2])
+                clnt_fd = self.start_tls()
+            if msg_split[0] == "recv-tls":
+                #format of msg is: recv-tls [flags]
+                if len(msg_split) > 1:
+                    validator.parse_flags(msg_split[1])
+                clnt_fd = self.recv_tls()
+            else:
+                raise Exception('Unknow Command')
+        except libtlsd.validation.InsecureLookupException:
+            ret_msg = "ERR 1 InsecureLookupException"
+        except libtlsd.validation.LDAPUserNotFound:
+            ret_msg = "ERR 2 LDAPUserNotFound"
+        except libtlsd.validation.DaneError:
+            ret_msg = "ERR 3 DaneError"
+        except:
+            print sys.exc_info()
+            logger.debug('Unspecified error: %s', sys.exc_info()[0])
+            ret_msg = "ERR 99 Unspecified"
 
         logger.debug("Sending substitute fd: %s", clnt_fd)
-        passfd.sendfd(self.clnt_cmd, clnt_fd)
+        passfd.sendfd(self.clnt_cmd, clnt_fd, ret_msg)
 
-        if clnt_fd < 0:
-            return -1
+        if clnt_fd == 0:
+            return 0
 
         # Create list of all sockets in correct order to always read the session socket first
         inputs = []

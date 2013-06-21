@@ -14,6 +14,11 @@ def pass_to_daemon(conn, cmd='start-tls'):
     print "  fd: %s" % fd
     print "  message: %s" % msg
 
-    sock = socket.fromfd(fd, socket.AF_INET, socket.SOCK_STREAM)
-    return sock, s
+    if(msg.split()[0] == 'ERR'):
+        conn.close()
+        s.close()
+        return conn, s
+    if(msg.split()[0] == 'OK'):
+        sock = socket.fromfd(fd, socket.AF_INET, socket.SOCK_STREAM)
+        return sock, s
 
