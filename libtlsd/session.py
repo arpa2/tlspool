@@ -65,7 +65,7 @@ class SessionHandler(Thread):
       
         except Exception, e:
             logger.error('Handshake failed: %s', e)
-            return 0
+            return -1
 
         libtlsd.validation.check_cert(self.session.peer_certificate, self.server_name, self.remote_port)
 
@@ -143,6 +143,9 @@ class SessionHandler(Thread):
 
         logger.debug("Sending substitute fd: %s", clnt_fd)
         passfd.sendfd(self.clnt_cmd, clnt_fd)
+
+        if clnt_fd < 0:
+            return -1
 
         # Create list of all sockets in correct order to always read the session socket first
         inputs = []
