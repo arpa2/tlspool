@@ -12,7 +12,7 @@ USER_INPUT = False
 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 try:
     conn.connect((HOST, PORT))
-    conn, cmd = libtlsd.pass_to_daemon(conn, 'start-tls '+HOST+' no-dnssec')
+    conn, cmd = libtlsd.pass_to_daemon(conn, 'start-tls '+HOST+' no-dnssec;ignore-bogus')
 
     while USER_INPUT: 
         x = raw_input(">") 

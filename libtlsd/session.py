@@ -3,6 +3,7 @@ import passfd
 import logging
 import os, sys
 import select
+import traceback
 from threading import Thread
 import libtlsd.validation
 
@@ -140,13 +141,13 @@ class SessionHandler(Thread):
                 if len(msg_split) > 2:
                     validator.parse_flags(msg_split[2])
                 clnt_fd = self.start_tls()
-            if msg_split[0] == "recv-tls":
+            elif msg_split[0] == "recv-tls":
                 #format of msg is: recv-tls [flags]
                 if len(msg_split) > 1:
                     validator.parse_flags(msg_split[1])
                 clnt_fd = self.recv_tls()
             else:
-                raise Exception('Unknow Command')
+                raise Exception('Unknown Command')
         except libtlsd.validation.InsecureLookupException:
             ret_msg = "ERR 1 InsecureLookupException"
         except libtlsd.validation.LDAPUserNotFound:
@@ -154,8 +155,8 @@ class SessionHandler(Thread):
         except libtlsd.validation.DaneError:
             ret_msg = "ERR 3 DaneError"
         except:
-            print sys.exc_info()
             logger.debug('Unspecified error: %s', sys.exc_info()[0])
+            traceback.print_exc()
             ret_msg = "ERR 99 Unspecified"
 
         logger.debug("Sending substitute fd: %s", clnt_fd)

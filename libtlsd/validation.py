@@ -19,6 +19,7 @@ class Validator():
         self.flag_dnssec = True
         self.flag_dane =  True
         self.flag_ldap = True
+        self.flag_ign_bogus = False
 
     def parse_flags(self, s):
         flags = s.split(';')
@@ -32,6 +33,9 @@ class Validator():
             elif flag == 'no-ldap':
                 logger.debug("Set flag no-ldap")
                 self.flag_ldap = False
+            elif flag == 'ignore-bogus':
+                logger.debug("Set flag ignore-bogus")
+                self.flag_ign_bogus = True
 
     def parse_dns_labels(self, s):
         ptr = 0
@@ -179,7 +183,7 @@ class Validator():
                 match_type = int(hexdata[4:6], 16)
                 tlsa_hash = hexdata[6:]
                 
-                if(tlsa_hash == cert_hash(cert, match_type)):
+                if(tlsa_hash == self.cert_hash(cert, match_type)):
                     logger.debug('Certificate matches TLSA record')
                 else:
                     logger.warning('DANE Error. Certificate does not match')
@@ -207,14 +211,16 @@ class Validator():
             return False
 
     def check_secure(self, r):
-        print self.flag_dnssec
         if not r.secure:
             if self.flag_dnssec:
-                logger.warning('Query data is not secure.')
+                logger.info('Query data is not secure.')
                 raise InsecureLookupException
             if r.bogus:
-                logger.warning('Bogus query data.')
-                raise InsecureLookupException
+                if self.flag_ign_bogus:
+                    logger.warning('Ignoring bogus query data.')
+                else:
+                    logger.info('Bogus query data.')
+                    raise InsecureLookupException
 
 
 class SRVRecord:
@@ -235,6 +241,5 @@ class DaneError(Exception):
     pass
 class InsecureLookupException(Exception):
     pass
-
 class DNSLookupError(Exception):
     pass
