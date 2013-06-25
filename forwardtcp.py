@@ -8,12 +8,12 @@ import select
 import time
 import sys
 import libtlsd
+import argparse
 
 # Changing the buffer_size and delay, you can improve the speed and bandwidth.
 # But when buffer get to high or delay go too down, you can broke things
 buffer_size = 4096
 delay = 0.0001
-forward_to = ('localhost', 1234)
 
 class Forward:
     def __init__(self):
@@ -31,11 +31,14 @@ class TheServer:
     input_list = []
     channel = {}
 
-    def __init__(self, host, port):
+    def __init__(self, host, port, dst_addr, dst_port, tls_type):
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server.bind((host, port))
         self.server.listen(23)
+        self.dst_addr = dst_addr
+        self.dst_port = dst_port
+        self.tls_type = tls_type
 
     def main_loop(self):
         self.input_list.append(self.server)
@@ -55,10 +58,14 @@ class TheServer:
                     self.on_recv()
 
     def on_accept(self):
-        forward = Forward().start(forward_to[0], forward_to[1])
+        forward = Forward().start(self.dst_addr, self.dst_port)
         clientsock, clientaddr = self.server.accept()
         if forward:
-            forward, cmd = libtlsd.pass_to_daemon(forward, 'start-tls')
+            if self.tls_type == 'start-tls':
+                forward, cmd = libtlsd.pass_to_daemon(forward, 'start-tls')
+            else:
+                clientsock, cmd = libtlsd.pass_to_daemon(clientsock, 'recv-tls')
+            
             print clientaddr, "has connected"
             self.input_list.append(clientsock)
             self.input_list.append(forward)
@@ -90,9 +97,16 @@ class TheServer:
         self.channel[self.s].send(data)
 
 if __name__ == '__main__':
-        server = TheServer('', 9090)
-        try:
-            server.main_loop()
-        except KeyboardInterrupt:
-            print "Ctrl C - Stopping server"
-            sys.exit(1)
+    parser = argparse.ArgumentParser(description='RP2 TLS forwarder')
+    parser.add_argument('listen_port', help='Port to listen on', type=int)
+    parser.add_argument('dest_addr', help='Destination address')
+    parser.add_argument('dest_port', help='Destination port', type=int)
+    parser.add_argument('tls_type', choices=['start-tls','recv-tls'],  help='Start or Receive TLS')
+    args = parser.parse_args()
+
+    server = TheServer('', args.listen_port, args.dest_addr, args.dest_port, args.tls_type)
+    try:
+        server.main_loop()
+    except KeyboardInterrupt:
+        print "Ctrl C - Stopping server"
+        sys.exit(1)
