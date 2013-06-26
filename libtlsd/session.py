@@ -10,7 +10,6 @@ import libtlsd.validation
 from gnutls.crypto import *
 from gnutls.connection import *
 
-import PyKCS11
 
 logger = logging.getLogger(__name__)
 validator = libtlsd.validation.Validator()
@@ -159,6 +158,8 @@ class SessionHandler(Thread):
             traceback.print_exc()
             ret_msg = "ERR 99 Unspecified"
 
+        if validator.validated_identity:
+            ret_msg += ' %s' % (validator.validated_identity)
         logger.debug("Sending substitute fd: %s", clnt_fd)
         passfd.sendfd(self.clnt_cmd, clnt_fd, ret_msg)
 

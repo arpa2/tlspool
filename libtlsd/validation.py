@@ -20,6 +20,7 @@ class Validator():
         self.flag_dane =  True
         self.flag_ldap = True
         self.flag_ign_bogus = False
+        self.validated_identity = None
 
     def parse_flags(self, s):
         flags = s.split(';')
@@ -53,10 +54,10 @@ class Validator():
 
     def check_cert(self, cert, server_name=None, port=None):
         if(type(cert) == OpenPGPCertificate):
-            self.check_pgp_cert(cert, server_name, port)
+            self.validated_identity = self.check_pgp_cert(cert, server_name, port)
 
         elif(type(cert) == X509Certificate):
-            self.check_x509_cert(cert, server_name, port)
+            self.validated_identity = self.check_x509_cert(cert, server_name, port)
 
         else:
             logger.debug("No valid certificate found %s", type(cert))
@@ -68,6 +69,8 @@ class Validator():
             logger.debug("Validating user PGP cert")
             if self.flag_ldap:
                 self.check_ldap(cert.uid().email, cert)
+                return cert.uid().email
+
 
         else:
             if server_name:
@@ -78,6 +81,7 @@ class Validator():
 
                 if self.flag_dane:
                     self.check_dane(cert, server_name, port)
+                    return server_name
             else:
                 logger.debug("Cannot validate certificate without having a server name to match")
 
@@ -95,6 +99,9 @@ class Validator():
 
             if self.flag_dane:
                 self.check_dane(cert, server_name, port)
+                return server_name
+
+            # ToDo: CA checking?
         else:
             logger.debug("Cannot validate certificate without having a server name to match")
 

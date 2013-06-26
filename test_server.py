@@ -20,7 +20,13 @@ while True:
     try:
         conn, address = sock.accept()
         print "Incoming", address
-        conn, cmd = libtlsd.pass_to_daemon(conn, 'recv-tls no-dnssec')
+        conn, cmd, status, msg = libtlsd.pass_to_daemon(conn, 'recv-tls no-dnssec')
+
+        if status > 0:
+            print msg
+            sys.exit(0)
+
+        print "Identity of peer is: %s" % msg
 
         while(True):
             try:
@@ -30,6 +36,7 @@ while True:
                     break
             except KeyboardInterrupt:
                 print "Ctrl C - Terminating Session; Press Ctrl+C again to stop the server"
+                break
             except:
                 print "Unexpected error:", sys.exc_info()[0]
                 break
