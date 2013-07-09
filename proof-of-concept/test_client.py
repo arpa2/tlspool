@@ -7,7 +7,7 @@ import time
 import libtlsd
 
 print "Creating connection to server"
-HOST = 'rp2.oslo.practicum.os3.nl'    # The remote host
+HOST = 'localhost'    # The remote host
 PORT = 10000
 USER_INPUT = False
 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

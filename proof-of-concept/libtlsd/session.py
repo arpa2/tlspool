@@ -1,3 +1,4 @@
+# vim: set fileencoding=utf8 :
 #   Copyright (C) 2013 René Klomp (rene.klomp@os3.nl)
 #   Copyright (C) 2013 Thijs Rozekrans (thijs.rozekrans@os3.nl)
 #
