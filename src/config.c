@@ -19,6 +19,7 @@
 #include <ldap.h>
 
 #include <gnutls/gnutls.h>
+#include <gnutls/pkcs11.h>
 
 #include <libmemcached/memcached.h>
 
@@ -59,6 +60,7 @@ void cfg_socketname (char *item, int itemno, char *value);
 void cfg_user (char *item, int itemno, char *value);
 void cfg_group (char *item, int itemno, char *value);
 void cfg_chroot (char *item, int itemno, char *value);
+void cfg_p11path (char *item, int itemno, char *value);
 void cfg_p11token (char *item, int itemno, char *value);
 void cfg_ldap (char *item, int itemno, char *value);
 void cfg_cachehost (char *item, int itemno, char *value);
@@ -73,7 +75,7 @@ struct cfgopt config_options [] = {
 	"daemon_group",		cfg_group,	CFGVAR_NONE,
 	"daemon_chroot",	cfg_chroot,	CFGVAR_NONE,
 	"pkcs11_path",		cfg_setvar,	CFGVAR_PKCS11_PATH,
-	"pkcs11_pin",		cfg_setvar,	CFGVAR_PKCS11_PIN,
+	"pkcs11_pin",		cfg_p11path,	CFGVAR_PKCS11_PIN,
 	"pkcs11_token",		cfg_p11token,	CFGVAR_NONE,
 	"ldap_proxy",		cfg_ldap,	CFGVAR_LDAP_PROXY,
 	"memcache_ttl",		cfg_setvar,	CFGVAR_CACHE_TTL,
@@ -309,12 +311,42 @@ void cfg_chroot (char *item, int itemno, char *value) {
 	}
 }
 
-void cfg_p11token (char *item, int itemno, char *value) {
+static void free_p11pin (void) {
+	char *pin = configvars [CFGVAR_PKCS11_PIN];
+	if (pin) {
+		bzero (pin, strlen (pin));
+		free (pin);
+		configvars [CFGVAR_PKCS11_PIN] = NULL;
+	}
+}
+
+void cfg_p11path (char *item, int itemno, char *value) {
 	fprintf (stdout, "DEBUG: DECLARE %s AS %s\n", item, value);
-	if (gnutls_pkcs11_add_provider (value) != 0) {
+	cfg_setvar (item, itemno, value);
+	free_p11pin ();
+}
+
+void cfg_p11token (char *item, int itemno, char *value) {
+	unsigned int token_seq = 0;
+	char *p11uri;
+	fprintf (stdout, "DEBUG: DECLARE %s AS %s\n", item, value);
+	if (!configvars [CFGVAR_PKCS11_PATH]) {
+		fprintf (stderr, "You must specify pkcs11_path before any number of pkcs11_token\n");
+		exit (1);
+	}
+	if (gnutls_pkcs11_add_provider (configvars [CFGVAR_PKCS11_PATH], NULL) != 0) {
 		fprintf (stderr, "Failed to register PKCS #11 library with GnuTLS\n");
 		exit (1);
 	}
+	while (gnutls_pkcs11_token_get_url (token_seq, 0, &p11uri) == 0) {
+		printf ("DEBUG: Found token URI %s\n", p11uri);
+		//TODO// if (gnutls_pkcs11_token_get_info (p11uri, GNUTLS_PKCS11_TOKEN_LABEL-of-SERIAL-of-MANUFACTURER-of-MODEL, output, utput_size) == 0) { ... }
+		gnutls_free (p11uri);
+		token_seq++;
+	}
+	//TODO// Select token by name (value)
+	//TODO// if PIN available then set it up
+	free_p11pin ();
 }
 
 void cfg_ldap (char *item, int itemno, char *value) {
