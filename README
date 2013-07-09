@@ -51,6 +51,10 @@ but also between different servers.  The design goal of memcached is to
 avoid repeated checks and repeated access to remotely stored information,
 until a certain caching time has passed.
 
+CURRENT STATUS: The daemon starts, parses configuration directives and
+processes most of them.  There is no actual service yet, just a loop that
+makes the tool infinitely sleepy.
+
 
 The importance of PKCS #11
 --------------------------
@@ -75,4 +79,38 @@ key and no further infrastructure.  End users can plugin their token to
 get secured access, and remove it to stop further secure web connections.
 Note that this principle can easily be extended to other protocols that
 can work through a proxy.
+
+Note that it is expressly not the task of the TLS pool to manage the
+objects stored behind the PKCS #11 API.  This is expressly left to
+external tools that manage certificates and keys on behalf of the
+application area covered.  All the TLS pool does is read tokens, looking
+for usable keys to authenticate its identities to the Internet, both over
+X.509 and over OpenPGP.
+
+
+Additional Rules: RADIUS
+------------------------
+
+TODO: Perhaps prefer TACACS+?
+TODO: Are authn and authz indeed separated?  And is this desirable?
+TODO: Can RADIUS handle user@domain for both the user and the realm?
+
+Local environments may have their own added requirements to authentication,
+authorization and also pursue their own accounting of TLS connections.  The
+common approach to these mechansims is RADIUS, which can independently
+handle these three types of request.  RADIUS is designed as a fast local
+protocol, and it can be rerouted with FreeRADIUS and resolved with scripts
+or programs in just about any programming language.
+
+Any AAA facilities are stacked on top of the minimum requirements offered
+by the TLS pool, that is the identities of the peers can be assumed to
+have been established (or perhaps be established in parallel) while the
+authentication and authorization is requested.  Note that accounting
+will always wait for completion of the identity check, to avoid charging
+to an innocent account.
+
+Accounting is not usually applied immediately though.  It may be flagged
+when the TLS pool is requested to setup TLS over a connection, but it may
+also be requested separately at some later time.
+
 
