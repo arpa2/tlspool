@@ -3,13 +3,23 @@
 
 
 #include <stdlib.h>
+#include <stdio.h>
+
+#include <errno.h>
 #include <sys/socket.h>
+#include <sys/un.h>
+
+
+#include <tlspool.h>
 
 
 void enter_pins (char *pinsocket) {
 	struct sockaddr_un sun;
 	int len = strlen (pinsocket);
-	struct tlspool_packet pio;
+	struct tlspool_command pio;
+	struct pioc_pinentry *pe = &pio.pio_data.pioc_pinentry;
+	char *pwd = NULL;
+	int sox;
 
 	/*
 	 * Connect to the UNIX domain socket for PIN entry
@@ -32,38 +42,48 @@ void enter_pins (char *pinsocket) {
 	}
 	
 	/*
+	 * Setup the command structure
+	 */
+	bzero (&pio.pio_data, sizeof (pio.pio_data));
+	pio.pio_reqid = 666;
+
+	/*
 	 * Iteratively request what token needs a PIN, and provide it.
 	 */
-	do {
-		char *pwd;
-		pio.cmd = TLSPOOL_CMD_PIN_NEED;
-		pio.pin_index = pinidx;
-		//TODO// sox.send (pio);
-		//TODO// sox.recv (pio);
-		if (pio.cmd != TLSPOOL_CMD_TOKEN_PIN_REQUEST) {
+	while (1) {
+		pio.pio_cmd = PIOC_PINENTRY_V1;
+		bzero (pe->pin, sizeof (pe->pin));
+		if (pwd) {
+			if (strlen (pwd) + 1 > sizeof (pe->pin)) {
+				fprintf (stderr, "No support for PIN lenghts over 128\n");
+			} else {
+				strcpy (pe->pin, pwd);
+			}
+			pwd = NULL;
+			bzero (pwd, strlen (pwd));
+		}
+		if (send (sox, &pio, sizeof (pio), 0) != sizeof (pio)) {
+			perror ("Failed to send message to TLS pool");
 			break;
 		}
-		fprintf (stdout, "PKCS #11 Manuf: %32s\nPKCS #11 Token: %32s\n", pio.pin_manuf, pio.pin_token);
-		pwd = getpass ("PIN: ");
-		pio.pin_len = strlen (pwd);
-		if (pio.pin_len == 0) {
+		if (recv (sox, &pio, sizeof (pio), 0) != sizeof (pio)) {
+			perror ("Failed to read full message from TLS pool");
 			break;
 		}
-		if (pio.pin_len > 128) {
-			fprintf (stderr, "No support for PIN lenghts over 128\n");
-			exit (1);
+		if (pio.pio_cmd != PIOC_PINENTRY_V1) {
+			pio.pio_cmd = PIOC_ERROR_V1;
+			pio.pio_data.pioc_error.tlserrno = EBADE;
+			strcpy (pio.pio_data.pioc_error.message, "Unexpected response from TLS pool");
 		}
-		pio.cmd = TLSPOOL_CMD_TOKEN_PIN_SET;
-		memcpy (pio.pin_value, pwd, pio.pin_len);
-		//TODO// sox.send (pio);
-		pio.pin_len = 0;
-		bzero (pio.pin_value, sizeof (pio.pin_value));
-		//TODO// sox.recv (pio);
-		if (TODO:failed) {
-			fprintf (stderr, "PIN wrong, %d attempts left.  Skipping this token.\n", pio.pin_attemptsleft);
-			pinidx++;
+		if (pio.pio_cmd == PIOC_ERROR_V1) {
+			errno = pio.pio_data.pioc_error.tlserrno;
+			perror (pio.pio_data.pioc_error.message);
+			break;
 		}
-	} while (pio.cmd == TLSPOOL_CMD_TOKEN_PIN);
+		fprintf (stdout, "Token Manuf: %s\n     Model:  %s\n      Serial: %s\n      Label: %s\n    Attempt: %d", pe->token_manuf, pe->token_model, pe->token_serial, pe->token_label, pe->attempt);
+		pwd = getpass (pe->prompt);
+	}
+	bzero (&pio.pio_data, sizeof (pio.pio_data));
 	close (sox);
 	exit (0);
 }

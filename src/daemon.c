@@ -48,7 +48,7 @@ int main (int argc, char *argv []) {
 	 * Mode selection: Daemon or PIN entry
 	 */
 	if (pinentry) {
-		//TODO// enter_pins (pinentry);
+		enter_pins (pinentry);
 	} else {
 		int pid = fork ();
 		switch (pid) {

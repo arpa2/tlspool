@@ -69,21 +69,31 @@ struct tlspool_command {
 	uint32_t pio_reqid;	// Request/Response identifier
 	uint32_t pio_cmd;	// Command tag with semantic version
 	union pio_data {
-		struct {
-			int errno;		// See <errno.h>
+		struct pioc_error {
+			int tlserrno;		// See <errno.h>
 			char message [128];
-		} piocmd_error;
-		struct {
+		} pioc_error;
+		struct pioc_ping {
 			char YYYYMMDD_producer [8+128];	// when & who?
-		} piocmd_ping;
-		struct {
-			uint32_t flags;		// PIOF_xxx below
+		} pioc_ping;
+		struct pioc_starttls {
+			uint32_t flags;		// PIOF_STARTTLS_xxx below
 			uint32_t local;		// Locally defined bits
 			uint8_t ipproto;	// IPPROTO_TCP, _UDP, _SCTP
 			uint16_t streamid;	// Needed for SCTP
 			char localid [128];	// Local ID or empty string
 			char remoteid [128];	// Remote ID or empty string
-		} piocmd_starttls;
+		} pioc_starttls;
+		struct pioc_pinentry {
+			uint32_t flags;		// PIOF_PINENTRY_xxx below
+			uint32_t attempt;	// Attempt counter -- display!
+			char pin [128];		// Empty string means no PIN
+			char prompt [128];	// Prompt from TLS pool
+			char token_manuf [33];	// PKCS #11 token manufacturer
+			char token_model [17];	// PKCS #11 token model
+			char token_serial [17];	// PKCS #11 token serial number
+			char token_label [33];	// PKCS #11 token label
+		} pioc_pinentry;
 	} pio_data;
 };
 
@@ -95,9 +105,9 @@ struct tlspool_command {
  */
 
 struct tlspool_queueitem {
-	struct poolio_q *pioq_next;	// Next queue item
-	struct poolio_q *pioq_prev;	// Previous queue item
-	struct poolio pioq_message;	// Transmitted message content
+	struct poolio_q *pioq_next;		// Next queue item
+	struct poolio_q *pioq_prev;		// Previous queue item
+	struct tlspool_command pioq_cmd;	// Transmitted message content
 };
 
 
@@ -106,14 +116,14 @@ struct tlspool_queueitem {
 
 /* An error packet is sent if the other party is unwilling to continue
  * the current exchange.  It explains why, through a code and message,
- * in the piocmd_error type.  Error codes are defined in <errno.h>
+ * in the pioc_error type.  Error codes are defined in <errno.h>
  */
 #define PIOC_SUCCESS_V1			0x00000000
 
 
 /* An error packet is sent if the other party is unwilling to continue
  * the current exchange.  It explains why, through a code and message,
- * in the piocmd_error type.  Error codes are defined in <errno.h>
+ * in the pioc_error type.  Error codes are defined in <errno.h>
  */
 #define PIOC_ERROR_V1			0x00000001
 
@@ -121,7 +131,7 @@ struct tlspool_queueitem {
 /* A simple command to exchange courtesy, keepalives and potentially
  * identifying information of the peers.  The same packet is used in
  * both directions.
- * The string in piocmd_ping.YYYYMMDD_producer describes the sender's
+ * The string in pioc_ping.YYYYMMDD_producer describes the sender's
  * semantics with an identity comprising of a YYYYMMDD timestamp for
  * the software semantics version, plus a domain or user@domain identity
  * representing the producer at that time, terminated with '\0'.
@@ -132,7 +142,7 @@ struct tlspool_queueitem {
 /* Start a TLS sequence as a TLS client.  This uses PIO_STARTTLS_xxx
  * flags, defined below.  The local definitions of the TLS pool define
  * part of the semantics.
- * The payload data is defined in piocmd_starttls and is the same
+ * The payload data is defined in pioc_starttls and is the same
  * for the client and server, and for request and response.  Clients
  * usually know the remoteid, and should fill that field instead of
  * leaving it an empty string.  They may already present their localid
@@ -144,7 +154,7 @@ struct tlspool_queueitem {
 /* Start a TLS sequence as a TLS server.  This uses PIO_STARTTLS_xxx
  * flags, defined below.  The local definitions of the TLS pool define
  * part of the semantics.
- * The payload data is defined in piocmd_starttls and is the same
+ * The payload data is defined in pioc_starttls and is the same
  * for the client and server, and for request and response.  Servers
  * do not always know the remoteid, and may set this to an empty string
  * to skip checking it.  They may not even know their localid if they
@@ -171,9 +181,22 @@ struct tlspool_queueitem {
 #define PIOC_STARTTLS_LOCALID_V1	0x00000028
 
 
-/* TODO: Define accounting as a best-effort, forked RADIUS interaction */
-
 /* TODO: Possibly support renegotiation, like for explicit authn */
+
+
+/* The PIN entry command.  The data stored in tlscmd_pinentry determines
+ * what happens exactly.  When sent to the TLS pool it can provide a
+ * non-empty PIN, which only makes sense in response to a PIOC_PINENTRY_V1
+ * from the TLS pool.  An empty PIN always means that no PIN is being
+ * provided, possibly due to cancellation by the user.  All
+ * token-descriptive are terminated with a NUL-character, unlike in
+ * PKCS #11 where they have a fixed length.  Trailing spaces available
+ * in the PKCS #11 level token description have been stripped off.
+ */
+#define PIOC_PINENTRY_V1			0x00000029
+
+
+/* TODO: Define accounting as a best-effort, forked RADIUS interaction */
 
 
 /* This command bit that marks a command as local.  Local commands are always
@@ -188,7 +211,7 @@ struct tlspool_queueitem {
 /********************************* FLAGS ********************************/
 
 
-/* PIOF_STARTTLS_xxx flags are sent and received in piocmd_starttls.
+/* PIOF_STARTTLS_xxx flags are sent and received in pioc_starttls.
  *
  * When sent to the TLS pool, they may provide it some freedom; when
  * it is still set in the response then this freedom has been exercised.
@@ -293,5 +316,12 @@ struct tlspool_queueitem {
  * against passive observers.
  */
 #define PIOF_STARTTLS_IGNORE_REMOTEID		0x00001000
+
+
+/* PIOF_PINENTRY_SHARED means that the TLS pool may permit other
+ * PIN entry applications as well.  TODO: Not implemented yet,
+ * unsure if this is desirable at all.
+ */
+//NOT-IMPLEMENTED// #define PIOF_PINENTRY_SHARED		0x00000001
 
 

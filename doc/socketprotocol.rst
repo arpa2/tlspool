@@ -218,3 +218,44 @@ condition is raised when default or flagged requirements have not
 been met by the connection setup.
 
 
+Token PIN entry
+===============
+
+The use of tokens stored on PKCS #11 implies that tokens are accessed,
+for which PIN codes must be entered.  These may be setup in the
+configuration file, but this is not always an acceptable practice for
+security reasons.
+
+Although applications that issues STARTTLS commands could double as
+PIN entering applications, this is not generally the advised approach.
+It is desirable to move credentials away from programs that engage in
+online activities, and if the TLS pool cannot contain the PIN, it
+should facilitate entry of PINs by independent programs.
+
+To this end, a program can access the TLS pool socket and issue a
+PIN_ENTRY_OFFER command request.  In response to this command, the
+TLS pool can issue a PIN_ENTRY_OFFER command response, asking for
+a particular PIN code.  The user is somehow asked to enter the
+said PIN, and another PIN_ENTRY_OFFER is submitted, this time
+carrying the PIN.  All these interactions carry the same request
+identity.
+
+The different formats of PIN_ENTRY_OFFER are distinguished by
+looking at the PIN string.  If it is an empty string, it is not
+submitting a PIN and it is merely an offer to pickup on future
+PIN validation proposals.  The empty PIN can also be supplied to
+refuse entering a PIN; interestingly, the user is usually able
+to do this too, and it is often the response to hitting a
+cancellation button that scripts may or may not take note of.
+
+If a PIN entry service is to be stopped, the program usually
+disconnects from the TLS pool.  Alternatively, it is possible
+to respond to a PIN_ENTRY_OFFER from the TLS pool to the PIN
+entry application by sending an ERROR with the same request
+identity, and expecting to see a SUCCESS response to that.
+
+TODO:The TLS pool can manage either exactly one PIN entry program,
+or multiple which are then tried sequentially, with a timeout.
+Most PIN entry programs would not set the flag that enables
+multiple PIN entry programs at the same time.
+
