@@ -4,6 +4,9 @@
 #include <stdint.h>
 
 
+#define TLSPOOL_IDENTITY_V1	"20130710tlspool@openfortress.nl"
+
+
 /****************************** STRUCTURES *****************************/
 
 
@@ -236,5 +239,59 @@ struct tlspool_queueitem {
  * no consequence.
  */
 #define PIOF_STARTTLS_BYPASS_EXT_AUTHZ		0x00000100
+
+
+/* PIOF_STARTTLS_SEND_SNI can be used for client-side STARTTLS as an
+ * indication that the remotid is present and its domain should be
+ * passed over to the other side as a Server Name Indication.  This
+ * is not a common structure for all protocols, but it is harmless
+ * because it is an indicative TLS option.  Note that it is useful
+ * of xxxxs: protocols, which immediately start TLS, but usually not
+ * needed for protocols that issue a STARTTLS command during a normal
+ * exchange.  Anyhow, this is application-determined. 
+ * If the remoteid contains a user@ part, it is not sent as part of
+ * the SNI information, because that would violate the format.  It
+ * is a missed opportunity though.
+ */
+#define PIOF_STARTTLS_SEND_SNI			0x00000200
+
+
+/* PIOF_STARTTLS_IGNORE_CACHES requires the TLS pool to perform the
+ * validation here and now.  It will not accept cached results from
+ * recent encounters as sufficient proof that the remote peer has
+ * the acclaimed identity.  This can be used at places in an
+ * interaction where the identity of the remote peer must be firmly
+ * established.  Note that bypassing the caches dramatically increases
+ * the amount of work for the TLS pool, and should thus be used with
+ * care.  Note that the validation outcome may still be cached, for
+ * future use when the peer relation is more relaxed.
+ */
+#define PIOF_STARTTLS_IGNORE_CACHES		0x00000400
+
+
+/* PIOF_STARTTLS_REQUEST_REMOTEID means that the TLS pool should not
+ * strictly require, but merely request a remote identity.  This is
+ * useful if the remote peer is a client who may not have a certificate
+ * to authenticate with, and should still be able to access the service
+ * over TLS.  It is also useful to permit anonymous TLS connections to
+ * remote clients or servers if both sides agree to that.
+ * Note that a bidirectionally unauthenticated TLS connection is not
+ * protected from man in the middle attacks, although it does warrant
+ * against passive observers.
+ */
+#define PIOF_STARTTLS_REQUEST_REMOTEID		0x00000800
+
+
+/* PIOF_STARTTLS_IGNORE_REMOTEID means that the TLS pool need not bother
+ * to even request a remote identity.  If one is provided, it is not
+ * validated.  This is useful if the local application cannot use the
+ * remote identity in any useful way.  It is also useful to permit
+ * anonymous TLS connections to remote clients or servers if both sides
+ * agree to that.
+ * Note that a bidirectionally unauthenticated TLS connection is not
+ * protected from man in the middle attacks, although it does warrant
+ * against passive observers.
+ */
+#define PIOF_STARTTLS_IGNORE_REMOTEID		0x00001000
 
 

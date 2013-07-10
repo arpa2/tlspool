@@ -91,8 +91,6 @@ X.509 and over OpenPGP.
 Additional Rules: RADIUS
 ------------------------
 
-TODO: Perhaps prefer TACACS+?
-TODO: Are authn and authz indeed separated?  And is this desirable?
 TODO: Can RADIUS handle user@domain for both the user and the realm?
 
 Local environments may have their own added requirements to authentication,
@@ -109,8 +107,31 @@ authentication and authorization is requested.  Note that accounting
 will always wait for completion of the identity check, to avoid charging
 to an innocent account.
 
-Accounting is not usually applied immediately though.  It may be flagged
-when the TLS pool is requested to setup TLS over a connection, but it may
-also be requested separately at some later time.
+Note that RADIUS combines authentication and authorization into one accept
+phase, which is supposed to do both.  This means that in practice most
+people will declare RADIUS for either authentication or authorization.
+This is not a requirement though; the functions can be setup and, due to
+lack of expressiveness in the protocol, split over different servers.
 
+Accounting is not usually applied immediately when a TLS connection is
+setup; this is barely useful information.  Instead, the TLS pool is able
+to receive accounting requests over the same API as it uses for the
+authentication and authorization requests, and it can pass requests on
+to the accounting functions of a RADIUS service.
+
+Accounting in the style of the TLS pool comes down to counting ticks or
+time; a series of values is supplied to both the start and end that is
+being accounted:
+
+ - an identifier for the kind of thing being accounted;
+ - an identifier for the instance being accounted;
+ - a local and remote identity of a user@domain or of a domain.
+
+For each of these, information is collected to support accounting:
+
+ - the identifier for the kind of thing being accounted;
+ - the identifier for the instance being accounted;
+ - the local and remote identity of a user@domain or of a domain;
+ - a timestamp for the start and, if present, the end of a period;
+ - a final count representing the number of items being accounted.
 
