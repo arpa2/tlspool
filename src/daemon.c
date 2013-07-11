@@ -44,6 +44,8 @@ int main (int argc, char *argv []) {
 		cfgfile = "/etc/tlspool.conf";
 	}
 
+	//TODO// setup syslogging
+
 	/*
 	 * Mode selection: Daemon or PIN entry
 	 */
@@ -57,6 +59,7 @@ int main (int argc, char *argv []) {
 			exit (1);
 		case 0:
 			setsid ();
+			//TODO// close the common fd's 0/1/2
 			parse_cfgfile (cfgfile);
 			run_service ();
 			break;

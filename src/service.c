@@ -28,7 +28,8 @@
  * on directly to the requester, bypassing normal command processing and
  * instead processing it where it was requested.  This parser-like spread
  * of acceptable cases over processing nodes simplifies the complexity
- * and available alternatives in each node.
+ * and available alternatives in each node.  It also helps to benefit from
+ * overlap between (semantics versions of) similar commands.
  *
  * Anything that may take up more than a trivial amount of time (perhaps
  * because it must wait for remote operations to complete) is sent off to
@@ -52,6 +53,7 @@ static int num_sox = 0;
 
 static struct callback cblist [1024];
 static struct callback *cbfree;
+static pthread_mutex_t cbfree_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 
 /* Register a socket.  It is assumed that first all server sockets register */
@@ -208,7 +210,7 @@ static int is_callback (struct command *cmd) {
  */
 static void await_callback (struct command *cmdresp, struct command **followup) {
 	int cbi;
-	//TODO// Lock cbfree
+	pthread_mutex_lock (&cbfree_mutex);
 	struct callback *cb = cbfree;
 	if (!cb) {
 		//TODO// Allocate more...
@@ -216,7 +218,7 @@ static void await_callback (struct command *cmdresp, struct command **followup) 
 		exit (1);
 	}
 	cbfree = cb->next;
-	//TODO// Unlock cbfree
+	pthread_mutex_unlock (&cbfree_mutex);
 	cmdresp->cmd.pio_cbid = (((intptr_t) cb) - ((intptr_t) cblist)) / ((intptr_t) sizeof (struct callback));
 	cb->fd = cmdresp->clientfd;
 	cb->followup = followup;
@@ -236,11 +238,11 @@ static void post_callback (struct command *cmd) {
 	cblist [cbid].fd = -1;
 	* cblist [cbid].followup = cmd;
 	pthread_mutex_unlock (&cblist [cbid].lock);
-	//TODO// Lock cbfree
+	pthread_mutex_lock (&cbfree_mutex);
 	//TODO// Remove cblist [cbid] from the fd's cblist
-	//TODO// Add    cblist [cbid] to the cbfree list
-	//TODO// Unlock cbfree
-	//Without the above, this crashes on the 1025'th callback allocation!
+	cblist [cbid].next = cbfree;
+	cbfree = &cblist [cbid];
+	pthread_mutex_unlock (&cbfree_mutex);
 }
 
 
@@ -260,10 +262,10 @@ static void process_command (struct command *cmd) {
 		send_command (cmd, -1);
 		return;
 	case PIOC_STARTTLS_CLIENT_V1:
-		send_error (cmd, ENOSYS, "STARTTLS_CLIENT not implemented");
+		starttls_client (cmd);
 		return;
 	case PIOC_STARTTLS_SERVER_V1:
-		send_error (cmd, ENOSYS, "STARTTLS_SERVER not implemented");
+		starttls_server (cmd);
 		return;
 	case PIOC_PINENTRY_V1:
 		register_pinentry_command (cmd);
@@ -299,15 +301,11 @@ void process_activity (int sox, int soxidx, struct soxinfo *soxi, short int reve
 		}
 		if (soxi->flags & SOF_CLIENT) {
 			struct command cmd;
-			//TODO//
 			if (receive_command (sox, &cmd)) {
-				printf ("DEBUG: Eekk!!  Receiving packet?!?  Unregistering client\n");
 				process_command (&cmd);
 			} else {
 				printf ("DEBUG: Failed to receive command request\n");
 			}
-			//DEBUG// unregister_client_socket_byindex (soxidx);
-			//DEBUG// close (sox);
 		}
 	}
 }
