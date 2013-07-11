@@ -10,13 +10,23 @@ Once connected, the TLS pool awaits command requests.  These are always sent
 on the initiative of the application, and each command results in exactly
 one response, at least as long as the connection remains open.  This means
 that the TLS pool will never initiate concurrent interactions, but the
-application is free to do so.  Packets include an identifier that are
-faithfully copied from request to response.
+application is free to do so.
 
 Some commands may take some time to finish, which is why concurrency is
-supported.  But slower batch processes, which usually are mere scripts,
-have the freedom of not adopting the corresponding complexity.
+supported.  Packets are sent to the TLS pool with an identifier that will
+be copied copied from request to response.  But slower batch processes,
+which usually are mere scripts, have the freedom of not adopting the
+corresponding complexity.
 
+Some requests to the TLS pool return a response that invites a new request
+with additional data; the best example is the PINENTRY command which returns
+to request a PIN being entered.  In such followup-requests, the callback
+identifier from the response should be copied into the new request.
+
+The most likely structure for the coupling of messages based on request
+or callback identities is by looking up entries in a table.  For reasons
+of security, it is important to verify that the right socket is
+sending the desired response.
 
 
 Commands and responses
@@ -199,7 +209,7 @@ propose it to the server through a STARTTLS_LOCALID command response.
 This package contains a remote identity to approve.  It may be
 accepted as is, modified, or disapproved of by setting it to the
 empty string.  The STARTTLS_LOCALID packet should then be issued
-as a command to the TLS pool, while retaining the request identity.
+as a command to the TLS pool, while retaining the callback identity.
 When rejecting a proposed local identity, the TLS pool may issue
 more proposals in independent command responses.
 
@@ -233,14 +243,14 @@ online activities, and if the TLS pool cannot contain the PIN, it
 should facilitate entry of PINs by independent programs.
 
 To this end, a program can access the TLS pool socket and issue a
-PIN_ENTRY_OFFER command request.  In response to this command, the
-TLS pool can issue a PIN_ENTRY_OFFER command response, asking for
+PINENTRY command request.  In response to this command, the
+TLS pool can issue a PINENTRY command response, asking for
 a particular PIN code.  The user is somehow asked to enter the
-said PIN, and another PIN_ENTRY_OFFER is submitted, this time
-carrying the PIN.  All these interactions carry the same request
-identity.
+said PIN, and another PINENTRY is submitted, this time
+carrying the PIN and the callback identity from the PINENTRY
+from the TLS pool to which it responds.
 
-The different formats of PIN_ENTRY_OFFER are distinguished by
+The different formats of PINENTRY are distinguished by
 looking at the PIN string.  If it is an empty string, it is not
 submitting a PIN and it is merely an offer to pickup on future
 PIN validation proposals.  The empty PIN can also be supplied to
@@ -250,12 +260,29 @@ cancellation button that scripts may or may not take note of.
 
 If a PIN entry service is to be stopped, the program usually
 disconnects from the TLS pool.  Alternatively, it is possible
-to respond to a PIN_ENTRY_OFFER from the TLS pool to the PIN
+to respond to a PINENTRY from the TLS pool to the PIN
 entry application by sending an ERROR with the same request
 identity, and expecting to see a SUCCESS response to that.
 
-TODO:The TLS pool can manage either exactly one PIN entry program,
-or multiple which are then tried sequentially, with a timeout.
-Most PIN entry programs would not set the flag that enables
-multiple PIN entry programs at the same time.
+The TLS pool supports exactly one program at a time for
+PIN entry.  The protocol sketched above will permit for a gap
+in the lock for every time a PIN is entered.  To solve this,
+the PIN entry protocol supports an additional facility of a
+timeout.  This timeout indicates how long it will take the
+PIN entry program to respond to a PIN entry request; either
+for posting another request over the same socket connection,
+or for getting the response back from the user.  As soon as
+the entry of a PIN is requested from the program, the timeout
+starts running, and until it expires the PIN entry program's
+socket is the only channel over which PINENTRY is
+accepted.  A secondary PINENTRY channel will not be
+put to use until the timeout on the first has expired witout
+receiving a response.
+
+This mechanism supports timeouts in case of dying software as
+well as solid, long-lasting locks on the PIN entry facility.  It
+is up to the application to define the timeout, but it is stated
+in microseconds in an uint32_t, so it cannot exceed 4295 seconds,
+or a little over an hour.  The value 0 is interpreted in any
+special way, it simply means that no timeout is requested.
 

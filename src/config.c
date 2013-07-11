@@ -27,6 +27,8 @@ static LDAP *ldap_handle;
 
 static struct memcached_st *cache;
 
+static int server_socket;
+
 typedef void (*cfghandler) (char *item, int itemno, char *value);
 
 struct cfgopt {
@@ -282,6 +284,7 @@ void cfg_socketname (char *item, int itemno, char *value) {
 			exit (1);
 		}
 	}
+	server_socket = sox;
 }
 
 void cfg_user (char *item, int itemno, char *value) {
@@ -383,3 +386,7 @@ void cfg_cachehost (char *item, int itemno, char *value) {
 	}
 }
 
+
+int get_server_socket (void) {
+	return server_socket;
+}

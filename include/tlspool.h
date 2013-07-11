@@ -15,14 +15,16 @@
  * sending and receiving messages like below.
  *
  * The order of events is always one where the application connecting
- * to the socket sends messages, and the TLS pool always sends a reply.
- * Depending on the command, this reply may be fast or slow, but there
- * will always be a reply as long as the connection is kept open.  If
+ * to the socket sends messages, and the TLS pool always sends a response.
+ * Depending on the command, this response may be fast or slow, but there
+ * will always be a response as long as the connection is kept open.  If
  * the application can handle concurrent communication, it may send
- * more than one packet at a time.  The reply will always copy the
+ * more than one packet at a time.  The response will always copy the
  * pio_reqid field from the request to facilitate this; the application
  * should ensure different pio_reqid values for simultaneously sent
- * requests.
+ * requests.  The TLS pool may also request follow-up action, which
+ * should also lead to exactly one action.  In this case, the pio_cbid
+ * field must be copied into the new request.
  *
  * Command tags are 32 bit in size; this gives us the room to include
  * version numbers for semantic variations.  Implementations have the
@@ -66,7 +68,8 @@
 
 
 struct tlspool_command {
-	uint32_t pio_reqid;	// Request/Response identifier
+	uint16_t pio_reqid;	// Request->Response request identifier
+	uint16_t pio_cbid;	// Response->Request callback identifier
 	uint32_t pio_cmd;	// Command tag with semantic version
 	union pio_data {
 		struct pioc_error {
@@ -87,6 +90,7 @@ struct tlspool_command {
 		struct pioc_pinentry {
 			uint32_t flags;		// PIOF_PINENTRY_xxx below
 			uint32_t attempt;	// Attempt counter -- display!
+			uint32_t timeout_us;	// Timeout in microseconds
 			char pin [128];		// Empty string means no PIN
 			char prompt [128];	// Prompt from TLS pool
 			char token_manuf [33];	// PKCS #11 token manufacturer
@@ -317,11 +321,5 @@ struct tlspool_queueitem {
  */
 #define PIOF_STARTTLS_IGNORE_REMOTEID		0x00001000
 
-
-/* PIOF_PINENTRY_SHARED means that the TLS pool may permit other
- * PIN entry applications as well.  TODO: Not implemented yet,
- * unsure if this is desirable at all.
- */
-//NOT-IMPLEMENTED// #define PIOF_PINENTRY_SHARED		0x00000001
 
 
