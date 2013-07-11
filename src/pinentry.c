@@ -1,16 +1,17 @@
-/* tlspool/pinentry.c -- Connect to the local tlspool and enter PINs.
- */
+/* tlspool/pinentry.c -- Connect to the local tlspool and enter PINs. */
 
 
 #include <stdlib.h>
 #include <stdio.h>
 
+#include <unistd.h>
 #include <errno.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 
+#include <gnutls/gnutls.h>
 
-#include <tlspool.h>
+#include "internal.h"
 
 
 /*
@@ -73,18 +74,21 @@ void enter_pins (char *pinsocket) {
 		}
 		fprintf (stderr, "DEBUG: Offering PIN service to TLS pool\n");
 		if (send (sox, &pio, sizeof (pio), 0) != sizeof (pio)) {
-			perror ("Failed to send message to TLS pool");
-			break;
-		}
-		fprintf (stderr, "DEBUG: Awaiting PIN inquiry from TLS pool\n");
-		if (recv (sox, &pio, sizeof (pio), 0) != sizeof (pio)) {
-			perror ("Failed to read full message from TLS pool");
-			break;
-		}
-		if (pio.pio_cmd != PIOC_PINENTRY_V1) {
 			pio.pio_cmd = PIOC_ERROR_V1;
-			pio.pio_data.pioc_error.tlserrno = EBADE;
-			strcpy (pio.pio_data.pioc_error.message, "Unexpected response from TLS pool");
+			pio.pio_data.pioc_error.tlserrno = errno;
+			strcpy (pio.pio_data.pioc_error.message, "Failed to send message to TLS pool");
+		} else {
+			if (recv (sox, &pio, sizeof (pio), 0) != sizeof (pio)) {
+				pio.pio_cmd = PIOC_ERROR_V1;
+				pio.pio_data.pioc_error.tlserrno = errno;
+				strcpy (pio.pio_data.pioc_error.message, "Failed to read full message from TLS pool");
+			} else {
+				if (pio.pio_cmd != PIOC_PINENTRY_V1) {
+					pio.pio_cmd = PIOC_ERROR_V1;
+					pio.pio_data.pioc_error.tlserrno = EBADE;
+					strcpy (pio.pio_data.pioc_error.message, "Unexpected command response from TLS pool");
+				}
+			}
 		}
 		if (pio.pio_cmd == PIOC_ERROR_V1) {
 			errno = pio.pio_data.pioc_error.tlserrno;
@@ -101,7 +105,6 @@ void enter_pins (char *pinsocket) {
 }
 
 
-static int pinentry_appsox = -1;
 static struct tlspool_command *pinentry_cmd = NULL;
 
 
@@ -111,19 +114,20 @@ static struct tlspool_command *pinentry_cmd = NULL;
  * so it is only safe to use as a sending channel.  Registration is just
  * for one try, after which the application protocol will let it re-register.
  */
-void register_pinentry_application_socket (int appsox, struct tlspool_command *cmd) {
+void register_pinentry_command (struct command *cmd) {
 	int error = 0;
 	//TODO// Lock pinentry_*
-	if (pinenetry_appsox == -1) {
+	if (!pinentry_cmd) {
 		pinentry_cmd = cmd;
-		pinentry_appsox = appsox;
 	} else {
 		error = 1;
 	}
 	//TODO// Unock pinentry_*
 	if (error) {
 		send_error (cmd, EBUSY, "Another PIN entry process is active");
+		return;
 	}
+	send_error (cmd, ENOSYS, "PIN entry not implemented yet");
 }
 
 
@@ -137,11 +141,10 @@ int gnutls_pin_callback (void *userdata, int attempt, const char *token_url, con
 	int retval = 0;
 	//TODO// First try to find the PIN locally
 	//TODO// Lock pinentry_*
-	appsox = pinentry_appsox;
 	cmd = pinentry_cmd;
-	if ((appsox != -1) && (cmd != NULL)) {
-		pinentry_appsox = -1;
-		cmd = NULL;
+	if (/*TODO(appsox != -1) &&*/ (cmd != NULL)) {
+		//TODO// pinentry_appsox = -1;
+		//TODO// cmd = NULL;
 	} else {
 		retval = GNUTLS_A_USER_CANCELED;
 	}

@@ -102,19 +102,6 @@ struct tlspool_command {
 };
 
 
-/*
- * The tlspool_queueitem is a simple structure that supports storage of
- * the command packets in a bidirectionally linked queue.  This may be
- * of use for concurrent operations with the socket communication.
- */
-
-struct tlspool_queueitem {
-	struct poolio_q *pioq_next;		// Next queue item
-	struct poolio_q *pioq_prev;		// Previous queue item
-	struct tlspool_command pioq_cmd;	// Transmitted message content
-};
-
-
 /******************************** COMMANDS *******************************/
 
 
