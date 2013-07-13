@@ -112,7 +112,7 @@ int send_command (struct command *cmd, int passfd) {
 	if (passfd >= 0) {
 		mh.msg_control = anc;
 		mh.msg_controllen = sizeof (anc);
-		cmsg = CMSG_FIRSTHDR(&mh);
+		cmsg = CMSG_FIRSTHDR (&mh);
 		cmsg->cmsg_level = SOL_SOCKET;
 		cmsg->cmsg_type = SCM_RIGHTS;
 		cmsg->cmsg_len = CMSG_LEN (sizeof (int));

@@ -1,4 +1,8 @@
-/* tlspool/tlspool.h -- Structure definitions for the UNIX socket protocol */
+/* tlspool/commands.h -- Structure definitions for the UNIX socket protocol */
+
+
+#ifndef TLSPOOL_COMMANDS_H
+#define TLSPOOL_COMMANDS_H
 
 
 #include <stdint.h>
@@ -309,4 +313,5 @@ struct tlspool_command {
 #define PIOF_STARTTLS_IGNORE_REMOTEID		0x00001000
 
 
+#endif //TLSPOOL_COMMANDS_H
 
