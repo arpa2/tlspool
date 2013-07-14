@@ -14,6 +14,7 @@ struct command {
 	int clientfd;
 	int passfd;
 	pthread_t handler;
+	pthread_mutex_t ownership;
 	struct tlspool_command cmd;
 };
 

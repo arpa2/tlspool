@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <pthread.h>
 
 #include <unistd.h>
@@ -60,36 +61,53 @@
  * sockets.
  * TODO: Also detect & handle close-down of the controling clientfd?
  */
-static void copycat (int remote, int local) {
+static void copycat (int remote, int local, int master) {
 	char buf [1024];
-	struct pollfd inout [2];
+	struct pollfd inout [3];
 	ssize_t sz;
 	inout [0].fd = local;
 	inout [1].fd = remote;
+	inout [2].fd = master;
 	inout [0].events = inout [1].events = POLLIN;
+	inout [2].events = 0;	// error events only
+	printf ("DEBUG: Starting copycat cycle for local=%d, remote=%d\n", local, remote);
 	while (1) {
-		if (poll (inout, 2, -1) == -1) {
-			break;
+		if (poll (inout, 3, -1) == -1) {
+			printf ("DEBUG: Copycat polling returned an error\n");
+			break;	// Polling sees an error
+		}
+		if ((inout [0].revents | inout [1].revents | inout [2].revents) & ~POLLIN) {
+			printf ("DEBUG: Copycat polling returned a special condition\n");
+			break;	// Apparently, one of POLLERR, POLLHUP, POLLNVAL
 		}
 		if (inout [0].revents & POLLIN) {
 			// Read local and encrypt to remote
 			sz = recv (local, buf, sizeof (buf), MSG_DONTWAIT);
-			if (send (remote, buf, sz, MSG_DONTWAIT) != sz) {
-				break;
+			printf ("DEBUG: Copycat received %d local bytes\n", (int) sz);
+			if (sz == -1) {
+				break;	// stream error
+			} else if (sz == 0) {
+				errno = 0;
+				break;	// orderly shutdown
+			} else if (send (remote, buf, sz, MSG_DONTWAIT) != sz) {
+				break;	// communication error
 			}
 		}
-		if (inout [0].revents & POLLIN) {
+		if (inout [1].revents & POLLIN) {
 			// Read remote and decrypt to local
 			sz = recv (remote, buf, sizeof (buf), MSG_DONTWAIT);
-			if (send (local, buf, sz, MSG_DONTWAIT) != sz) {
-				break;
+			printf ("DEBUG: Copycat received %d remote bytes\n", (int) sz);
+			if (sz == -1) {
+				break;	// stream error
+			} else if (sz == 0) {
+				errno = 0;
+				break;	// orderly shutdown
+			} else if (send (local, buf, sz, MSG_DONTWAIT) != sz) {
+				break;	// communication error
 			}
 		}
-		if ((inout [0].revents | inout [1].revents) & ~POLLIN) {
-			// Apparently, one of POLLERR, POLLHUP, POLLNVAL
-			break;
-		}
 	}
+	printf ("DEBUG: Ending copycat cycle for local=%d, remote=%d\n", local, remote);
 }
 
 
@@ -103,23 +121,36 @@ static void copycat (int remote, int local) {
  * application, but the TLS pool will continue to be active in a copycat
  * procedure: encrypting outgoing traffic and decrypting incoming traffic.
  * TODO: Are client and server routines different?
+ *
+ * The thread is started with an ownership lock on the provided cmd.
+ * It should unlock it as soon as possible, and the parent thread waits
+ * for this before giving up on cmd.
  */
 static void *starttls_thread (void *cmd_void) {
 	struct command *cmd = (struct command *) cmd_void;
 	int soxx [2];	// Plaintext stream between TLS pool and application
+	int passfd = cmd->passfd;
+	int clientfd = cmd->clientfd;
 	//TODO// Distinguish between client and server through cmd
 	//TODO// Actually do STARTTLS ;-)
+	if (passfd == -1) {
+		send_error (cmd, EPROTO, "You must supply a socket");
+		pthread_mutex_unlock (&cmd->ownership);
+		return;
+	}
 	if (socketpair (SOCK_STREAM, AF_UNIX, 0, soxx) < 0) {
 		send_error (cmd, errno, "Failed to create 2ary sockets");
+		pthread_mutex_unlock (&cmd->ownership);
 		return;
 	}
 	cmd->cmd.pio_data.pioc_starttls.localid [0] =
 	cmd->cmd.pio_data.pioc_starttls.remoteid [0] = 0;
-	send_command (cmd, soxx [0]);	 // soxx [0] is app-received
-	copycat (soxx [1], cmd->passfd); // soxx [1] is pooled decryptlink
+	send_command (cmd, cmd->clientfd);	 // soxx [0] is app-received
+	pthread_mutex_unlock (&cmd->ownership);
+	copycat (soxx [1], passfd, clientfd); // soxx [1] is pooled decryptlink
 	close (soxx [0]);
 	close (soxx [1]);
-	close (cmd->passfd);
+	close (passfd);
 }
 
 
@@ -131,14 +162,27 @@ static void *starttls_thread (void *cmd_void) {
  * TODO: Are client and server routines different?
  */
 void starttls_client (struct command *cmd) {
+	//TODO// Move mutex initialisation to the service code
+	pthread_mutex_init (&cmd->ownership, NULL);
+	pthread_mutex_lock (&cmd->ownership);
+	/* Create a thread and, if successful, wait for it to unlock cmd */
 	errno = pthread_create (&cmd->handler, NULL, starttls_thread, (void *) cmd);
 	if (errno) {
 		send_error (cmd, ESRCH, "STARTTLS_CLIENT thread refused");
+		pthread_mutex_unlock (&cmd->ownership);
+		return;
 	}
 	errno = pthread_detach (cmd->handler);
 	if (errno) {
+		//TODO// Kill the thread... somehow
 		send_error (cmd, ESRCH, "STARTTLS_CLIENT thread detachment refused");
+		pthread_mutex_lock (&cmd->ownership);
+		pthread_mutex_unlock (&cmd->ownership);
+		return;
 	}
+	/* Do not continue before the thread gives up ownership of cmd */
+	pthread_mutex_lock (&cmd->ownership);
+	pthread_mutex_unlock (&cmd->ownership);
 }
 
 /*
@@ -148,13 +192,26 @@ void starttls_client (struct command *cmd) {
  * spark off a new thread that handles the operations.
  */
 void starttls_server (struct command *cmd) {
+	//TODO// Move mutex initialisation to the service code
+	pthread_mutex_init (&cmd->ownership, NULL);
+	pthread_mutex_lock (&cmd->ownership);
+	/* Create a thread and, if successful, wait for it to unlock cmd */
 	errno = pthread_create (&cmd->handler, NULL, starttls_thread, (void *) cmd);
 	if (errno) {
 		send_error (cmd, ESRCH, "STARTTLS_SERVER thread refused");
+		pthread_mutex_unlock (&cmd->ownership);
+		return;
 	}
 	errno = pthread_detach (cmd->handler);
 	if (errno) {
+		//TODO// Kill the thread... somehow
 		send_error (cmd, ESRCH, "STARTTLS_CLIENT thread detachment refused");
+		pthread_mutex_lock (&cmd->ownership);
+		pthread_mutex_unlock (&cmd->ownership);
+		return;
 	}
+	/* Do not continue before the thread gives up ownership of cmd */
+	pthread_mutex_lock (&cmd->ownership);
+	pthread_mutex_unlock (&cmd->ownership);
 }
 
