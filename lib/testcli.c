@@ -41,6 +41,7 @@ int main (int argc, char *argv) {
 		exit (1);
 	}
 	printf ("DEBUG: STARTTLS succeeded on testcli\n");
+	sleep (1);
 	close (plainfd);
 	return 0;
 }

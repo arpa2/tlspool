@@ -51,6 +51,7 @@ int main (int argc, char *argv) {
 			exit (1);
 		}
 		printf ("DEBUG: STARTTLS succeeded on testsrv\n");
+		sleep (5);
 		close (cnx);
 	}
 	return 0;
