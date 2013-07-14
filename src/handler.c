@@ -14,7 +14,7 @@
 
 #include <gnutls/gnutls.h>
 
-#include "internal.h"
+#include <tlspool/internal.h>
 
 
 /* This module hosts TLS handlers which treat an individual connection.

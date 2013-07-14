@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <pthread.h>
 
 #include <unistd.h>
 #include <errno.h>
@@ -11,7 +12,7 @@
 
 #include <gnutls/gnutls.h>
 
-#include "internal.h"
+#include <tlspool/internal.h>
 
 
 /*
@@ -42,7 +43,7 @@ void enter_pins (char *pinsocket) {
 	strcpy (sun.sun_path, pinsocket);
 	len += sizeof (sun.sun_family);
 	sun.sun_family = AF_UNIX;
-	sox = socket (SOCK_STREAM, AF_UNIX, 0);
+	sox = socket (AF_UNIX, SOCK_STREAM, 0);
 	if (!sox) {
 		perror ("Failed to allocate UNIX domain socket");
 		exit (1);
@@ -83,7 +84,8 @@ void enter_pins (char *pinsocket) {
 				pio.pio_data.pioc_error.tlserrno = errno;
 				strcpy (pio.pio_data.pioc_error.message, "Failed to read full message from TLS pool");
 			} else {
-				if (pio.pio_cmd != PIOC_PINENTRY_V1) {
+				if ((pio.pio_cmd != PIOC_PINENTRY_V1) && (pio.pio_cmd != PIOC_ERROR_V1)) {
+					printf ("DEBUG: Received funny command 0x%08x instead of 0x%08x\n", pio.pio_cmd, PIOC_PINENTRY_V1);
 					pio.pio_cmd = PIOC_ERROR_V1;
 					pio.pio_data.pioc_error.tlserrno = EBADE;
 					strcpy (pio.pio_data.pioc_error.message, "Unexpected command response from TLS pool");
@@ -105,7 +107,8 @@ void enter_pins (char *pinsocket) {
 }
 
 
-static struct tlspool_command *pinentry_cmd = NULL;
+static pthread_mutex_t pinentry_lock = PTHREAD_MUTEX_INITIALIZER;
+static struct command *pinentry_cmd = NULL;
 
 
 /*
@@ -116,13 +119,13 @@ static struct tlspool_command *pinentry_cmd = NULL;
  */
 void register_pinentry_command (struct command *cmd) {
 	int error = 0;
-	//TODO// Lock pinentry_*
+	pthread_mutex_lock (&pinentry_lock);
 	if (!pinentry_cmd) {
 		pinentry_cmd = cmd;
 	} else {
 		error = 1;
 	}
-	//TODO// Unock pinentry_*
+	pthread_mutex_unlock (&pinentry_lock);
 	if (error) {
 		send_error (cmd, EBUSY, "Another PIN entry process is active");
 		return;
@@ -136,11 +139,11 @@ void register_pinentry_command (struct command *cmd) {
  * address the currently set PIN handler connection.
  */
 int gnutls_pin_callback (void *userdata, int attempt, const char *token_url, const char *token_label, unsigned int flags, char *pin, size_t pin_max) {
-	struct tlspool_command *cmd;
+	struct command *cmd;
 	int appsox;
 	int retval = 0;
 	//TODO// First try to find the PIN locally
-	//TODO// Lock pinentry_*
+	pthread_mutex_lock (&pinentry_lock);
 	cmd = pinentry_cmd;
 	if (/*TODO(appsox != -1) &&*/ (cmd != NULL)) {
 		//TODO// pinentry_appsox = -1;
@@ -148,7 +151,7 @@ int gnutls_pin_callback (void *userdata, int attempt, const char *token_url, con
 	} else {
 		retval = GNUTLS_A_USER_CANCELED;
 	}
-	//TODO// Unlock pinentry_*
+	pthread_mutex_unlock (&pinentry_lock);
 	if (retval) {
 		return retval;
 	}

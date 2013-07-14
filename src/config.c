@@ -239,7 +239,7 @@ void cfg_socketname (char *item, int itemno, char *value) {
 		//
 		unlink (value);
 	}
-	sox = socket (SOCK_STREAM, AF_UNIX, 0);
+	sox = socket (AF_UNIX, SOCK_STREAM, 0);
 	if (sox < 0) {
 		perror ("Failed to open UNIX socket");
 		exit (1);

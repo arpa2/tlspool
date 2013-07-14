@@ -4,7 +4,7 @@
 #define TLSPOOL_STARTTLS_H
 
 
-#include <tlspool/command.h>
+#include <tlspool/commands.h>
 
 
 /*
@@ -21,14 +21,15 @@
  */
 
 
-#define TLSPOOL_DEFAULT_SOCKET_PATH "/var/run/tlspool"
+#define TLSPOOL_DEFAULT_SOCKET_PATH "/var/run/tlspool.sock"
 
 
-/* Setup the TLS pool socket to use, if it is not the default /var/run/tlspool
- * pathname.  The return value is the file descriptor for the pool.  This
- * function can be called again, in which case the argument is ignored and
- * the previously set socket is returned.  The function can also be called
- * with NULL in the first call, in which case the default location is used.
+/* Setup the TLS pool socket to use, if it is not the default path name
+ * /var/run/tlspool.sock.  The return value is the file descriptor for the
+ * pool.  This function can be called again, in which case the argument is
+ * ignored and the previously set socket is returned.  The function can also
+ * be called with NULL in the first call, in which case the default location
+ * is used.
  */
 int tlspool_socket (char *path);
 
@@ -36,7 +37,7 @@ int tlspool_socket (char *path);
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
  */
-int _starttls_libfun (int server, int fd, struct pioc_starttls *tlsdata, int checksni (char *,size_t));
+int _starttls_libfun (int server, int fd, starttls_t *tlsdata, int checksni (char *,size_t));
 
 
 /* The starttls_client() call is an inline wrapper around the library
@@ -50,7 +51,7 @@ int _starttls_libfun (int server, int fd, struct pioc_starttls *tlsdata, int che
  *
  * The function returns -1 on error, and sets errno appropriately.
  */
-inline int starttls_client (int fd, struct pioc_starttls *tlsdata) {
+static inline int starttls_client (int fd, starttls_t *tlsdata) {
 	return _starttls_libfun (0, fd, tlsdata, NULL);
 }
 
@@ -76,7 +77,7 @@ inline int starttls_client (int fd, struct pioc_starttls *tlsdata) {
  *
  * The function returns -1 on error, and sets errno appropriately.
  */
-inline int starttls_server (int fd, struct pioc_starttls *tlsdata, int checksni (char *,size_t)) {
+static inline int starttls_server (int fd, starttls_t *tlsdata, int checksni (char *,size_t)) {
 	return _starttls_libfun (1, fd, tlsdata, checksni);
 }
 

@@ -14,7 +14,8 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-#include "internal.h"
+#include <tlspool/commands.h>
+#include <tlspool/internal.h>
 
 
 /* The data stored in this module consists of lists of sockets to listen to

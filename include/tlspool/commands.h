@@ -106,6 +106,9 @@ struct tlspool_command {
 };
 
 
+typedef struct pioc_starttls starttls_t;
+
+
 /******************************** COMMANDS *******************************/
 
 

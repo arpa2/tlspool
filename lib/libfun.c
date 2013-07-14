@@ -7,7 +7,7 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/socket_un.h>
+#include <sys/un.h>
 
 #include <tlspool/starttls.h>
 #include <tlspool/commands.h>
@@ -17,7 +17,7 @@
  * of the two inline variations below, which start client and server sides.
  */
 int tlspool_socket (char *path) {
-	int poolfd = -1;
+	static int poolfd = -1;	/* Kept open until program termination */
 	//TODO// Possibly really test if a poolfd is valid?
 	if (poolfd == -1) {
 		struct sockaddr_un sun;
@@ -32,7 +32,7 @@ int tlspool_socket (char *path) {
 		strcpy (sun.sun_path, path);
 		sunlen += sizeof (sun.sun_family);
 		sun.sun_family = AF_UNIX;
-		poolfd = socket (SOCK_STREAM, AF_UNIX, 0);
+		poolfd = socket (AF_UNIX, SOCK_STREAM, 0);
 		if (poolfd == -1) {
 			return -1;
 		}
@@ -68,12 +68,13 @@ int tlspool_socket (char *path) {
  *
  * The function returns -1 on error, and sets errno appropriately.
  */
-int _starttls_libfun (int server, int fd, struct pioc_starttls *tlsdata, int checksni (char *,size_t)) {
+int _starttls_libfun (int server, int fd, starttls_t *tlsdata, int checksni (char *,size_t)) {
 	struct tlspool_command cmd;
 	int poolfd;
-	struct anc [CMSG_SPACE(sizeof (int))];
+	char anc [CMSG_SPACE(sizeof (int))];
 	struct iovec iov;
 	struct cmsghdr *cmsg;
+	struct msghdr mh = { 0 };
 	int processing = 1;
 
 	/* Prepare command structure */
@@ -86,7 +87,7 @@ int _starttls_libfun (int server, int fd, struct pioc_starttls *tlsdata, int che
 	cmd.pio_reqid = 666;	/* Static: No asynchronous behaviour */
 	cmd.pio_cbid = 0;
 	cmd.pio_cmd = server? PIOC_STARTTLS_SERVER_V1: PIOC_STARTTLS_CLIENT_V1;
-	memcpy (&cmd.pioc_data.pioc_starttls, tlsdata, sizeof (struct pioc_starttls));
+	memcpy (&cmd.pio_data.pioc_starttls, tlsdata, sizeof (struct pioc_starttls));
 
 	/* Send the request */
 	iov.iov_base = &cmd;
@@ -108,28 +109,28 @@ int _starttls_libfun (int server, int fd, struct pioc_starttls *tlsdata, int che
 	while (processing) {
 		mh.msg_control = anc;
 		mh.msg_controllen = sizeof (anc);
-		if (recvmsg (sox, &mh, 0) == -1) {
+		if (recvmsg (poolfd, &mh, 0) == -1) {
 			return -1;
 		}
 		switch (cmd.pio_cmd) {
 		case PIOC_ERROR_V1:
 			/* Bad luck, we failed */
 			//TODO// Send errno + message to syslog()
-			errno = cmd.pioc_data.pioc_error.tlserrno;
+			errno = cmd.pio_data.pioc_error.tlserrno;
 			return -1;
-		case PIOC_STARTTLS_LOCALID:
+		case PIOC_STARTTLS_LOCALID_V1:
 			/* Check if a proposed local name is acceptable */
-			if (server && check_sni && check_sni (cmd.pio_data.pioc_localid, 128)) {
+			if (server && checksni && checksni (cmd.pio_data.pioc_starttls.localid, 128)) {
 				;	// Use the value now stored in localid
 			} else {
-				*cmd.pio_data.pioc_localid = 0;
+				*cmd.pio_data.pioc_starttls.localid = 0;
 			}
-			mh.control = NULL;
-			mh.controllen = 0;
+			mh.msg_control = NULL;
+			mh.msg_controllen = 0;
 			if (sendmsg (poolfd, &mh, 0) == -1) {
 				return -1;
 			}
-			break;
+			break;	// Loop around and try again
 		case PIOC_STARTTLS_CLIENT_V1:
 		case PIOC_STARTTLS_SERVER_V1:
 			/* Wheee!!! we're done */
@@ -143,13 +144,13 @@ int _starttls_libfun (int server, int fd, struct pioc_starttls *tlsdata, int che
 	}
 
 	/* Return command output data */
-	cmsg = CMSG_FIRSTHEADER (&mh);
+	cmsg = CMSG_FIRSTHDR (&mh);
 	if (!cmsg) {
 		errno = EPROTO;
 		return -1;
 	}
-	memcpy (tlsdata, &cmd.pioc_data.pioc_starttls, sizeof (struct pioc_starttls));
-	return * (int *) CMSG_DATA (cmsg)
+	memcpy (tlsdata, &cmd.pio_data.pioc_starttls, sizeof (struct pioc_starttls));
+	return * (int *) CMSG_DATA (cmsg);
 }
 
 
