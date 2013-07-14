@@ -4,7 +4,8 @@ tlspool - A daemon program that concentrates TLS connectivity.
 
 SYNOPSIS
 
-tlspool [-c configfile] [-p]
+tlspool [-k] [-c configfile]
+tlspool [-p]
 
 DESCRIPTION
 
@@ -55,7 +56,9 @@ when either party sends vital information over the anonymous connection yet.
 When not called with the -p option, the TLS pool daemon is started in the
 background, optionally reading the file dictated by the -c option.  When
 the -p option is present, a running TLS pool daemon is assumed and a PIN
-is requested on the terminal, and submitted to the daemon.
+is requested on the terminal, and submitted to the daemon.  The -k option
+is used to kill any already running daemon detected through the PID file,
+instread of refusing to start a second daemon.
 
 
 

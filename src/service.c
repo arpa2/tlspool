@@ -117,10 +117,10 @@ int send_command (struct command *cmd, int passfd) {
 		cmsg->cmsg_level = SOL_SOCKET;
 		cmsg->cmsg_type = SCM_RIGHTS;
 		cmsg->cmsg_len = CMSG_LEN (sizeof (int));
-		* (int *) CMSG_DATA (cmsg) = cmd->passfd;
+		* (int *) CMSG_DATA (cmsg) = passfd;
 	}
 
-	printf ("DEBUG: Sending command 0x%08x to socket %d\n", cmd->cmd.pio_cmd, cmd->clientfd);
+	printf ("DEBUG: Sending command 0x%08x and fd %d to socket %d\n", cmd->cmd.pio_cmd, passfd, cmd->clientfd);
 	if (sendmsg (cmd->clientfd, &mh, 0) == -1) {
 		//TODO// Differentiate behaviour based on errno?
 		perror ("Failed to send command");

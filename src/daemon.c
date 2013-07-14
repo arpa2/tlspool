@@ -10,13 +10,21 @@ int main (int argc, char *argv []) {
 	char *pinentry = NULL;
 	char *cfgfile = NULL;
 	int parsing = 1;
+	int kill_competition = 0;
 
 	/*
 	 * Cmdline argument parsing
 	 */
 	while (parsing) {
-		int opt = getopt (argc, argv, "p:c:");
+		int opt = getopt (argc, argv, "kp:c:");
 		switch (opt) {
+		case 'k':
+			if (kill_competition) {
+				fprintf (stderr, "You can only flag kill-the-competition once\n");
+				exit (1);
+			}
+			kill_competition = 1;
+			break;
 		case 'c':
 			if (cfgfile) {
 				fprintf (stderr, "You can only specify one config file\n");
@@ -40,6 +48,10 @@ int main (int argc, char *argv []) {
 		fprintf (stderr, "You should specify either a pinentry socket file or a config file\n");
 		exit (1);
 	}
+	if (kill_competition && pinentry) {
+		fprintf (stderr, "You cannot combine kill-the-competition with client options\n");
+		exit (1);
+	}
 	if (!cfgfile) {
 		cfgfile = "/etc/tlspool.conf";
 	}
@@ -60,7 +72,7 @@ int main (int argc, char *argv []) {
 		case 0:
 			setsid ();
 			//TODO// close the common fd's 0/1/2
-			parse_cfgfile (cfgfile);
+			parse_cfgfile (cfgfile, kill_competition);
 			run_service ();
 			break;
 		default:

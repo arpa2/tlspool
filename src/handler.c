@@ -59,7 +59,6 @@
  * until one of the end points is shut down, at which time it will
  * return and assume the context will close down both pre-existing
  * sockets.
- * TODO: Also detect & handle close-down of the controling clientfd?
  */
 static void copycat (int remote, int local, int master) {
 	char buf [1024];
@@ -83,7 +82,7 @@ static void copycat (int remote, int local, int master) {
 		if (inout [0].revents & POLLIN) {
 			// Read local and encrypt to remote
 			sz = recv (local, buf, sizeof (buf), MSG_DONTWAIT);
-			printf ("DEBUG: Copycat received %d local bytes\n", (int) sz);
+			printf ("DEBUG: Copycat received %d local bytes from %d\n", (int) sz, local);
 			if (sz == -1) {
 				break;	// stream error
 			} else if (sz == 0) {
@@ -91,12 +90,14 @@ static void copycat (int remote, int local, int master) {
 				break;	// orderly shutdown
 			} else if (send (remote, buf, sz, MSG_DONTWAIT) != sz) {
 				break;	// communication error
+			} else {
+				printf ("DEBUG: Copycat sent %d bytes to remote %d\n", (int) sz, remote);
 			}
 		}
 		if (inout [1].revents & POLLIN) {
 			// Read remote and decrypt to local
 			sz = recv (remote, buf, sizeof (buf), MSG_DONTWAIT);
-			printf ("DEBUG: Copycat received %d remote bytes\n", (int) sz);
+			printf ("DEBUG: Copycat received %d remote bytes from %d\n", (int) sz, remote);
 			if (sz == -1) {
 				break;	// stream error
 			} else if (sz == 0) {
@@ -104,6 +105,8 @@ static void copycat (int remote, int local, int master) {
 				break;	// orderly shutdown
 			} else if (send (local, buf, sz, MSG_DONTWAIT) != sz) {
 				break;	// communication error
+			} else {
+				printf ("DEBUG: Copycat sent %d bytes to local %d\n", (int) sz, local);
 			}
 		}
 	}
@@ -145,10 +148,10 @@ static void *starttls_thread (void *cmd_void) {
 	}
 	cmd->cmd.pio_data.pioc_starttls.localid [0] =
 	cmd->cmd.pio_data.pioc_starttls.remoteid [0] = 0;
-	send_command (cmd, cmd->clientfd);	 // soxx [0] is app-received
+	send_command (cmd, soxx [0]);	 // soxx [0] is app-received
 	pthread_mutex_unlock (&cmd->ownership);
 	copycat (soxx [1], passfd, clientfd); // soxx [1] is pooled decryptlink
-	close (soxx [0]);
+	//TODO:SHOULDNOTBEHEREIBELIEVE// close (soxx [0]);
 	close (soxx [1]);
 	close (passfd);
 }

@@ -15,6 +15,7 @@
 #include <fcntl.h>
 #include <pwd.h>
 #include <grp.h>
+#include <signal.h>
 
 #include <ldap.h>
 
@@ -26,6 +27,8 @@
 static LDAP *ldap_handle;
 
 static struct memcached_st *cache;
+
+static int kill_old_pid = 0;
 
 typedef void (*cfghandler) (char *item, int itemno, char *value);
 
@@ -91,7 +94,7 @@ struct cfgopt config_options [] = {
 
 
 
-void parse_cfgfile (char *filename) {
+void parse_cfgfile (char *filename, int kill_competition) {
 	FILE *cf = fopen (filename, "r");
 	char line [514];
 	int linelen;
@@ -99,6 +102,7 @@ void parse_cfgfile (char *filename) {
 	char *here;
 	struct cfgopt *curopt;
 	int found;
+	kill_old_pid = kill_competition;
 	if (!cf) {
 		perror ("Failed to open configuration file");
 		exit (1);
@@ -184,6 +188,10 @@ void cfg_setvar (char *item, int itemno, char *value) {
 	fprintf (stdout, "DEBUG: SETUP   %s AS %s\n", item, value);
 }
 
+void unlink_pidfile (void) {
+	unlink (configvars [CFGVAR_DAEMON_PIDFILE]);
+}
+
 void cfg_pidfile (char *item, int itemno, char *value) {
 	static int fh = 0;
 	if (fh) {
@@ -191,18 +199,33 @@ void cfg_pidfile (char *item, int itemno, char *value) {
 		exit (1);
 	}
 	cfg_setvar (item, CFGVAR_DAEMON_PIDFILE, value);
+	atexit (unlink_pidfile);
 	fh = open (value, O_RDWR | O_CREAT, 0664);
 	char pidbuf [10];
 	if (fh < 0) {
 		perror ("Failed to open PID file");
 		exit (1);
 	}
+retry:
 	if (flock (fh, LOCK_EX | LOCK_NB) != 0) {
 		if (errno == EWOULDBLOCK) {
+			pid_t oldpid;
 			bzero (pidbuf, sizeof (pidbuf));
 			read (fh, pidbuf, sizeof (pidbuf)-1);
-			fprintf (stderr, "Another daemon owns the PID file: process %s", pidbuf);
-			exit (1);
+			oldpid = atoi (pidbuf);
+			if (kill_old_pid) {
+				if (kill (oldpid, SIGHUP) == 0) {
+					fprintf (stderr, "Sent hangup to old daemon with PID %s\n", pidbuf);
+					sleep (1);
+				}
+				lseek (fh, 0, SEEK_SET);
+				errno = 0;
+				goto retry;
+			}
+			if (kill (oldpid, 0) != -1) {
+				fprintf (stderr, "Another daemon owns the PID file: process %s", pidbuf);
+				exit (1);
+			}
 		} else {
 			perror ("Failed to own the PID file");
 			exit (1);

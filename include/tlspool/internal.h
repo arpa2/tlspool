@@ -56,6 +56,9 @@ struct callback {
 
 
 
+/* config.c */
+void parse_cfgfile (char *filename, int kill_competition);
+
 /* service.c */
 void run_service (void);
 void send_error (struct command *cmd, int tlserrno, char *msg);
