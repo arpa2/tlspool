@@ -131,7 +131,7 @@ static struct command *allocate_command (void) {
 			/* A full rotation -- delay of 10ms */
 			usleep (10000);
 		}
-	} while (pos != pool_pos);
+	}
 	pool [pos].claimed = 1;
 	return &pool [pos];
 }
