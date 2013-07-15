@@ -1,5 +1,8 @@
 all: libstarttls.so libstarttls.a testcli testsrv
 
+clean:
+	rm -f *.o libstarttls.so libstarttls.a testcli testsrv
+
 .c.o:
 	gcc -ggdb3 -pthread -fPIC -I ../include -I /usr/local/include -c -o $@ $<
 

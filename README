@@ -39,7 +39,7 @@ full stretch of this project is documented on the website,
 
 http://www.networkeffectalliance.org/
 
-We are currently at a state where the daemon and a small wrapper library for
+We are currently at a state where the daemon and a small stub library for
 applications are working, but without any TLS facilities yet.  So, even
 though you can ask for STARTTLS to be setup, it won't encrypt or authenticate.
 
@@ -47,14 +47,14 @@ What it WILL do, is setup all the plumbing for an exchange that provides a
 place for this to be added.  It is built like this:
 
 - src/tlspool is a daemon that provides the centralised STARTTLS service.
-- lib/libstarttls.* is a wrapper library for applications.
-- lib/testsrv is a test server using immediate STARTTLS for encryption.
-- lib/testcli is a test client using immediate STARTTLS for encryption.
+- lib/libstarttls.so / .a provide a stub library for applications.
+- lib/testsrv is a test server using immediate STARTTLS on incoming TCP.
+- lib/testcli is a test client using immediate STARTTLS on outgoing TCP.
 
 These can be run on one system (testcli and testsrv connect on localhost
 port 12345) to setup a line-based chat system between client and server.
 Note that the server will only respond to one client at a time; it is a
-mere test program.
+mere test program that wants to show the chat on the server console.
 
 The core logic used here is (client shown, server is similar):
 
@@ -63,15 +63,17 @@ The core logic used here is (client shown, server is similar):
 	fd = starttls_client (fd, ...);
 	...
 
-The daemon will cover TCP, UDP and SCTP over IPv4 and IPv6.
+The daemon will cover TCP, UDP and SCTP over IPv4 and IPv6.  Asynchronous
+versions of these calls are under design, but their use is obvious and the
+API to the TLS pool has been designed to support it.
 
-The daemon will provide configurable hooks for authorization; this can
-then be setup for the entire system at once.  The resulting information
-of both authentication and authorization will be shared using memcached,
-to simplify sharing of outcome not just accross time and between protocols,
-but also between different servers.  The design goal of memcached is to
-avoid repeated checks and repeated access to remotely stored information,
-until a certain caching time has passed.
+The daemon will provide configurable hooks for authentication and
+authorization; this can then be setup for the entire system at once.
+The resulting information of both authentication and authorization will be
+shared using memcached, to simplify sharing of outcome not just accross
+time and between protocols, but also between different servers.  The design
+goal of memcached is to avoid repeated checks and repeated access to
+remotely stored information, until a certain caching time has passed.
 
 CURRENT STATUS: The daemon starts, parses configuration directives and
 processes most of them.  The actual service is a full connection with

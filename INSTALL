@@ -1,0 +1,82 @@
+INSTALLING TLSPOOL
+==================
+
+This explains how to install this package.
+
+
+Dependencies
+------------
+
+Runtime dependencies are:
+
+ * libgnutls for TLS handling
+ * TODO: DNS lookup software
+ * libldap to access remote LDAP repositories
+ * libmemcached for caching of intermediate results
+ * TODO: libradius to do additional authn / authz [/acct]
+
+Include the development variants if your aim is to build it yourself.
+
+
+First-time setup
+----------------
+
+Create a user and group "tlspool" if you wish to drop privileges to a
+separate account.
+
+
+Building
+--------
+
+There is no ./configure, because automake and such tend to clutter
+development and Makefile readability.  If you'd care to donate one
+of these confusing structures, talk to me and I'll probably let you.
+
+There are two sub-targets with their own Makefiles:
+
+ * src/* hosts the daemon, which is an executable named "tlspool"
+ * lib/* hosts the stub library for applications, and provides:
+    - "libstarttls.a" and "libstarttls.so" to append to applications
+    - "testcli" and "testsrv" test/demo apps, for line-based chat
+
+You should simpy "make" in each of the directories.
+
+
+Running
+-------
+
+The tlspool daemon can be run against a configfile of choice, which must
+be explicitly configured.  My suggestion is to standardise on
+/etc/tlspool.conf so the normal script would implement actions with:
+
+ * "start" through "tlspool -c /etc/tlspool.conf"
+ * "stop" through "killall `cat /var/runtlspool.pid`"
+ * "restart" through "tlspool -kc /etc/tlspool.conf"
+
+The -k option indicates that any older TLS pool daemon should be kicked
+out, if it exists.  This will remove its locks on the PID file and sockets.
+At present, this will also break off any existing connections.  This also
+assumes that the PID file is set to /var/run/tlspool.pid and although not
+visible here, the socket's default location is /var/run/tlspool.sock
+
+When running the TLS pool as a user without root privileges, a few things
+need to be different than in the default configuration:
+
+ * "daemon_pidfile" should be in the user's area of control
+ * "socket_user" and "socket_group" should probably not be set
+ * "daemon_chroot" cannot be used
+ * "daemon_user" and "daemon_group" should probably not be set
+ * "socket_path" and "daemon_pidfile" should be in the user's area
+ * "memcache_host" should normally not be used
+ * "pkcs11_path" may be setup for a personally held token device
+ * "radius_XXX" should normally not be used
+
+We could support a setup with defaults like ~/.tlspool/tlspool.conf for
+the configuration, ~/.tlspool/tlspool.pid for the PID file and
+~/.tlspool/tlspool.sock for the socket.  Note that it can make a lot of
+sense to run your own TLS pool within your user account, to avoid
+sharing access to your PKCS #11 credentials with others.  But doing so
+will not automatically incorporate it in system-wide key management
+strategies.
+
+

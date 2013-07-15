@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <pthread.h>
 
 #include <unistd.h>
@@ -87,7 +88,7 @@ void enter_pins (char *pinsocket) {
 				if ((pio.pio_cmd != PIOC_PINENTRY_V1) && (pio.pio_cmd != PIOC_ERROR_V1)) {
 					printf ("DEBUG: Received funny command 0x%08x instead of 0x%08x\n", pio.pio_cmd, PIOC_PINENTRY_V1);
 					pio.pio_cmd = PIOC_ERROR_V1;
-					pio.pio_data.pioc_error.tlserrno = EBADE;
+					pio.pio_data.pioc_error.tlserrno = EPROTO;
 					strcpy (pio.pio_data.pioc_error.message, "Unexpected command response from TLS pool");
 				}
 			}
