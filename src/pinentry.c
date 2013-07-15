@@ -28,7 +28,7 @@
  */
 void enter_pins (char *pinsocket) {
 	struct sockaddr_un sun;
-	int len = strlen (pinsocket);
+	int len;
 	struct tlspool_command pio;
 	struct pioc_pinentry *pe = &pio.pio_data.pioc_pinentry;
 	char *pwd = NULL;
@@ -37,12 +37,12 @@ void enter_pins (char *pinsocket) {
 	/*
 	 * Connect to the UNIX domain socket for PIN entry
 	 */
-	if (len + 1 > sizeof (sun.sun_path)) {
+	if (strlen (pinsocket) + 1 > sizeof (sun.sun_path)) {
 		fprintf (stderr, "Socket path too long: %s\n", pinsocket);
 		exit (1);
 	}
 	strcpy (sun.sun_path, pinsocket);
-	len += sizeof (sun.sun_family);
+	len = SUN_LEN (&sun);
 	sun.sun_family = AF_UNIX;
 	sox = socket (AF_UNIX, SOCK_STREAM, 0);
 	if (!sox) {

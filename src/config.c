@@ -245,16 +245,16 @@ retry:
 
 void cfg_socketname (char *item, int itemno, char *value) {
 	struct sockaddr_un sun;
-	int len = strlen (value);
+	int len;
 	int sox;
 	uid_t me = getuid ();
 	gid_t my = getgid ();
-	if (len + 1 > sizeof (sun.sun_path)) {
+	if (strlen (value) + 1 > sizeof (sun.sun_path)) {
 		fprintf (stderr, "Socket path too long: %s\n", value);
 		exit (1);
 	}
 	strcpy (sun.sun_path, value);
-	len += sizeof (sun.sun_family);
+	len = SUN_LEN (&sun);
 	sun.sun_family = AF_UNIX;
 	if (configvars [CFGVAR_DAEMON_PIDFILE]) {
 		//

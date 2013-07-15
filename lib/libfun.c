@@ -26,11 +26,11 @@ int tlspool_socket (char *path) {
 			path = TLSPOOL_DEFAULT_SOCKET_PATH;
 		}
 		sunlen = strlen (path);
-		if (sunlen + 1 > sizeof (sun.sun_path)) {
+		if (strlen (path) + 1 > sizeof (sun.sun_path)) {
 			errno = ENAMETOOLONG;
 		}
 		strcpy (sun.sun_path, path);
-		sunlen += sizeof (sun.sun_family);
+		sunlen = SUN_LEN (&sun);
 		sun.sun_family = AF_UNIX;
 		poolfd = socket (AF_UNIX, SOCK_STREAM, 0);
 		if (poolfd == -1) {

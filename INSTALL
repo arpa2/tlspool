@@ -1,7 +1,8 @@
 INSTALLING TLSPOOL
 ==================
 
-This explains how to install this package.
+This explains how to install the TLS pool daemon, and how to play with the
+test/demo programs for the client and server side.
 
 
 Dependencies
@@ -10,12 +11,16 @@ Dependencies
 Runtime dependencies are:
 
  * libgnutls for TLS handling
- * TODO: DNS lookup software
- * libldap to access remote LDAP repositories
+ * libldns for DNS lookups
+ * libldap for LDAP lookups
  * libmemcached for caching of intermediate results
  * TODO: libradius to do additional authn / authz [/acct]
 
 Include the development variants if your aim is to build it yourself.
+
+TODO: We should probably consider build variations to avoid requiring all
+these dependencies when only a bit is kwown to be required.  That's the
+sort of maturity that this project has not reached yet.
 
 
 First-time setup
@@ -50,7 +55,7 @@ be explicitly configured.  My suggestion is to standardise on
 /etc/tlspool.conf so the normal script would implement actions with:
 
  * "start" through "tlspool -c /etc/tlspool.conf"
- * "stop" through "killall `cat /var/runtlspool.pid`"
+ * "stop" through "killall `cat /var/run/tlspool.pid`"
  * "restart" through "tlspool -kc /etc/tlspool.conf"
 
 The -k option indicates that any older TLS pool daemon should be kicked
@@ -79,4 +84,41 @@ sharing access to your PKCS #11 credentials with others.  But doing so
 will not automatically incorporate it in system-wide key management
 strategies.
 
+
+Online identities
+-----------------
+
+TODO
+
+
+Testing
+-------
+
+Assuming that the TLS pool daemon started successfully, the only thing
+that clients and servers need to do is to connect to it and ask it to
+STARTTLS over a given file descriptor or socket, and return another one
+to replace it.  This is implemented in the stub library, for which the
+testcli and testsrv programs form a test client and test server,
+respectively.
+
+The test programs are best started in their own terminals, so their
+input and output does not confuse you.  The server starts as any
+normal server, creating a listening socket and waiting for input.
+We have hardcoded address ::1 or localhost and port 12345 into the
+test software.  When the client connects, each immediately calls
+the STARTTLS operation from their perspective; one starts a TLS client
+connection and the other a TLS server connection.  Then, typed lines
+are passed from one to the other, going through the TLS pool which
+takes care of the TLS encryption on the sending side, and the TLS
+decryption on the other end.
+
+The TLS pool takes care of authentication, authorization and, if so
+desired, even accounting.  The basic mode of authentication comes down
+to validating certificates as proper online identitites, using such
+technologies as LDAP, DANE and DNSSEC.  External RADIUS tools can be
+added to expand on this, and flag bits may also prove helpful to
+modify the TLS pool behaviour in predetermined manners.
+
+The TLS pool also handles teardown in all its forms with grace; that
+is, it will detect it immediately and notify the other side.
 

@@ -99,6 +99,44 @@ static void unregister_client_socket_byindex (int soxidx) {
 }
 
 
+/* Allocate a free command structure for the processing cycle.  Commands are
+ * considered claimed between allocate_command() and the freeing of the
+ * command that takes place while sending a reply.  Note that sending a
+ * callback request does not count as a reply; it defers the freeing-up of
+ * the command structure.
+ */
+static struct command *allocate_command (void) {
+	static struct command *pool = NULL;
+	static int pool_len = 1000;
+	static int pool_pos = 0;
+	int pos;
+	int found;
+	struct command *cmd;
+	if (!pool) {
+		pool = (struct command *) calloc (1000, sizeof (struct command));
+		if (!pool) {
+			fprintf (stderr, "Failed to allocate command pool\n");
+			exit (1);
+		}
+		bzero (pool, 1000 * sizeof (struct command));
+	}
+	pos = pool_pos;
+	found = 0;
+	while (pool [pos].claimed) {
+		pos++;
+		if (pos >= pool_len) {
+			pool = 0;
+		}
+		if (pos == pool_pos) {
+			/* A full rotation -- delay of 10ms */
+			usleep (10000);
+		}
+	} while (pos != pool_pos);
+	pool [pos].claimed = 1;
+	return &pool [pos];
+}
+
+
 int send_command (struct command *cmd, int passfd) {
 	int newfd;
 	char anc [CMSG_SPACE(sizeof (int))];
@@ -124,9 +162,12 @@ int send_command (struct command *cmd, int passfd) {
 	if (sendmsg (cmd->clientfd, &mh, 0) == -1) {
 		//TODO// Differentiate behaviour based on errno?
 		perror ("Failed to send command");
+		cmd->claimed = 0;
 		return 0;
 	} else {
 		printf ("DEBUG: Sent command code 0x%08x\n", cmd->cmd.pio_cmd);
+		cmd->claimed = 0;
+		return 1;
 	}
 }
 
@@ -301,9 +342,9 @@ void process_activity (int sox, int soxidx, struct soxinfo *soxi, short int reve
 			}
 		}
 		if (soxi->flags & SOF_CLIENT) {
-			struct command cmd;
-			if (receive_command (sox, &cmd)) {
-				process_command (&cmd);
+			struct command *cmd = allocate_command ();;
+			if (receive_command (sox, cmd)) {
+				process_command (cmd);
 			} else {
 				printf ("DEBUG: Failed to receive command request\n");
 			}

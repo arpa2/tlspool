@@ -112,6 +112,16 @@ application area covered.  All the TLS pool does is read tokens, looking
 for usable keys to authenticate its identities to the Internet, both over
 X.509 and over OpenPGP.
 
+One final, and hardly recognised use of having a central TLS pool and
+potentially centralised PKCS #11 repositories is the ability to sniff
+the network traffic for intrusion attempts.  To be able to do this in
+the presence of encrypted connections, the ability to decrypt the
+traffic must be offered to sniffers like Snort.  The decryption usually
+involves manual input of certificates and private keys, which is no
+longer necessary with PKCS #11 with remote access to the API in place.
+So, large-scale organisations could setup a networked HSM and use it
+both for production use and for feeding the intrusion detectors.
+
 
 Additional Rules: RADIUS
 ------------------------

@@ -120,6 +120,7 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 				errno = 0;
 				break;	// orderly shutdown
 			} else if (gnutls_record_send (wrapped, buf, sz) != sz) {
+				//TODO// GnuTLS return value processing
 				break;	// communication error
 			} else {
 				printf ("DEBUG: Copycat sent %d bytes to remote %d\n", (int) sz, remote);
@@ -128,6 +129,7 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 		if (inout [1].revents & POLLIN) {
 			// Read remote and decrypt to local
 			sz = gnutls_record_recv (wrapped, buf, sizeof (buf));
+			//TODO// GnuTLS return value processing
 			printf ("DEBUG: Copycat received %d remote bytes from %d\n", (int) sz, remote);
 			if (sz == -1) {
 				break;	// stream error
@@ -145,6 +147,19 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 }
 
 
+/* The callback function that retrieves certification information from the
+ * server in the course of the handshake procedure.
+ */
+int retrieve_srv_certification () {
+}
+
+/* The callback function that retrieves certification information from the
+ * client in the course of the handshake procedure.
+ */
+int retrieve_cli_certification () {
+}
+
+
 /*
  * The starttls_task is a main program for the setup of a TLS connection,
  * either in client mode or server mode.  Note that the distinction between
@@ -155,10 +170,10 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
  * application, but the TLS pool will continue to be active in a copycat
  * procedure: encrypting outgoing traffic and decrypting incoming traffic.
  * TODO: Are client and server routines different?
- *
- * The thread is started with an ownership lock on the provided cmd.
- * It should unlock it as soon as possible, and the parent thread waits
- * for this before giving up on cmd.
+ //OLD// *
+ //OLD// * The thread is started with an ownership lock on the provided cmd.
+ //OLD// * It should unlock it as soon as possible, and the parent thread waits
+ //OLD// * for this before giving up on cmd.
  */
 static void *starttls_thread (void *cmd_void) {
 	struct command *cmd = (struct command *) cmd_void;
@@ -173,12 +188,12 @@ static void *starttls_thread (void *cmd_void) {
 	//TODO// Actually do STARTTLS ;-)
 	if (passfd == -1) {
 		send_error (cmd, EPROTO, "You must supply a socket");
-		pthread_mutex_unlock (&cmd->ownership);
+		//OLD// pthread_mutex_unlock (&cmd->ownership);
 		return;
 	}
 	if (socketpair (SOCK_STREAM, AF_UNIX, 0, soxx) < 0) {
 		send_error (cmd, errno, "Failed to create 2ary sockets");
-		pthread_mutex_unlock (&cmd->ownership);
+		//OLD// pthread_mutex_unlock (&cmd->ownership);
 		return;
 	}
 	//
@@ -187,10 +202,12 @@ static void *starttls_thread (void *cmd_void) {
 		gnutls_init (&session,  GNUTLS_SERVER);
 		gnutls_priority_set_direct (session, "NORMAL:+ANON-ECDH:+ANON-DH", NULL);
 		gnutls_credentials_set (session, GNUTLS_CRD_ANON, srv_anoncred);
+		//TODO// gnutls_certificate_set_retrieve_function2 (retrieve_srv_certification);
 	} else {
 		gnutls_init (&session, GNUTLS_CLIENT);
 		gnutls_priority_set_direct (session, "PERFORMANCE:+ANON-ECDH:+ANON-DH", NULL);
 		gnutls_credentials_set (session, GNUTLS_CRD_ANON, cli_anoncred);
+		//TODO// gnutls_certificate_set_retrieve_function2 (retrieve_cli_certification);
 	}
 	gnutls_transport_set_int (session, passfd);
 	gnutls_handshake_set_timeout (session, GNUTLS_DEFAULT_HANDSHAKE_TIMEOUT);
@@ -201,7 +218,7 @@ static void *starttls_thread (void *cmd_void) {
 		gnutls_deinit (session);
 		fprintf (stderr, "TLS handshake failed: %s\n", gnutls_strerror (ret));
 		send_error (cmd, EPERM, (char *) gnutls_strerror (ret));
-		pthread_mutex_unlock (&cmd->ownership);
+		//OLD// pthread_mutex_unlock (&cmd->ownership);
 		close (soxx [0]);
 		close (soxx [1]);
 		close (passfd);
@@ -214,7 +231,7 @@ static void *starttls_thread (void *cmd_void) {
 	cmd->cmd.pio_data.pioc_starttls.remoteid [0] = 0;
 	send_command (cmd, soxx [0]);	// soxx [0] is app-received
 	close (soxx [0]);		// assuming cross-pid dup() is finished
-	pthread_mutex_unlock (&cmd->ownership);
+	//OLD// pthread_mutex_unlock (&cmd->ownership);
 	//
 	// Copy TLS records until the connection is closed
 	copycat (soxx [1], passfd, session, clientfd); // soxx [1] is pooled decryptlink
@@ -233,27 +250,27 @@ static void *starttls_thread (void *cmd_void) {
  * TODO: Are client and server routines different?
  */
 void starttls_client (struct command *cmd) {
-	//TODO// Move mutex initialisation to the service code
-	pthread_mutex_init (&cmd->ownership, NULL);
-	pthread_mutex_lock (&cmd->ownership);
+	//OLD// //TODO// Move mutex initialisation to the service code
+	//OLD// pthread_mutex_init (&cmd->ownership, NULL);
+	//OLD// pthread_mutex_lock (&cmd->ownership);
 	/* Create a thread and, if successful, wait for it to unlock cmd */
 	errno = pthread_create (&cmd->handler, NULL, starttls_thread, (void *) cmd);
 	if (errno) {
 		send_error (cmd, ESRCH, "STARTTLS_CLIENT thread refused");
-		pthread_mutex_unlock (&cmd->ownership);
+		//OLD// pthread_mutex_unlock (&cmd->ownership);
 		return;
 	}
 	errno = pthread_detach (cmd->handler);
 	if (errno) {
 		//TODO// Kill the thread... somehow
 		send_error (cmd, ESRCH, "STARTTLS_CLIENT thread detachment refused");
-		pthread_mutex_lock (&cmd->ownership);
-		pthread_mutex_unlock (&cmd->ownership);
+		//OLD// pthread_mutex_lock (&cmd->ownership);
+		//OLD// pthread_mutex_unlock (&cmd->ownership);
 		return;
 	}
 	/* Do not continue before the thread gives up ownership of cmd */
-	pthread_mutex_lock (&cmd->ownership);
-	pthread_mutex_unlock (&cmd->ownership);
+	//OLD// pthread_mutex_lock (&cmd->ownership);
+	//OLD// pthread_mutex_unlock (&cmd->ownership);
 }
 
 /*
@@ -263,26 +280,26 @@ void starttls_client (struct command *cmd) {
  * spark off a new thread that handles the operations.
  */
 void starttls_server (struct command *cmd) {
-	//TODO// Move mutex initialisation to the service code
-	pthread_mutex_init (&cmd->ownership, NULL);
-	pthread_mutex_lock (&cmd->ownership);
+	//OLD// //TODO// Move mutex initialisation to the service code
+	//OLD// pthread_mutex_init (&cmd->ownership, NULL);
+	//OLD// pthread_mutex_lock (&cmd->ownership);
 	/* Create a thread and, if successful, wait for it to unlock cmd */
 	errno = pthread_create (&cmd->handler, NULL, starttls_thread, (void *) cmd);
 	if (errno) {
 		send_error (cmd, ESRCH, "STARTTLS_SERVER thread refused");
-		pthread_mutex_unlock (&cmd->ownership);
+		//OLD// pthread_mutex_unlock (&cmd->ownership);
 		return;
 	}
 	errno = pthread_detach (cmd->handler);
 	if (errno) {
 		//TODO// Kill the thread... somehow
 		send_error (cmd, ESRCH, "STARTTLS_CLIENT thread detachment refused");
-		pthread_mutex_lock (&cmd->ownership);
-		pthread_mutex_unlock (&cmd->ownership);
+		//OLD// pthread_mutex_lock (&cmd->ownership);
+		//OLD// pthread_mutex_unlock (&cmd->ownership);
 		return;
 	}
 	/* Do not continue before the thread gives up ownership of cmd */
-	pthread_mutex_lock (&cmd->ownership);
-	pthread_mutex_unlock (&cmd->ownership);
+	//OLD// pthread_mutex_lock (&cmd->ownership);
+	//OLD// pthread_mutex_unlock (&cmd->ownership);
 }
 
