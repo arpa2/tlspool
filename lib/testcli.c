@@ -86,6 +86,8 @@ int main (int argc, char *argv) {
 	printf ("DEBUG: STARTTLS succeeded on testcli\n");
 	runterminal (plainfd);
 	close (plainfd);
+	printf ("DEBUG: Closed connection.  Waiting 2s to improve testing.\n");
+	sleep (2);
 	return 0;
 }
 

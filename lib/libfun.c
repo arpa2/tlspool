@@ -110,6 +110,7 @@ int _starttls_libfun (int server, int fd, starttls_t *tlsdata, int checksni (cha
 		mh.msg_control = anc;
 		mh.msg_controllen = sizeof (anc);
 		if (recvmsg (poolfd, &mh, 0) == -1) {
+			close (fd);
 			return -1;
 		}
 		switch (cmd.pio_cmd) {
@@ -117,6 +118,7 @@ int _starttls_libfun (int server, int fd, starttls_t *tlsdata, int checksni (cha
 			/* Bad luck, we failed */
 			//TODO// Send errno + message to syslog()
 			errno = cmd.pio_data.pioc_error.tlserrno;
+			close (fd);
 			return -1;
 		case PIOC_STARTTLS_LOCALID_V1:
 			/* Check if a proposed local name is acceptable */
@@ -139,9 +141,13 @@ int _starttls_libfun (int server, int fd, starttls_t *tlsdata, int checksni (cha
 		default:
 			/* V1 protocol error */
 			errno = EPROTO;
+			close (fd);
 			return -1;
 		}
 	}
+
+	/* Close the now-duplicated or now-erradicated original fd */
+	close (fd);
 
 	/* Return command output data */
 	cmsg = CMSG_FIRSTHDR (&mh);

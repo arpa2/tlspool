@@ -148,10 +148,10 @@ static void *starttls_thread (void *cmd_void) {
 	}
 	cmd->cmd.pio_data.pioc_starttls.localid [0] =
 	cmd->cmd.pio_data.pioc_starttls.remoteid [0] = 0;
-	send_command (cmd, soxx [0]);	 // soxx [0] is app-received
+	send_command (cmd, soxx [0]);	// soxx [0] is app-received
+	close (soxx [0]);		// assuming cross-pid dup() is finished
 	pthread_mutex_unlock (&cmd->ownership);
 	copycat (soxx [1], passfd, clientfd); // soxx [1] is pooled decryptlink
-	//TODO:SHOULDNOTBEHEREIBELIEVE// close (soxx [0]);
 	close (soxx [1]);
 	close (passfd);
 }
