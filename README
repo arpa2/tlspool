@@ -9,8 +9,8 @@ central location of the TLS pool makes it easy to enforce consistent rules
 for authentication and authorization rules.
 
 
-Current Status
---------------
+Proof of Concept code included
+------------------------------
 
 Currently, this work is in a proof-of-concept state, and programmed in
 Python.  This has been the work of a couple of students who wrote in Python,
@@ -32,16 +32,38 @@ to implement this sort of thing.
 Full-blown daemon development
 -----------------------------
 
-This daemon design is part of the plans of the Network Effect Alliance,
+The actual daemon design is part of the plans of the Network Effect Alliance,
 which aims to improve everyone's Internet quality through distribution of
 more protocols and facilities under privately owned domain names.  The
 full stretch of this project is documented on the website,
-http://www.networkeffectalliance.org
 
-Future developments will provide include/library files that offer simple
-calls fd=starttls_client(fd,...) and fd=starttls_server(fd,...) to
-accommodate the switch from unencrypted traffic to TLS-encrypted traffic.
-Protocol support for TCP, UDP and SCTP over IPv4 or IPv6 will be provided.
+http://www.networkeffectalliance.org/
+
+We are currently at a state where the daemon and a small wrapper library for
+applications are working, but without any TLS facilities yet.  So, even
+though you can ask for STARTTLS to be setup, it won't encrypt or authenticate.
+
+What it WILL do, is setup all the plumbing for an exchange that provides a
+place for this to be added.  It is built like this:
+
+- src/tlspool is a daemon that provides the centralised STARTTLS service.
+- lib/libstarttls.* is a wrapper library for applications.
+- lib/testsrv is a test server using immediate STARTTLS for encryption.
+- lib/testcli is a test client using immediate STARTTLS for encryption.
+
+These can be run on one system (testcli and testsrv connect on localhost
+port 12345) to setup a line-based chat system between client and server.
+Note that the server will only respond to one client at a time; it is a
+mere test program.
+
+The core logic used here is (client shown, server is similar):
+
+	#include <tlspool/starttls.h>
+	...
+	fd = starttls_client (fd, ...);
+	...
+
+The daemon will cover TCP, UDP and SCTP over IPv4 and IPv6.
 
 The daemon will provide configurable hooks for authorization; this can
 then be setup for the entire system at once.  The resulting information
@@ -52,8 +74,9 @@ avoid repeated checks and repeated access to remotely stored information,
 until a certain caching time has passed.
 
 CURRENT STATUS: The daemon starts, parses configuration directives and
-processes most of them.  There is no actual service yet, just a loop that
-makes the tool infinitely sleepy.
+processes most of them.  The actual service is a full connection with
+all the plumbing for setting it up and tearing it down gracefully,
+but without the actual use of TLS.
 
 
 The importance of PKCS #11
