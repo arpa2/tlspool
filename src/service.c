@@ -57,6 +57,72 @@ static struct callback *cbfree;
 static pthread_mutex_t cbfree_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 
+/* Allocate a free command structure for the processing cycle.  Commands are
+ * considered claimed between allocate_command_for_clientfd() and the freeing
+ * of the command that takes place while sending a reply.  Note that sending
+ * a callback request does not count as a reply; it defers the freeing-up of
+ * the command structure.
+ *
+ * As for locking... this function is only called by the master thread, so
+ * it requires no locks.  It merely sets the "claimed" flag (after setting
+ * up the "clientfd" field) after which it is airborne.  Unlocking is done
+ * by the thread that happens to be working on the command at that time,
+ * and is effectively done by resetting the "claimed" flag to zero, and not
+ * doing _anything_ with the command afterwards.
+ */
+static struct command *cmdpool = NULL;
+static int cmdpool_len = 1000;
+static struct command *allocate_command_for_clientfd (int fd) {
+	static int cmdpool_pos = 0;
+	int pos;
+	struct command *cmd;
+	if (!cmdpool) {
+		cmdpool = (struct command *) calloc (1000, sizeof (struct command));
+		if (!cmdpool) {
+			fprintf (stderr, "Failed to allocate command pool\n");
+			exit (1);
+		}
+		bzero (cmdpool, 1000 * sizeof (struct command));
+	}
+	pos = cmdpool_pos;
+	while (cmdpool [pos].claimed) {
+		pos++;
+		if (pos >= cmdpool_len) {
+			cmdpool = 0;
+		}
+		if (pos == cmdpool_pos) {
+			/* A full rotation -- delay of 10ms */
+			usleep (10000);
+		}
+	}
+	cmdpool [pos].clientfd = fd;
+	cmdpool [pos].handler = pthread_self ();	// Not fit for cancel
+	cmdpool [pos].claimed = 1;
+	return &cmdpool [pos];
+}
+
+
+/* Free any commands that were allocated to the given client file descriptor.
+ * This is disruptive; the commands will not continue their behaviour by
+ * responding to the requests.  This means that it should only be used for
+ * situations where the client file descriptor was closed.
+ * Any threads that may be running or waiting on the command are cancelled.
+ *
+ * TODO: This is O(cmdpool_len) so linked lists could help to avoid trouble.
+ */
+static void free_commands_by_clientfd (int clientfd) {
+	int i;
+	for (i=0; i<cmdpool_len; i++) {
+		if (cmdpool [i].claimed) {
+			if (cmdpool [i].clientfd == clientfd) {
+				pthread_cancel (cmdpool [i].handler);
+				cmdpool [i].claimed = 0;
+			}
+		}
+	}
+}
+
+
 /* Register a socket.  It is assumed that first all server sockets register */
 void register_socket (int sox, uint32_t soxinfo_flags) {
 	int flags = fcntl (sox, F_GETFD);
@@ -91,49 +157,14 @@ void register_client_socket (int clisox) {
 /* TODO: This may copy information back and thereby avoid processing in the
  * current loop passthrough.  No problem, poll() will show it once more. */
 static void unregister_client_socket_byindex (int soxidx) {
+	int sox = soxpoll [soxidx].fd;
+	pinentry_forget_clientfd (sox);
+	free_commands_by_clientfd (sox);
 	num_sox--;
 	if (soxidx < num_sox) {
 		memcpy (&soxinfo [soxidx], &soxinfo [num_sox], sizeof (*soxinfo));
 		memcpy (&soxpoll [soxidx], &soxpoll [num_sox], sizeof (*soxpoll));
 	}
-}
-
-
-/* Allocate a free command structure for the processing cycle.  Commands are
- * considered claimed between allocate_command() and the freeing of the
- * command that takes place while sending a reply.  Note that sending a
- * callback request does not count as a reply; it defers the freeing-up of
- * the command structure.
- */
-static struct command *allocate_command (void) {
-	static struct command *pool = NULL;
-	static int pool_len = 1000;
-	static int pool_pos = 0;
-	int pos;
-	int found;
-	struct command *cmd;
-	if (!pool) {
-		pool = (struct command *) calloc (1000, sizeof (struct command));
-		if (!pool) {
-			fprintf (stderr, "Failed to allocate command pool\n");
-			exit (1);
-		}
-		bzero (pool, 1000 * sizeof (struct command));
-	}
-	pos = pool_pos;
-	found = 0;
-	while (pool [pos].claimed) {
-		pos++;
-		if (pos >= pool_len) {
-			pool = 0;
-		}
-		if (pos == pool_pos) {
-			/* A full rotation -- delay of 10ms */
-			usleep (10000);
-		}
-	}
-	pool [pos].claimed = 1;
-	return &pool [pos];
 }
 
 
@@ -202,14 +233,13 @@ int receive_command (int sox, struct command *cmd) {
 	mh.msg_control = anc;
 	mh.msg_controllen = sizeof (anc);
 
-	cmd->clientfd = sox;
 	cmd->passfd = -1;
 	if (recvmsg (sox, &mh, 0) == -1) {
 		//TODO// Differentiate behaviour based on errno?
 		perror ("Failed to receive command");
 		return 0;
 	}
-	printf ("DEBUG: Received command request code 0x%08x\n", cmd->cmd.pio_cmd);
+	printf ("DEBUG: Received command request code 0x%08x with cbid=%d over fd=%d\n", cmd->cmd.pio_cmd, cmd->cmd.pio_cbid, sox);
 
 	cmsg = CMSG_FIRSTHDR (&mh);
 	if (cmsg && (cmsg->cmsg_len == CMSG_LEN (sizeof (int)))) {
@@ -234,13 +264,14 @@ static int is_callback (struct command *cmd) {
 	if (cbid > 1024) {	/* TODO: dynamicity */
 		return 0;
 	}
+	cbid--;
 	if (cblist [cbid].fd < 0) {
 		return 0;
 	}
 	if (cblist [cbid].fd != cmd->clientfd) {
 		return 0;
 	}
-	if (!cblist [cbid].followup) {
+	if (cblist [cbid].followup) {
 		return 0;
 	}
 	return 1;
@@ -249,25 +280,41 @@ static int is_callback (struct command *cmd) {
 
 /* Desire a callback and in the process of doing so, send a callback response.
  * This must be called from another thread than the main TLS pool thread.
+ *
+ * The code below and the signaling post_callback call claim the cbfree_mutex
+ * as a condition to protect (keep atomic) the conditioning and signaling.
+ * The condition awaited for which the callback's condition presents a hint
+ * is the setting of the followup pointer in the callback structure, which
+ * links in the command that responds to the callback placed.
  */
-static void await_callback (struct command *cmdresp, struct command **followup) {
-	int cbi;
+struct command *send_callback_and_await_response (struct command *cmdresp) {
+	struct callback *cb;
+	struct command *followup;
 	pthread_mutex_lock (&cbfree_mutex);
-	struct callback *cb = cbfree;
+	cb = cbfree;
 	if (!cb) {
 		//TODO// Allocate more...
 		fprintf (stderr, "Ran out of callback structures.  Crashing as a coward\n");
 		exit (1);
 	}
+	//TODO// It's simpler to administer index numbers and not pointers
 	cbfree = cb->next;
-	pthread_mutex_unlock (&cbfree_mutex);
-	cmdresp->cmd.pio_cbid = (((intptr_t) cb) - ((intptr_t) cblist)) / ((intptr_t) sizeof (struct callback));
+	cmdresp->cmd.pio_cbid = 1 + (((intptr_t) cb) - ((intptr_t) cblist)) / ((intptr_t) sizeof (struct callback));
 	cb->fd = cmdresp->clientfd;
-	cb->followup = followup;
-	cb->next = NULL; //TODO// Enqueu in fd-queue
-	//TODO// race condition: should send after locking the mutex...
+	cb->followup = NULL;
+	cb->next = NULL; //TODO// Enqueue in fd-queue
 	send_command (cmdresp, -1);
-	pthread_mutex_lock (&cb->lock);
+	do {
+		//TODO// pthread_cond_timedwait?
+		printf ("DEBUG: Waiting with fd=%d and cbid=%d on semaphone 0x%08x\n", cb->fd, cmdresp->cmd.pio_cbid, cb);
+		pthread_cond_wait (&cb->semaphore, &cbfree_mutex);
+		followup = cb->followup;
+	} while (!followup);
+	//TODO// Remove cb from the fd's cblist
+	cb->next = cbfree;
+	cbfree = cb;
+	pthread_mutex_unlock (&cbfree_mutex);
+	return followup;
 }
 
 
@@ -278,12 +325,10 @@ static void await_callback (struct command *cmdresp, struct command **followup) 
 static void post_callback (struct command *cmd) {
 	uint16_t cbid = cmd->cmd.pio_cbid - 1;
 	cblist [cbid].fd = -1;
-	* cblist [cbid].followup = cmd;
-	pthread_mutex_unlock (&cblist [cbid].lock);
+	cblist [cbid].followup = cmd;
 	pthread_mutex_lock (&cbfree_mutex);
-	//TODO// Remove cblist [cbid] from the fd's cblist
-	cblist [cbid].next = cbfree;
-	cbfree = &cblist [cbid];
+	printf ("DEBUG: Signaling on the semaphore of callback 0x%08x\n", &cblist [cbid]);
+	pthread_cond_signal (&cblist [cbid].semaphore);
 	pthread_mutex_unlock (&cbfree_mutex);
 }
 
@@ -293,8 +338,7 @@ static void post_callback (struct command *cmd) {
 static void process_command (struct command *cmd) {
 	printf ("DEBUG: Processing command 0x%08x\n", cmd->cmd.pio_cmd);
 	union pio_data *d = &cmd->cmd.pio_data;
-	int iscb = is_callback (cmd);
-	if (iscb) {
+	if (is_callback (cmd)) {
 		post_callback (cmd);
 		return;
 	}
@@ -342,7 +386,7 @@ void process_activity (int sox, int soxidx, struct soxinfo *soxi, short int reve
 			}
 		}
 		if (soxi->flags & SOF_CLIENT) {
-			struct command *cmd = allocate_command ();;
+			struct command *cmd = allocate_command_for_clientfd (sox);
 			if (receive_command (sox, cmd)) {
 				process_command (cmd);
 			} else {
@@ -357,11 +401,15 @@ void run_service (void) {
 	int i;
 	int polled;
 	cbfree = NULL;
+	errno = pthread_setcancelstate (PTHREAD_CANCEL_DISABLE, NULL);
+	if (errno) {
+		fprintf (stderr, "Service routine thread cancellability refused\n");
+		exit (1);
+	}
 	for (i=0; i<1024; i++) {
 		cblist [i].next = cbfree;
 		cblist [i].fd = -1; // Mark as unused
-		pthread_mutex_init (&cblist [i].lock, NULL);
-		pthread_mutex_lock (&cblist [i].lock);
+		pthread_cond_init (&cblist [i].semaphore, NULL);
 		cblist [i].followup = NULL;
 		cbfree = &cblist [i];
 	}

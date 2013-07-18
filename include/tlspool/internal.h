@@ -6,6 +6,8 @@
 
 #include <tlspool/commands.h>
 
+#include <gnutls/gnutls.h>
+
 
 /* The command structure contains the literal packet and additional
  * information for local administrative purposes.
@@ -15,7 +17,6 @@ struct command {
 	int passfd;
 	int claimed;
 	pthread_t handler;
-	pthread_mutex_t ownership;
 	struct tlspool_command cmd;
 };
 
@@ -47,8 +48,8 @@ struct soxinfo {
 struct callback {
 	struct callback *next;		/* Lists, e.g. free list or cbq list */
 	int fd;
-	pthread_mutex_t lock;		/* Dependent is waiting for unlock */
-	struct command **followup;	/* The callback command waited for */
+	pthread_cond_t semaphore;	/* Dependent is waiting for signal */
+	struct command *followup;	/* Link to the callback returned cmd */
 };
 
 
@@ -64,6 +65,7 @@ void parse_cfgfile (char *filename, int kill_competition);
 void run_service (void);
 void send_error (struct command *cmd, int tlserrno, char *msg);
 int send_command (struct command *cmd, int passfd);
+struct command *send_callback_and_await_response (struct command *cmdresp);
 
 /* pinentry.c */
 void setup_pinentry (void);
@@ -73,6 +75,9 @@ void register_pinentry_command (struct command *cmd);
 void setup_handler (void);
 void starttls_client (struct command *cmd);
 void starttls_server (struct command *cmd);
+
+/* remote.c */
+int ldap_fetch_openpgp_cert (gnutls_openpgp_crt_t *pgpcrtdata, char *localid);
 
 
 #endif //TLSPOOL_INTERNAL_H

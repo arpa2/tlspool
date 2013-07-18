@@ -21,22 +21,19 @@ int tlspool_socket (char *path) {
 	//TODO// Possibly really test if a poolfd is valid?
 	if (poolfd == -1) {
 		struct sockaddr_un sun;
-		int sunlen;
 		if (!path) {
 			path = TLSPOOL_DEFAULT_SOCKET_PATH;
 		}
-		sunlen = strlen (path);
 		if (strlen (path) + 1 > sizeof (sun.sun_path)) {
 			errno = ENAMETOOLONG;
 		}
 		strcpy (sun.sun_path, path);
-		sunlen = SUN_LEN (&sun);
 		sun.sun_family = AF_UNIX;
 		poolfd = socket (AF_UNIX, SOCK_STREAM, 0);
 		if (poolfd == -1) {
 			return -1;
 		}
-		if (connect (poolfd, (struct sockaddr *) &sun, sunlen) == -1) {
+		if (connect (poolfd, (struct sockaddr *) &sun, SUN_LEN (&sun)) == -1) {
 			close (poolfd);
 			poolfd = -1;
 		}

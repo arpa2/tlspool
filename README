@@ -61,7 +61,7 @@ The core logic used here is (client shown, server is similar):
 
 	#include <tlspool/starttls.h>
 	...
-	fd = starttls_client (fd, ...);
+	fd = starttls_client (fd, &tlsparams);
 	...
 
 The daemon will cover TCP, UDP and SCTP over IPv4 and IPv6.  Asynchronous

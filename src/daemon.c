@@ -73,6 +73,7 @@ int main (int argc, char *argv []) {
 			setsid ();
 			//TODO// close the common fd's 0/1/2
 			setup_handler ();
+			setup_pinentry ();
 			parse_cfgfile (cfgfile, kill_competition);
 			run_service ();
 			break;

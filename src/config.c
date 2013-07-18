@@ -245,7 +245,6 @@ retry:
 
 void cfg_socketname (char *item, int itemno, char *value) {
 	struct sockaddr_un sun;
-	int len;
 	int sox;
 	uid_t me = getuid ();
 	gid_t my = getgid ();
@@ -254,7 +253,6 @@ void cfg_socketname (char *item, int itemno, char *value) {
 		exit (1);
 	}
 	strcpy (sun.sun_path, value);
-	len = SUN_LEN (&sun);
 	sun.sun_family = AF_UNIX;
 	if (configvars [CFGVAR_DAEMON_PIDFILE]) {
 		//
@@ -267,7 +265,7 @@ void cfg_socketname (char *item, int itemno, char *value) {
 		perror ("Failed to open UNIX socket");
 		exit (1);
 	}
-	if (bind (sox, (struct sockaddr *) &sun, len) == -1) {
+	if (bind (sox, (struct sockaddr *) &sun, SUN_LEN (&sun)) == -1) {
 		perror ("Failed to bind to UNIX socket");
 		exit (1);
 	}

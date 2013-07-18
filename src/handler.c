@@ -14,6 +14,7 @@
 #include <sys/socket.h>
 
 #include <gnutls/gnutls.h>
+#include <gnutls/abstract.h>
 
 #include <tlspool/internal.h>
 
@@ -147,21 +148,126 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 }
 
 
-/* The callback function that retrieves certification information from the
- * server in the course of the handshake procedure.
+/* The callback functions retrieve certification information for the client
+ * or server in the course of the handshake procedure.
+ *
+ * The logic here is based on client-sent information, such as:
+ *  - TLS hints -- X.509 or alternatives like OpenPGP, SRP, PSK
+ *  - TLS hints -- Server Name Indication
+ *  - User hints -- local and remote identities provided
+ *
+ * The basic procedure is to establish the simplest possible kind of
+ * connection.  So, in order of preference:
+ *  - PSK or SRP
+ *  - OpenPGP
+ *  - X.509 (the default acts as a fallback in lieu of fantasy)
  */
-int retrieve_srv_certification () {
+int retrieve_srv_certification (gnutls_session_t session,
+				const gnutls_datum_t *req_ca_dn,
+				int nreqs,
+				const gnutls_pk_algorithm_t *pk_algos,
+				int pk_algos_length,
+				gnutls_pcert_st **pcert,
+				unsigned int *pcert_length,
+				gnutls_privkey_t *pkey) {
+	gnutls_certificate_type_t certtp = gnutls_certificate_type_get (session);
+	gnutls_pcert_st *pc;
+	int err;
+	gnutls_openpgp_crt_t pgpcrtdata;
+	char *p11url = "pkcs11:manufacturer=SoftHSM&token=vanrein&id=%1A%E5%13%E8%DE%D4%86%E6%11%3B%0F%D5%E6%EE%33%BD%7F%B1%39%02"; //TODO:FIXED//
+	char *localid = "rick@openfortress.nl"; //TODO:FIXED//
+	switch (certtp) {
+	case GNUTLS_CRT_OPENPGP:
+		pc = malloc (sizeof (struct gnutls_pcert_st));	//TODO:IMPROVE
+		if (!pc) {
+			fprintf (stderr, "Failed to allocate PCERT structure\n");
+			return GNUTLS_E_MEMORY_ERROR;
+		}
+		//TODO// SNI-based, existence-checking, STARTTLS_LOCALID choice
+		err = ldap_fetch_openpgp_cert (&pgpcrtdata, localid);
+		if (err) {
+			perror ("DEBUG: OpenPGP certificate not in LDAP");
+			return GNUTLS_A_CERTIFICATE_UNKNOWN;
+		}
+		err = -gnutls_pcert_import_openpgp (pc, pgpcrtdata, 0);
+		if (err) {
+			printf ("DEBUG: Failed to import OpenPGP certificate data\n");
+			free (pc);
+			return err;
+		}
+		//TODO// Fill p11url from a p11-kit search!
+		//TODO// Allocate pkey as privkey_t structure
+		err = -gnutls_privkey_import_pkcs11_url (*pkey, p11url);
+		if (err) {
+			printf ("DEBUG: Failed to import PKCS #11 private key URL for use with OpenPGP\n");
+			free (pc);
+			return err;
+		}
+		*pcert = pc;
+		*pcert_length = 0;
+		return GNUTLS_E_SUCCESS;
+	case GNUTLS_CRT_X509:
+	case GNUTLS_CRT_RAW:
+	case GNUTLS_CRT_UNKNOWN:
+	default:
+		printf ("DEBUG: Funny sort of certificate retrieval attempted\n");
+		return GNUTLS_E_CERTIFICATE_ERROR;
+	}
 }
 
 /* The callback function that retrieves certification information from the
  * client in the course of the handshake procedure.
  */
-int retrieve_cli_certification () {
+int retrieve_cli_certification (gnutls_session_t session,
+				const gnutls_datum_t* req_ca_dn,
+				int nreqs,
+				const gnutls_pk_algorithm_t* pk_algos,
+				int pk_algos_length,
+				gnutls_pcert_st** pcert,
+				unsigned int *pcert_length,
+				gnutls_privkey_t * pkey) {
+	//TODO//
 }
 
+/* The callback function that retrieves a secure remote passwd for the server.
+ */
+int retrieve_srv_srp_creds (gnutls_session_t session,
+				gnutls_datum_t *salt,
+				gnutls_datum_t *verifier,
+				gnutls_datum_t *g,
+				gnutls_datum_t *n) {
+	//TODO//
+}
+
+/* The callback function that retrieves a secure remote passwd for the client.
+ * TODO: GnuTLS has not prepared for PKCS #11 based passwords yet.
+ */
+int retrieve_cli_srp_creds (gnutls_session_t session,
+				char **username,
+				char **passwd) {
+	//TODO//
+}
+
+/* The callback function that retrieves a pre-shared key for the server.
+ * TODO: GnuTLS has not prepared for PKCS #11 based keying yet.
+ */
+int retrieve_srv_psk_creds (gnutls_session_t session,
+				char **username,
+				gnutls_datum_t *key) {
+	//TODO//
+}
+
+/* The callback function that retrieves a pre-shared key for the client.
+ * TODO: GnuTLS has not prepared for PKCS #11 based keying yet.
+ */
+int retrieve_cli_psk_creds (gnutls_session_t session,
+				char **username,
+				gnutls_datum_t *key) {
+	//TODO//
+}
 
 /*
- * The starttls_task is a main program for the setup of a TLS connection,
+ * The starttls_thread is a main program for the setup of a TLS connection,
  * either in client mode or server mode.  Note that the distinction between
  * client and server mode is only a TLS concern, but not of interest to the
  * application or the records exchanged.
@@ -170,10 +276,6 @@ int retrieve_cli_certification () {
  * application, but the TLS pool will continue to be active in a copycat
  * procedure: encrypting outgoing traffic and decrypting incoming traffic.
  * TODO: Are client and server routines different?
- //OLD// *
- //OLD// * The thread is started with an ownership lock on the provided cmd.
- //OLD// * It should unlock it as soon as possible, and the parent thread waits
- //OLD// * for this before giving up on cmd.
  */
 static void *starttls_thread (void *cmd_void) {
 	struct command *cmd = (struct command *) cmd_void;
@@ -181,33 +283,43 @@ static void *starttls_thread (void *cmd_void) {
 	int passfd = cmd->passfd;
 	int clientfd = cmd->clientfd;
 	gnutls_session_t session;
+	gnutls_certificate_credentials_t *pgpcred;
 	int ret;
+	//
+	// Permit cancellation of this thread
+	errno = pthread_setcancelstate (PTHREAD_CANCEL_ENABLE, NULL);
+	if (errno) {
+		send_error (cmd, ESRCH, "STARTTLS handler thread cancellability refused");
+		return;
+	}
 	//
 	// Check and setup file handles
 	//TODO// Distinguish between client and server through cmd
-	//TODO// Actually do STARTTLS ;-)
 	if (passfd == -1) {
 		send_error (cmd, EPROTO, "You must supply a socket");
-		//OLD// pthread_mutex_unlock (&cmd->ownership);
 		return;
 	}
 	if (socketpair (SOCK_STREAM, AF_UNIX, 0, soxx) < 0) {
 		send_error (cmd, errno, "Failed to create 2ary sockets");
-		//OLD// pthread_mutex_unlock (&cmd->ownership);
 		return;
 	}
 	//
 	// Negotiate TLS
+	gnutls_certificate_allocate_credentials (&pgpcred);
 	if (cmd->cmd.pio_cmd == PIOC_STARTTLS_SERVER_V1) {
 		gnutls_init (&session,  GNUTLS_SERVER);
-		gnutls_priority_set_direct (session, "NORMAL:+ANON-ECDH:+ANON-DH", NULL);
+		gnutls_priority_set_direct (session, "NORMAL:NORMAL:+CTYPE-OPENPGP:+ANON-ECDH:+ANON-DH", NULL);
 		gnutls_credentials_set (session, GNUTLS_CRD_ANON, srv_anoncred);
-		//TODO// gnutls_certificate_set_retrieve_function2 (retrieve_srv_certification);
+		gnutls_certificate_set_retrieve_function2 (&pgpcred, retrieve_srv_certification);
+		//TODO// gnutls_srp_set_server_credentials_function (srv_srpcred, retrieve_srp_srv_creds);
+		//TODO// gnutls_psk_set_server_credentials_function (srv_pskcred, retrieve_psk_srv_creds);
 	} else {
 		gnutls_init (&session, GNUTLS_CLIENT);
 		gnutls_priority_set_direct (session, "PERFORMANCE:+ANON-ECDH:+ANON-DH", NULL);
 		gnutls_credentials_set (session, GNUTLS_CRD_ANON, cli_anoncred);
-		//TODO// gnutls_certificate_set_retrieve_function2 (retrieve_cli_certification);
+		gnutls_certificate_set_retrieve_function2 (&pgpcred, retrieve_cli_certification);
+		//TODO// gnutls_srp_set_client_credentials_function (cli_srpcred, retrieve_cli_srp_creds);
+		//TODO// gnutls_psk_set_client_credentials_function (cli_pskcred, retrieve_cli_psk_creds);
 	}
 	gnutls_transport_set_int (session, passfd);
 	gnutls_handshake_set_timeout (session, GNUTLS_DEFAULT_HANDSHAKE_TIMEOUT);
@@ -218,7 +330,6 @@ static void *starttls_thread (void *cmd_void) {
 		gnutls_deinit (session);
 		fprintf (stderr, "TLS handshake failed: %s\n", gnutls_strerror (ret));
 		send_error (cmd, EPERM, (char *) gnutls_strerror (ret));
-		//OLD// pthread_mutex_unlock (&cmd->ownership);
 		close (soxx [0]);
 		close (soxx [1]);
 		close (passfd);
@@ -231,7 +342,6 @@ static void *starttls_thread (void *cmd_void) {
 	cmd->cmd.pio_data.pioc_starttls.remoteid [0] = 0;
 	send_command (cmd, soxx [0]);	// soxx [0] is app-received
 	close (soxx [0]);		// assuming cross-pid dup() is finished
-	//OLD// pthread_mutex_unlock (&cmd->ownership);
 	//
 	// Copy TLS records until the connection is closed
 	copycat (soxx [1], passfd, session, clientfd); // soxx [1] is pooled decryptlink
@@ -250,27 +360,18 @@ static void *starttls_thread (void *cmd_void) {
  * TODO: Are client and server routines different?
  */
 void starttls_client (struct command *cmd) {
-	//OLD// //TODO// Move mutex initialisation to the service code
-	//OLD// pthread_mutex_init (&cmd->ownership, NULL);
-	//OLD// pthread_mutex_lock (&cmd->ownership);
 	/* Create a thread and, if successful, wait for it to unlock cmd */
 	errno = pthread_create (&cmd->handler, NULL, starttls_thread, (void *) cmd);
 	if (errno) {
 		send_error (cmd, ESRCH, "STARTTLS_CLIENT thread refused");
-		//OLD// pthread_mutex_unlock (&cmd->ownership);
 		return;
 	}
 	errno = pthread_detach (cmd->handler);
 	if (errno) {
-		//TODO// Kill the thread... somehow
+		pthread_cancel (cmd->handler);
 		send_error (cmd, ESRCH, "STARTTLS_CLIENT thread detachment refused");
-		//OLD// pthread_mutex_lock (&cmd->ownership);
-		//OLD// pthread_mutex_unlock (&cmd->ownership);
 		return;
 	}
-	/* Do not continue before the thread gives up ownership of cmd */
-	//OLD// pthread_mutex_lock (&cmd->ownership);
-	//OLD// pthread_mutex_unlock (&cmd->ownership);
 }
 
 /*
@@ -280,26 +381,17 @@ void starttls_client (struct command *cmd) {
  * spark off a new thread that handles the operations.
  */
 void starttls_server (struct command *cmd) {
-	//OLD// //TODO// Move mutex initialisation to the service code
-	//OLD// pthread_mutex_init (&cmd->ownership, NULL);
-	//OLD// pthread_mutex_lock (&cmd->ownership);
 	/* Create a thread and, if successful, wait for it to unlock cmd */
 	errno = pthread_create (&cmd->handler, NULL, starttls_thread, (void *) cmd);
 	if (errno) {
 		send_error (cmd, ESRCH, "STARTTLS_SERVER thread refused");
-		//OLD// pthread_mutex_unlock (&cmd->ownership);
 		return;
 	}
 	errno = pthread_detach (cmd->handler);
 	if (errno) {
 		//TODO// Kill the thread... somehow
 		send_error (cmd, ESRCH, "STARTTLS_CLIENT thread detachment refused");
-		//OLD// pthread_mutex_lock (&cmd->ownership);
-		//OLD// pthread_mutex_unlock (&cmd->ownership);
 		return;
 	}
-	/* Do not continue before the thread gives up ownership of cmd */
-	//OLD// pthread_mutex_lock (&cmd->ownership);
-	//OLD// pthread_mutex_unlock (&cmd->ownership);
 }
 
