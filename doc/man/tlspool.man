@@ -38,14 +38,14 @@ in X.509 format because it has not been defined for other applications.
 LDAP connections themselves should be based on a DANE-protected server
 certificate.
 
-The remote information retrieved by the TLS pool can slow down the
+The remote information retrieved by the TLS Pool can slow down the
 connection setup, and for that reason caching can be configured.  The
 caching mechanism used is memcache, with a configurable timeout for
 all data cached.  It is possible to bypass the cache for the most
 sensitive operations.
 
 TLS in itself is not overly private; the exchange of certificates
-can be passively observed.  For this reason, the TLS pool can implement
+can be passively observed.  For this reason, the TLS Pool can implement
 a more expensive and therefore optional two-phase approach, where a first
 connection is setup under an anonymous Diffie-Hellman key exchange, and
 immediately a secure re-negotiation is performed to exchange the actual
@@ -53,9 +53,9 @@ certificates.  This is possible if both client and server are willing to
 accept an initial anonymous connection.  TODO:It will be seen as an error
 when either party sends vital information over the anonymous connection yet.
 
-When not called with the -p option, the TLS pool daemon is started in the
+When not called with the -p option, the TLS Pool daemon is started in the
 background, optionally reading the file dictated by the -c option.  When
-the -p option is present, a running TLS pool daemon is assumed and a PIN
+the -p option is present, a running TLS Pool daemon is assumed and a PIN
 is requested on the terminal, and submitted to the daemon.  The -k option
 is used to kill any already running daemon detected through the PID file,
 instread of refusing to start a second daemon.

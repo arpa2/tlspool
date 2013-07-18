@@ -14,7 +14,9 @@ Runtime dependencies are:
  * libldns for DNS lookups
  * libldap for LDAP lookups
  * libmemcached for caching of intermediate results
+ * libp11 for PKCS #11 URI handling
  * TODO: libradius to do additional authn / authz [/acct]
+ * the PKCS #11 implementation of your choice
 
 Include the development variants if your aim is to build it yourself.
 

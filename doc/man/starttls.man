@@ -21,19 +21,19 @@ Since TLS introduces a differntiation between a client and server role, these ar
 
 The proto parameter distinguishes the protocol run by the incoming file descriptor in the fd parameter.  When set to IPPROTO_TCP, plain TLS will be initiated; when set to IPPROTO_UDP, DTLS will be initiated; when set to IPPROTO_SCTP, DTLS will be initiated TODO:over stream 0.  Other values of proto raise an error condition.  In all casess including a reported error, the file descriptor fd will be closed after invoking one of these functions.
 
-A vital facility of this call is to exchange authenticated names between peers.  The TLS pool will locate a suitable key or certificate based on the myname parameter, which takes either the form of a hostname, or username followed by an @ sign and a hostname.  The first for is said to name a domain, the second is said to name a user.  When not set to NULL, the peername parameter will be filled with up to peername_len characters holding the remote peer's authenticated identity and a trailing NUL.  An error will be returned if this buffer size would be overflown due to a long remote identity.
+A vital facility of this call is to exchange authenticated names between peers.  The TLS Pool will locate a suitable key or certificate based on the myname parameter, which takes either the form of a hostname, or username followed by an @ sign and a hostname.  The first for is said to name a domain, the second is said to name a user.  When not set to NULL, the peername parameter will be filled with up to peername_len characters holding the remote peer's authenticated identity and a trailing NUL.  An error will be returned if this buffer size would be overflown due to a long remote identity.
 
 On the wire, the format of these names can vary.  In the case of an X.509 certificate, a domain name is represented as a distinguishedName with dc=,dc= components, and possibly others underneath.  The first component will not be uid= because that is the added first component for a user identity.  In the case of an OpenPGP certificate, a user is identified as "<user@domain>" with an optional comment before and/or after the angular brackets, and a domain name is represented as "<domain>" and the same comment options, but without an @ character between the angular brackets.
 
 The flags are set to indicate non-standard validation requirements.  By default, full authentication and authorization is applied.  See the VALIDATION section for details and flags that can modify this behaviour.
 
-Note that access to the private keys used for authentication towards a remote party may be protected by an access control list in the TLS pool configuration.  If your setup employs an access control list, you will have to mention your intended use in that list.
+Note that access to the private keys used for authentication towards a remote party may be protected by an access control list in the TLS Pool configuration.  If your setup employs an access control list, you will have to mention your intended use in that list.
 
 
 VALIDATION
 
-By default, the process performed by the TLS pool consists of authentication
-and, when setup in the TLS pool with a local policy, authorization.  The
+By default, the process performed by the TLS Pool consists of authentication
+and, when setup in the TLS Pool with a local policy, authorization.  The
 authentication is two-way, meaning that both client and server present a
 proof of authenticity.  These proofs take the form of an X.509 certificate
 or, preferrably, an OpenPGP certificate.
@@ -48,12 +48,12 @@ a level that matches doing the checks when setting up a TLS connection.
 
 The added facility of authorization can be used as an integrated access
 control mechanism for TLS-authenticated users and domains.  This can be
-configured by using a custom plugin into the TLS pool.  It is possible
+configured by using a custom plugin into the TLS Pool.  It is possible
 to bypass authorization operations when starting TLS when calling
 starttls_client or starttls_server, in service of special functions such
 as login.
 
-The TLS pool can be configured to use a caching mechanism, so as to avoid
+The TLS Pool can be configured to use a caching mechanism, so as to avoid
 continuous re-checks of the same relationships.  The cache holds both
 authentication and authorization information.  It is possible to bypass
 the cache when calling starttls_client or starttls_server, in service

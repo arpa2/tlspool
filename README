@@ -5,7 +5,7 @@ The tlspool package concentrates TLS-use by client and server applications.
 It gets passed a file descriptor of a socket, initiates TLS over it, and
 then passes back a new, TLS-protected socket to the originator.  This makes
 it very straightforward to add TLS support to network software, and the
-central location of the TLS pool makes it easy to enforce consistent rules
+central location of the TLS Pool makes it easy to enforce consistent rules
 for authentication and authorization rules.
 
 
@@ -14,12 +14,12 @@ Proof of Concept code included
 
 Currently, this work is in a proof-of-concept state, and programmed in
 Python.  This has been the work of a couple of students who wrote in Python,
-and it should be seen as a first demonstration of the idea of a TLS pool.
+and it should be seen as a first demonstration of the idea of a TLS Pool.
 It is not at production level, documentation is rather limited, but it
 may be used for demonstration purposes.
 
 Note that this early TLS daemon uses the major concept, namely that of
-file descriptor exchange between application and TLS pool, but the rest
+file descriptor exchange between application and TLS Pool, but the rest
 of the API has not been explicitly designed; expect this specific API
 to change.
 
@@ -40,8 +40,9 @@ full stretch of this project is documented on the website,
 http://www.networkeffectalliance.org/
 
 We are currently at a state where the daemon and a small stub library for
-applications are working, but without any TLS facilities yet.  So, even
-though you can ask for STARTTLS to be setup, it won't encrypt or authenticate.
+applications are working, and simple ANON-DH encryption-only TLS.  So, even
+though you can ask for STARTTLS to be setup, it won't authenticate and it
+won't even attempt to exchange identity information.
 
 What it WILL do, is setup all the plumbing for an exchange that provides a
 place for this to be added.  It is built like this:
@@ -65,7 +66,7 @@ The core logic used here is (client shown, server is similar):
 
 The daemon will cover TCP, UDP and SCTP over IPv4 and IPv6.  Asynchronous
 versions of these calls are under design, but their use is obvious and the
-API to the TLS pool has been designed to support it.
+API to the TLS Pool has been designed to support it.
 
 The daemon will provide configurable hooks for authentication and
 authorization; this can then be setup for the entire system at once.
@@ -78,7 +79,9 @@ remotely stored information, until a certain caching time has passed.
 CURRENT STATUS: The daemon starts, parses configuration directives and
 processes most of them.  The actual service is a full connection with
 all the plumbing for setting it up and tearing it down gracefully,
-but without the actual use of TLS.
+but the only part of TLS that has been implemented is ANON-DH, which
+does encrypt the connection, but without any authentication or identity
+exchange.
 
 
 The importance of PKCS #11
@@ -88,7 +91,7 @@ The key material used by this daemon will be accessed over PKCS #11.  This
 requires multi-layered attacks to key material: the material is protected
 by a secure key store of choice, in hardware or software, and even the PIN
 for using the private keys without seeing them is stored in a separate
-program, namely the TLS pool.  Specifically, the PIN and key material are
+program, namely the TLS Pool.  Specifically, the PIN and key material are
 not available to user agents such as a PHP-enabled web server which may
 be running outdated software.
 
@@ -105,14 +108,14 @@ get secured access, and remove it to stop further secure web connections.
 Note that this principle can easily be extended to other protocols that
 can work through a proxy.
 
-Note that it is expressly not the task of the TLS pool to manage the
+Note that it is expressly not the task of the TLS Pool to manage the
 objects stored behind the PKCS #11 API.  This is expressly left to
 external tools that manage certificates and keys on behalf of the
-application area covered.  All the TLS pool does is read tokens, looking
+application area covered.  All the TLS Pool does is read tokens, looking
 for usable keys to authenticate its identities to the Internet, both over
 X.509 and over OpenPGP.
 
-One final, and hardly recognised use of having a central TLS pool and
+One final, and hardly recognised use of having a central TLS Pool and
 potentially centralised PKCS #11 repositories is the ability to sniff
 the network traffic for intrusion attempts.  To be able to do this in
 the presence of encrypted connections, the ability to decrypt the
@@ -136,7 +139,7 @@ protocol, and it can be rerouted with FreeRADIUS and resolved with scripts
 or programs in just about any programming language.
 
 Any AAA facilities are stacked on top of the minimum requirements offered
-by the TLS pool, that is the identities of the peers can be assumed to
+by the TLS Pool, that is the identities of the peers can be assumed to
 have been established (or perhaps be established in parallel) while the
 authentication and authorization is requested.  Note that accounting
 will always wait for completion of the identity check, to avoid charging
@@ -149,12 +152,12 @@ This is not a requirement though; the functions can be setup and, due to
 lack of expressiveness in the protocol, split over different servers.
 
 Accounting is not usually applied immediately when a TLS connection is
-setup; this is barely useful information.  Instead, the TLS pool is able
+setup; this is barely useful information.  Instead, the TLS Pool is able
 to receive accounting requests over the same API as it uses for the
 authentication and authorization requests, and it can pass requests on
 to the accounting functions of a RADIUS service.
 
-Accounting in the style of the TLS pool comes down to counting ticks or
+Accounting in the style of the TLS Pool comes down to counting ticks or
 time; a series of values is supplied to both the start and end that is
 being accounted:
 

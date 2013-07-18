@@ -66,9 +66,11 @@ void send_error (struct command *cmd, int tlserrno, char *msg);
 int send_command (struct command *cmd, int passfd);
 
 /* pinentry.c */
+void setup_pinentry (void);
 void register_pinentry_command (struct command *cmd);
 
 /* handler.c */
+void setup_handler (void);
 void starttls_client (struct command *cmd);
 void starttls_server (struct command *cmd);
 

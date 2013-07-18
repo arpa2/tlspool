@@ -2,23 +2,23 @@
 TLS POOL SOCKET PROTOCOL
 ------------------------
 
-The TLS pool concentrates interactions about TLS, and does this by offering
-service on a UNIX domain socket.  An application using the TLS pool would
+The TLS Pool concentrates interactions about TLS, and does this by offering
+service on a UNIX domain socket.  An application using the TLS Pool would
 open a connection to this socket by specifying its file name.
 
-Once connected, the TLS pool awaits command requests.  These are always sent
+Once connected, the TLS Pool awaits command requests.  These are always sent
 on the initiative of the application, and each command results in exactly
 one response, at least as long as the connection remains open.  This means
-that the TLS pool will never initiate concurrent interactions, but the
+that the TLS Pool will never initiate concurrent interactions, but the
 application is free to do so.
 
 Some commands may take some time to finish, which is why concurrency is
-supported.  Packets are sent to the TLS pool with an identifier that will
+supported.  Packets are sent to the TLS Pool with an identifier that will
 be copied copied from request to response.  But slower batch processes,
 which usually are mere scripts, have the freedom of not adopting the
 corresponding complexity.
 
-Some requests to the TLS pool return a response that invites a new request
+Some requests to the TLS Pool return a response that invites a new request
 with additional data; the best example is the PINENTRY command which returns
 to request a PIN being entered.  In such followup-requests, the callback
 identifier from the response should be copied into the new request.
@@ -32,7 +32,7 @@ sending the desired response.
 Commands and responses
 ======================
 
-Every command sent to the TLS pool is dignified with precisely one response.
+Every command sent to the TLS Pool is dignified with precisely one response.
 This response is either a notification of ERROR or SUCCESS, but depending
 on the commmand sent it may also take another shape.  For example, the PING
 command returns the same PING message format that it received, filled with
@@ -53,20 +53,20 @@ TLS-wrapped versions of their work.  The modern approach is to first
 negotiate features, and if supported to initiate TLS over the existing
 TCP connection with STARTTLS.
 
-Both these approaches are supported through the TLS pool.  Client and
+Both these approaches are supported through the TLS Pool.  Client and
 server generally know when they need to start TLS; either right at the
 beginning of a TCP connection, or after an acknowledged STARTTLS
 request.  The idea is then that both sides initiate TLS in tandem,
-possibly by talking to their local TLS pool.
+possibly by talking to their local TLS Pool.
 
 
 Initiating the socket connection
 ================================
 
-After the application has connected to the TLS pool, it is a good idea
+After the application has connected to the TLS Pool, it is a good idea
 to send a PING command.  This command ships the application's identity
-to the TLS pool, and the response carries the identity of the TLS pool.
-The TLS pool normally logs this data, and the application might do the
+to the TLS Pool, and the response carries the identity of the TLS Pool.
+The TLS Pool normally logs this data, and the application might do the
 same.
 
 Identities take a simple string format.  They start with a date in the
@@ -88,10 +88,10 @@ Starting TLS as a client
 
 A client can send the STARTTLS_CLIENT command by filling in a number
 of fields in the command packet.  In addition, it sends a file descriptor
-to TLS-ify as auxiliary data.  This file descriptor is duplicated into
-the TLS pool, and further used for the TLS exchanges.
+to TLS-ify as ancillary data.  This file descriptor is duplicated into
+the TLS Pool, and further used for the TLS exchanges.
 
-This file descriptor that is duplicated to the TLS pool should normally
+This file descriptor that is duplicated to the TLS Pool should normally
 be closed as soon as the response comes back, as it is no longer usable.
 This is even the case for ERROR responses, as it may be unclear what has
 been sent over the wire.  Note however, that exceptions may exist for
@@ -107,7 +107,7 @@ SCTP, a stream identifier over which to negotiate (D)TLS must also
 be supplied.
 
 Several flags have been defined to loosen or tighten the validations
-made by the TLS pool, or possibly passed over to external components.
+made by the TLS Pool, or possibly passed over to external components.
 The default setting of 0 means that identities are verified, and that
 DNS is mistrusted unless the DNS authoritative has not implemented
 DNSSEC.  User identities retrieved from LDAP are requested over an
@@ -115,7 +115,7 @@ unvalidated connection under the assumption that TCP is hard to
 tackle and that the remote host has been identified as solidly as
 permitted based on DNS information.
 
-The TLS pool uses a cache for authentications and authorizations that
+The TLS Pool uses a cache for authentications and authorizations that
 have worked well.  These caches may be bypassed for situations where
 a step in a process requires explicit validation, for instance at a
 time of contractual agreement such as a payment or order acknolwedgement.
@@ -141,20 +141,20 @@ for granted that a client that does not specify its remote identity will
 accept anything.
 
 Similarly, the client should set a local identity to use over the
-connection if it has ideas about that.  If it does not, the TLS pool
+connection if it has ideas about that.  If it does not, the TLS Pool
 may find multiple to choose from, and present these for approval,
 one at a time.  This interaction is not optimal and should be avoided
-if possible.  The main reason it exists is to permit the TLS pool
+if possible.  The main reason it exists is to permit the TLS Pool
 to bypass client authentication if the remote indicates that this is
 acceptable.  When client authentication is requested or required by
-the remote peer, which is true by default if it is a TLS pool without
+the remote peer, which is true by default if it is a TLS Pool without
 overriding commands, then it makes more sense to indicate what local
 identity to supply to the remote.
 
 The probes that propose a local identity to use are sent in response
 to the STARTTLS_CLIENT command, which is continued after acceptance.
 If a local identity is not accepted, it should be set to the empty
-string and the command returned to the TLS pool with the same request
+string and the command returned to the TLS Pool with the same request
 identity.
 
 The final response to the STARTTLS_CLIENT command request is either an
@@ -170,13 +170,13 @@ been met by the connection setup.
 Starting TLS as a server
 ========================
 
-A server can send a STARTTLS_SERVER command to the TLS pool to
+A server can send a STARTTLS_SERVER command to the TLS Pool to
 initiate TLS over a connection.  To do this, it fills out a number
 of fields in the command packet.  In addition, it sends a file descriptor
-to TLS-ify as auxiliary data.  This file descriptor is duplicated into
-the TLS pool, and further used for the TLS exchanges.
+to TLS-ify as ancillary data.  This file descriptor is duplicated into
+the TLS Pool, and further used for the TLS exchanges.
 
-This file descriptor that is duplicated to the TLS pool should normally
+This file descriptor that is duplicated to the TLS Pool should normally
 be closed as soon as the response comes back, as it is no longer usable.
 This is even the case for ERROR responses, as it may be unclear what has
 been sent over the wire.  Note however, that exceptions may exist for
@@ -192,7 +192,7 @@ SCTP, a stream identifier over which to negotiate (D)TLS must also
 be supplied.
 
 Several flags have been defined to loosen or tighten the validations
-made by the TLS pool, and they are described above for the client.
+made by the TLS Pool, and they are described above for the client.
 
 As a rule, servers do not know the remote identity that they are
 communicating with.  There may be exceptions, where a protocol did
@@ -204,13 +204,13 @@ TLS client must match the identity, on top of its validation.
 A server may have one or more alternate identities.  If it has one,
 it can set it up as its local identity.  If it has multiple, then
 the remote peer may have to supply one through a Server Name
-Indication.  If the TLS pool derives a remote identity, it will
+Indication.  If the TLS Pool derives a remote identity, it will
 propose it to the server through a STARTTLS_LOCALID command response.
 This package contains a remote identity to approve.  It may be
 accepted as is, modified, or disapproved of by setting it to the
 empty string.  The STARTTLS_LOCALID packet should then be issued
-as a command to the TLS pool, while retaining the callback identity.
-When rejecting a proposed local identity, the TLS pool may issue
+as a command to the TLS Pool, while retaining the callback identity.
+When rejecting a proposed local identity, the TLS Pool may issue
 more proposals in independent command responses.
 
 Note that identities are not always exchanged.  If both sides of a
@@ -239,16 +239,16 @@ security reasons.
 Although applications that issues STARTTLS commands could double as
 PIN entering applications, this is not generally the advised approach.
 It is desirable to move credentials away from programs that engage in
-online activities, and if the TLS pool cannot contain the PIN, it
+online activities, and if the TLS Pool cannot contain the PIN, it
 should facilitate entry of PINs by independent programs.
 
-To this end, a program can access the TLS pool socket and issue a
+To this end, a program can access the TLS Pool socket and issue a
 PINENTRY command request.  In response to this command, the
-TLS pool can issue a PINENTRY command response, asking for
+TLS Pool can issue a PINENTRY command response, asking for
 a particular PIN code.  The user is somehow asked to enter the
 said PIN, and another PINENTRY is submitted, this time
 carrying the PIN and the callback identity from the PINENTRY
-from the TLS pool to which it responds.
+from the TLS Pool to which it responds.
 
 The different formats of PINENTRY are distinguished by
 looking at the PIN string.  If it is an empty string, it is not
@@ -259,12 +259,12 @@ to do this too, and it is often the response to hitting a
 cancellation button that scripts may or may not take note of.
 
 If a PIN entry service is to be stopped, the program usually
-disconnects from the TLS pool.  Alternatively, it is possible
-to respond to a PINENTRY from the TLS pool to the PIN
+disconnects from the TLS Pool.  Alternatively, it is possible
+to respond to a PINENTRY from the TLS Pool to the PIN
 entry application by sending an ERROR with the same request
 identity, and expecting to see a SUCCESS response to that.
 
-The TLS pool supports exactly one program at a time for
+The TLS Pool supports exactly one program at a time for
 PIN entry.  The protocol sketched above will permit for a gap
 in the lock for every time a PIN is entered.  To solve this,
 the PIN entry protocol supports an additional facility of a
