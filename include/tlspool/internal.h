@@ -70,6 +70,13 @@ struct command *send_callback_and_await_response (struct command *cmdresp);
 /* pinentry.c */
 void setup_pinentry (void);
 void register_pinentry_command (struct command *cmd);
+int gnutls_pin_callback (void *userdata,
+                                int attempt,
+                                const char *token_url,
+                                const char *token_label,
+                                unsigned int flags,
+                                char *pin,
+                                size_t pin_max);
 
 /* handler.c */
 void setup_handler (void);

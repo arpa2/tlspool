@@ -101,7 +101,7 @@ void enter_pins (char *pinsocket) {
 			break;
 		}
 		fprintf (stderr, "DEBUG: Received PIN inquiry from TLS pool\n");
-		fprintf (stdout, "Token Manuf: %s\n      Model:  %s\n     Serial: %s\n      Label: %s\n    Attempt: %d\n", pe->token_manuf, pe->token_model, pe->token_serial, pe->token_label, pe->attempt);
+		fprintf (stdout, "Token Manuf: %s\n      Model: %s\n     Serial: %s\n      Label: %s\n    Attempt: %d\n", pe->token_manuf, pe->token_model, pe->token_serial, pe->token_label, pe->attempt);
 		pwd = getpass (pe->prompt);
 	}
 	bzero (&pio.pio_data, sizeof (pio.pio_data));
@@ -258,6 +258,7 @@ int gnutls_pin_callback (void *userdata,
 		pinentry_timeout = time (NULL) + cmd->cmd.pio_data.pioc_pinentry.timeout_us / 1000000;
 	} else {
 		// There was no PINENTRY command registration
+		//TODO// Wait (some time) for PINENTRY command to show up
 		retval = GNUTLS_A_USER_CANCELED;
 	}
 	pthread_mutex_unlock (&pinentry_lock);

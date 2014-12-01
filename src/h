@@ -107,6 +107,10 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 			printf ("DEBUG: Copycat polling returned an error\n");
 			break;	// Polling sees an error
 		}
+		if ((inout [0].revents | inout [1].revents | inout [2].revents) & ~POLLIN) {
+			printf ("DEBUG: Copycat polling returned a special condition\n");
+			break;	// Apparently, one of POLLERR, POLLHUP, POLLNVAL
+		}
 		if (inout [0].revents & POLLIN) {
 			// Read local and encrypt to remote
 			sz = recv (local, buf, sizeof (buf), MSG_DONTWAIT);
@@ -138,13 +142,6 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 			} else {
 				printf ("DEBUG: Copycat sent %d bytes to local %d\n", (int) sz, local);
 			}
-		}
-		if ((inout [0].revents | inout [1].revents | inout [2].revents) & ~POLLIN) {
-			printf ("DEBUG: Copycat polling returned a special condition\n");
-			if ((inout [0].revents | inout [1].revents | inout [2].revents) & POLLIN) {
-				printf ("DEBUG: In addition, there is data to read... which is ignored\n");
-			}
-			break;	// Apparently, one of POLLERR, POLLHUP, POLLNVAL
 		}
 	}
 	printf ("DEBUG: Ending copycat cycle for local=%d, remote=%d\n", local, remote);
@@ -314,18 +311,16 @@ static void *starttls_thread (void *cmd_void) {
 		gnutls_init (&session,  GNUTLS_SERVER);
 		// gnutls_priority_set_direct (session, "NORMAL:+CTYPE-OPENPGP:+ANON-ECDH:+ANON-DH", NULL);
 		// gnutls_priority_set_direct (session, "NORMAL:+CTYPE-OPENPGP", NULL);
-		gnutls_priority_set_direct (session, "NORMAL:+ANON-ECDH:+ANON-DH", NULL);
 		gnutls_credentials_set (session, GNUTLS_CRD_ANON, srv_anoncred);
-		//TODO// gnutls_certificate_set_retrieve_function2 (pgpcred, retrieve_srv_certification);
+		gnutls_certificate_set_retrieve_function2 (pgpcred, retrieve_srv_certification);
 		//TODO// gnutls_srp_set_server_credentials_function (srv_srpcred, retrieve_srp_srv_creds);
 		//TODO// gnutls_psk_set_server_credentials_function (srv_pskcred, retrieve_psk_srv_creds);
 	} else {
 		gnutls_init (&session, GNUTLS_CLIENT);
 		// gnutls_priority_set_direct (session, "PERFORMANCE:+CTYPE-OPENPGP:+ANON-ECDH:+ANON-DH", NULL);
-		// gnutls_priority_set_direct (session, "NORMAL:+CTYPE-OPENPGP", NULL);
-		gnutls_priority_set_direct (session, "NORMAL:+ANON-ECDH:+ANON-DH", NULL);
+		gnutls_priority_set_direct (session, "NORMAL:+CTYPE-OPENPGP", NULL);
 		gnutls_credentials_set (session, GNUTLS_CRD_ANON, cli_anoncred);
-		//TODO// gnutls_certificate_set_retrieve_function2 (pgpcred, retrieve_cli_certification);
+		gnutls_certificate_set_retrieve_function2 (pgpcred, retrieve_cli_certification);
 		//TODO// gnutls_srp_set_client_credentials_function (cli_srpcred, retrieve_cli_srp_creds);
 		//TODO// gnutls_psk_set_client_credentials_function (cli_pskcred, retrieve_cli_psk_creds);
 	}

@@ -357,7 +357,7 @@ void cfg_p11token (char *item, int itemno, char *value) {
 		exit (1);
 	}
 	if (gnutls_pkcs11_add_provider (configvars [CFGVAR_PKCS11_PATH], NULL) != 0) {
-		fprintf (stderr, "Failed to register PKCS #11 library with GnuTLS\n");
+		fprintf (stderr, "Failed to register PKCS #11 library %s with GnuTLS\n", configvars [CFGVAR_PKCS11_PATH]);
 		exit (1);
 	}
 	while (gnutls_pkcs11_token_get_url (token_seq, 0, &p11uri) == 0) {
