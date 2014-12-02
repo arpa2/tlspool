@@ -1,4 +1,4 @@
 *.pyc
 *.o
-*/lib*.so
-*/lib*.a
+lib*.so
+lib*.a

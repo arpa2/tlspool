@@ -32,12 +32,12 @@ to implement this sort of thing.
 Full-blown daemon development
 -----------------------------
 
-The actual daemon design is part of the plans of the Network Effect Alliance,
+The actual daemon design is part of the plans of InternetWide.org,
 which aims to improve everyone's Internet quality through distribution of
-more protocols and facilities under privately owned domain names.  The
+more protocols and facilities with strong encryption and privacy.  The
 full stretch of this project is documented on the website,
 
-http://www.networkeffectalliance.org/
+http://internetwide.org/
 
 We are currently at a state where the daemon and a small stub library for
 applications are working, and simple ANON-DH encryption-only TLS.  So, even

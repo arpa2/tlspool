@@ -43,10 +43,6 @@ void copycat (void *cd_void) {
 			printf ("DEBUG: Copycat polling returned an error\n");
 			break;
 		}
-		if ((inout [0].revents | inout [1].revents) & ~POLLIN) {
-			printf ("DEBUG: Copycat polling returned a special condition\n");
-			break;
-		}
 		if (inout [0].revents & POLLIN) {
 			sz = recv (cd->cnx, buf, sizeof (buf), MSG_DONTWAIT);
 			printf ("DEBUG: Copycat received %d local bytes from %d\n", (int) sz, cd->cnx);
@@ -74,6 +70,10 @@ void copycat (void *cd_void) {
 			} else {
 				printf ("Copycat returned %d bytes to %d\n", (int) sz, cd->cnx);
 			}
+		}
+		if ((inout [0].revents | inout [1].revents) & ~POLLIN) {
+			printf ("DEBUG: Copycat polling returned a special condition\n");
+			break;
 		}
 	}
 	printf ("DEBUG: Ending copycat cycle for insox=%d, fwsox=%d\n", cd->cnx, cd->fwd);
