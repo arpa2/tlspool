@@ -91,18 +91,36 @@ void setup_handler (void) {
  * until one of the end points is shut down, at which time it will
  * return and assume the context will close down both pre-existing
  * sockets.
+ *
+ * This copycat actually has a few sharp claws to watch for -- shutdown
+ * of sockets may drop the last bit of information sent.  First, the
+ * signal POLLHUP is best ignored because it travels asynchronously.
+ * Second, reading 0 is a good indicator of end-of-file and may be
+ * followed by an shutdown of reading from that stream.  But, more
+ * importantly, the other side must have this information forwarded
+ * so it can shutdown.  This means that a shutdown for writing to that
+ * stream is to be sent.  Even when *both* sides have agreed to not send
+ * anything, they may still not have received all they were offered for
+ * reading, so we should SO_LINGER on the sockets so they can acknowledge,
+ * and after a timeout we can establish that shutdown failed and log and
+ * return an error for it.
+ * Will you believe that I had looked up if close() would suffice?  The man
+ * page clearly stated yes.  However, these articles offer much more detail:
+ * http://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
+ * http://www.greenend.org.uk/rjk/tech/poll.html
  */
 static void copycat (int local, int remote, gnutls_session_t wrapped, int master) {
 	char buf [1024];
 	struct pollfd inout [3];
 	ssize_t sz;
+	struct linger linger = { 1, 10 };
 	inout [0].fd = local;
 	inout [1].fd = remote;
 	inout [2].fd = master;
 	inout [0].events = inout [1].events = POLLIN;
 	inout [2].events = 0;	// error events only
 	printf ("DEBUG: Starting copycat cycle for local=%d, remote=%d\n", local, remote);
-	while (1) {
+	while (((inout [0].events | inout [1].events) & POLLIN) != 0) {
 		if (poll (inout, 3, -1) == -1) {
 			printf ("DEBUG: Copycat polling returned an error\n");
 			break;	// Polling sees an error
@@ -110,14 +128,18 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 		if (inout [0].revents & POLLIN) {
 			// Read local and encrypt to remote
 			sz = recv (local, buf, sizeof (buf), MSG_DONTWAIT);
-			printf ("DEBUG: Copycat received %d local bytes from %d\n", (int) sz, local);
+			printf ("DEBUG: Copycat received %d local bytes (or error<0) from %d\n", (int) sz, local);
 			if (sz == -1) {
+				fprintf (stderr, "Error while receiving: %s\n", strerror (errno));
 				break;	// stream error
 			} else if (sz == 0) {
-				errno = 0;
-				break;	// orderly shutdown
+				inout [0].events &= ~POLLIN;
+				shutdown (local, SHUT_RD);
+				setsockopt (remote, SOL_SOCKET, SO_LINGER, &linger, sizeof (linger));
+				gnutls_bye (wrapped, GNUTLS_SHUT_WR);
 			} else if (gnutls_record_send (wrapped, buf, sz) != sz) {
 				//TODO// GnuTLS return value processing
+				fprintf (stderr, "gnutls_record_send() failed to pass on the requested bytes\n");
 				break;	// communication error
 			} else {
 				printf ("DEBUG: Copycat sent %d bytes to remote %d\n", (int) sz, remote);
@@ -128,22 +150,28 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 			sz = gnutls_record_recv (wrapped, buf, sizeof (buf));
 			//TODO// GnuTLS return value processing
 			printf ("DEBUG: Copycat received %d remote bytes from %d\n", (int) sz, remote);
-			if (sz == -1) {
-				break;	// stream error
+			if (sz < 0) {
+				if (gnutls_error_is_fatal (sz)) {
+					fprintf (stderr, "GnuTLS fatal error: %s\n", gnutls_strerror (sz));
+					break;	// stream error
+				} else {
+					fprintf (stderr, "GnuTLS recoverable error: %s\n", gnutls_strerror (sz));
+				}
 			} else if (sz == 0) {
-				errno = 0;
-				break;	// orderly shutdown
+				inout [1].events &= ~POLLIN;
+				shutdown (remote, SHUT_RD);
+				setsockopt (local, SOL_SOCKET, SO_LINGER, &linger, sizeof (linger));
+				shutdown (local, SHUT_WR);
 			} else if (send (local, buf, sz, MSG_DONTWAIT) != sz) {
 				break;	// communication error
 			} else {
 				printf ("DEBUG: Copycat sent %d bytes to local %d\n", (int) sz, local);
 			}
 		}
+		inout [0].revents &= ~(POLLIN | POLLHUP); // Thy copying cat?
+		inout [1].revents &= ~(POLLIN | POLLHUP); // Retract thee claws!
 		if ((inout [0].revents | inout [1].revents | inout [2].revents) & ~POLLIN) {
 			printf ("DEBUG: Copycat polling returned a special condition\n");
-			if ((inout [0].revents | inout [1].revents | inout [2].revents) & POLLIN) {
-				printf ("DEBUG: In addition, there is data to read... which is ignored\n");
-			}
 			break;	// Apparently, one of POLLERR, POLLHUP, POLLNVAL
 		}
 	}
@@ -353,7 +381,6 @@ static void *starttls_thread (void *cmd_void) {
 	//
 	// Copy TLS records until the connection is closed
 	copycat (soxx [1], passfd, session, clientfd); // soxx [1] is pooled decryptlink
-	gnutls_bye (session, GNUTLS_SHUT_WR);
 	close (soxx [1]);
 	close (passfd);
 	gnutls_deinit (session);
