@@ -209,7 +209,7 @@ int srv_clienthello (gnutls_session_t session) {
 
 	//
 	// Find the client-helloed ServerNameIndication, or the service name
-	memset (sni, 0, sizeof (sni));
+	sni [0] = '\0';
 	if (gnutls_server_name_get (session, sni, &snilen, &snitype, 0) == 0) {
 		switch (snitype) {
 		case GNUTLS_NAME_DNS:
@@ -233,7 +233,7 @@ int srv_clienthello (gnutls_session_t session) {
 			memcpy (lid, sni, sizeof (sni));
 		}
 	} else {
-		memcpy (sni, lid, sizeof (sni));
+		memcpy (sni, lid, sizeof (sni)-1);
 		sni [sizeof (sni) - 1] = '\0';
 	}
 
@@ -256,7 +256,7 @@ int srv_clienthello (gnutls_session_t session) {
 	gnutls_certificate_set_dh_params (
 		certscred,
 		dh_params);
-/*
+
 	gnutls_certificate_set_x509_key_file (
 		certscred,
 		"../testdata/tlspool-test-server-cert.pem",
@@ -266,19 +266,23 @@ int srv_clienthello (gnutls_session_t session) {
 		certscred,
 		"../testdata/tlspool-test-ca-cert.pem",
 		GNUTLS_X509_FMT_PEM);
-*/
+
 	gnutls_certificate_set_openpgp_key_file (
 		certscred,
 		"../testdata/tlspool-test-server-pubkey.asc",
 		"../testdata/tlspool-test-server-privkey.asc",
 		GNUTLS_OPENPGP_FMT_BASE64);
+
 	gnutls_credentials_set (
 		session,
 		GNUTLS_CRD_CERTIFICATE,
 		certscred);
+
+/*
 	gnutls_certificate_server_set_request (
 		session,
 		GNUTLS_CERT_REQUEST);
+*/
 
 	//
 	// Construct server credentials for SRP authentication
@@ -341,17 +345,20 @@ int cli_cert_retrieve (gnutls_session_t session,
 	gnutls_datum_t privdatum, certdatum;
 	gnutls_openpgp_crt_t pgpcert;
 	gnutls_openpgp_privkey_t pgppriv;
+	gnutls_x509_crt_t x509cert;
+	gnutls_x509_privkey_t x509priv;
 
 	//
 	// Setup a number of common references
 	cmd = (struct command *) gnutls_session_get_ptr (session);
 	lid = cmd->cmd.pio_data.pioc_starttls.localid;
-	*pcert_length = sizeof (gnutls_pcert_st);
-	*pcert = (gnutls_pcert_st *) malloc (*pcert_length);	//TODO:PREP//
+	*pcert_length = 1;
+	*pcert = (gnutls_pcert_st *) malloc (sizeof (gnutls_pcert_st));	//TODO:PREP//
 
 	//
-	// Create the structures for the response
+	// Create the structures for the response; each case returns GNUTLS_E_*
 	switch (certtp) {
+
 	case GNUTLS_CRT_OPENPGP:
 		fprintf (stderr, "DEBUG: Serving OpenPGP certificate request\n");
 		privdatum.data = certdatum.data = NULL;
@@ -389,21 +396,56 @@ int cli_cert_retrieve (gnutls_session_t session,
 		gnutls_privkey_import_openpgp (
 			*pkey,
 			pgppriv,
+			0 /*TODO?GNUTLS_PRIVKEY_IMPORT_AUTO_RELEASE*/);
+		return GNUTLS_E_SUCCESS;
+
+	case GNUTLS_CRT_X509:
+		fprintf (stderr, "DEBUG: Serving X.509 certificate request\n");
+		privdatum.data = certdatum.data = NULL;
+		//TODO// SNI-based, existence-checking, STARTTLS_LOCALID choice
+		//TODO// err = ldap_fetch_openpgp_cert (&certdatum, lid);
+		gnutls_load_file (
+			"../testdata/tlspool-test-client-cert.pem",
+			&certdatum);
+		//TODO// gnutls_privkey_import_pkcs11_url (*pkey, p11url);
+		gnutls_load_file (
+			"../testdata/tlspool-test-client-key.pem",
+			&privdatum);
+		// raw skips gnutls_openpgp_crt_init / gnutls_openpgp_crt_import
+		gnutls_x509_crt_init (
+			&x509cert);
+		gnutls_x509_crt_import (
+			x509cert,
+			&certdatum,
+			GNUTLS_X509_FMT_PEM);
+		gnutls_pcert_import_x509 (
+			*pcert,
+			x509cert,
+			0);
+		gnutls_x509_privkey_init (
+			&x509priv);
+		gnutls_x509_privkey_import2 (
+			x509priv,
+			&privdatum,
+			GNUTLS_X509_FMT_PEM,
+			"",	//TODO:FIXED:NOPWD//
+			0);
+		//TODO// Fill p11url from a p11-kit search!
+		gnutls_privkey_init (
+			pkey);
+		gnutls_privkey_import_x509 (
+			*pkey,
+			x509priv,
 			GNUTLS_PRIVKEY_IMPORT_AUTO_RELEASE);
 		return GNUTLS_E_SUCCESS;
-	case GNUTLS_CRT_X509:
-		printf ("DEBUG: Funny, X.509 certificate retrieval attempted\n");
-		return GNUTLS_E_CERTIFICATE_ERROR;
+
 	case GNUTLS_CRT_RAW:
 	case GNUTLS_CRT_UNKNOWN:
 	default:
 		printf ("DEBUG: Funny sort of certificate retrieval attempted\n");
 		return GNUTLS_E_CERTIFICATE_ERROR;
-	}
 
-	//
-	// Return the final judgement
-	return GNUTLS_E_SUCCESS;
+	}
 }
 
 /* The callback function that retrieves a secure remote passwd for the server.
@@ -498,7 +540,7 @@ static void *starttls_thread (void *cmd_void) {
 		gnutls_session_set_ptr (session, cmd);
 		gnutls_priority_set_direct (
 			session,
-			"NORMAL:-CTYPE-X.509:+CTYPE-OPENPGP",
+			"NORMAL:+CTYPE-X.509:+CTYPE-OPENPGP:+CTYPE-X.509",
 			// "NORMAL:+ANON-ECDH:+ANON-DH",
 			NULL);
 		gnutls_handshake_set_post_client_hello_function (
@@ -566,7 +608,11 @@ static void *starttls_thread (void *cmd_void) {
 		gnutls_priority_set_direct (
 			session,
 			// "NORMAL:+ANON-ECDH:+ANON-DH", NULL);
-			"NORMAL:-CTYPE-X.509:+CTYPE-OPENPGP", NULL);
+			"NORMAL:+CTYPE-X.509:+CTYPE-OPENPGP:+CTYPE-X.509", NULL);
+		gnutls_certificate_set_x509_trust_file (
+			certcred,
+			"../testdata/tlspool-test-ca-cert.pem",
+			GNUTLS_X509_FMT_PEM);
 		gnutls_certificate_set_retrieve_function2 (
 			certcred,
 			cli_cert_retrieve);
