@@ -1,0 +1,81 @@
+README for tlspool/testdata
+===========================
+
+This directory holds test data, with barren private keys.  The keys are
+useful while testing with _file primitives.
+
+TLS Pool will at some point abandon the file-based versions, and move
+them to PKCS #11.  For testing purposes, a SoftHSMv2 database will
+be included with the credentials to use then.
+
+The TLS Pool project funds GnuTLS to ensure PKCS #11 support for the
+following mechanisms:
+
+ * X.509, was already taken care of before TLS Pool started
+ * GnuPG, according to http://openfortress.nl/doc/spec/pgp-in-pkcs11/
+ * KDH, as described on http://tls-kdh.arpa2.net
+ * SRP, at least the password and if possible also the DH-ish calculations
+
+
+Credentials stored in files
+---------------------------
+
+tlspool-test-ca-cert.pem
+
+	A test CA with 10 years of validity.  No private key needed.
+
+tlspool-test-client-cert.pem
+
+	A test X.509 client certificate in PEM format, 10 years validity.
+
+tlspool-test-server-cert.pem
+
+	A test X.509 server certificate in PEM format, 10 years validity.
+
+tlspool-test-client-key.pem
+
+	The private key for the X.509 client certificate in PEM format.
+	No password encryption on this private key.
+
+tlspool-test-server-key.pem
+
+	The private key for the X.509 server certificate in PEM format.
+	No password encryption on this private key.
+
+tlspool-test-client-pubkey.asc
+
+	A test client OpenPGP public key in ASCII armour, 10 years validity.
+
+tlspool-test-server-privkey.asc
+
+	A test server OpenPGP public key in ASCII armour, 10 years validity.
+
+tlspool-test-client-privkey.asc
+
+	The private key for the client OpenPGP public key, in ASCII armour.
+	No password encryption on this private key.
+
+tlspool-test-server-pubkey.asc
+
+	The private key for the server OpenPGP public key, in ASCII armour.
+	No password encryption on this private key.
+
+tpasswd.conf
+
+	The configuration file for SRP, generated with srptool.
+
+tpasswd
+
+	The configuration for file SRP, holding user "tester" with
+	password "test".
+
+
+PKCS #11 databases for SoftHSMv2
+--------------------------------
+
+softhsm-tlspool.db
+
+	The slot database for SoftHSMv1.
+	TODO: Separate client and server.
+        TODO: Use v2 instead.
+

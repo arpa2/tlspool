@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <memory.h>
 #include <pthread.h>
 
 #include <unistd.h>
@@ -58,29 +59,30 @@
  * GnuTLS infrastructure setup.  Generate keys and so on.
  */
 static gnutls_dh_params_t dh_params;
-static gnutls_anon_server_credentials_t srv_anoncred;
-static gnutls_anon_client_credentials_t cli_anoncred;
 
 
-static void generate_dh_params (void)
-{
-  unsigned int bits = gnutls_sec_param_to_pk_bits (GNUTLS_PK_DH, GNUTLS_SEC_PARAM_LEGACY);
-  /* Generate Diffie-Hellman parameters - for use with DHE
-   * kx algorithms. These should be discarded and regenerated
-   * once a day, once a week or once a month. Depending on the
-   * security requirements.
-   */
-  gnutls_dh_params_init (&dh_params);
-  gnutls_dh_params_generate2 (dh_params, bits);
+/* Generate Diffie-Hellman parameters - for use with DHE
+ * kx algorithms. TODO: These should be discarded and regenerated
+ * once a day, once a week or once a month. Depending on the
+ * security requirements.
+ */
+static void generate_dh_params (void) {
+	unsigned int bits;
+	bits = gnutls_sec_param_to_pk_bits (
+		GNUTLS_PK_DH,
+		GNUTLS_SEC_PARAM_LEGACY);
+	gnutls_dh_params_init (
+		&dh_params);
+	gnutls_dh_params_generate2 (
+		dh_params,
+		bits);
 }
 
+/* The global and static setup function for the handler functions.
+ */
 void setup_handler (void) {
 	gnutls_global_init ();
-	gnutls_anon_allocate_server_credentials (&srv_anoncred);
-	gnutls_anon_allocate_client_credentials (&cli_anoncred);
 	generate_dh_params ();
-	gnutls_anon_set_server_dh_params (srv_anoncred, dh_params);
-	//NOT_APPLICABLE// gnutls_anon_set_client_dh_params (cli_anoncred, dh_params);
 }
 
 
@@ -179,77 +181,150 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 }
 
 
-/* The callback functions retrieve certification information for the client
+/* The callback functions retrieve various bits of information for the client
  * or server in the course of the handshake procedure.
  *
  * The logic here is based on client-sent information, such as:
  *  - TLS hints -- X.509 or alternatives like OpenPGP, SRP, PSK
  *  - TLS hints -- Server Name Indication
  *  - User hints -- local and remote identities provided
- *
- * The basic procedure is to establish the simplest possible kind of
- * connection.  So, in order of preference:
- *  - PSK or SRP
- *  - OpenPGP
- *  - X.509 (the default acts as a fallback in lieu of fantasy)
  */
-int retrieve_srv_certification (gnutls_session_t session,
-				const gnutls_datum_t *req_ca_dn,
-				int nreqs,
-				const gnutls_pk_algorithm_t *pk_algos,
-				int pk_algos_length,
-				gnutls_pcert_st **pcert,
-				unsigned int *pcert_length,
-				gnutls_privkey_t *pkey) {
-	gnutls_certificate_type_t certtp = gnutls_certificate_type_get (session);
-	gnutls_pcert_st *pc;
-	int err;
-	gnutls_openpgp_crt_t pgpcrtdata;
-	char *p11url = "pkcs11:manufacturer=SoftHSM&token=vanrein&id=%1A%E5%13%E8%DE%D4%86%E6%11%3B%0F%D5%E6%EE%33%BD%7F%B1%39%02"; //TODO:FIXED//
-	char *localid = "rick@openfortress.nl"; //TODO:FIXED//
-	switch (certtp) {
-	case GNUTLS_CRT_OPENPGP:
-		pc = malloc (sizeof (struct gnutls_pcert_st));	//TODO:IMPROVE
-		if (!pc) {
-			fprintf (stderr, "Failed to allocate PCERT structure\n");
-			return GNUTLS_E_MEMORY_ERROR;
+int srv_clienthello (gnutls_session_t session) {
+	struct command *cmd;
+	char sni [sizeof (cmd->cmd.pio_data.pioc_starttls.remoteid)]; // static
+	size_t snilen = sizeof (sni);
+	int snitype;
+	gnutls_anon_server_credentials_t anoncred;
+	gnutls_certificate_credentials_t certscred;
+	const char *srpuser;
+	gnutls_srp_server_credentials_t srpcred;
+	//TODO// gnutls_kdh_server_credentials_t kdhcred;
+	int err, sub;
+	char *lid;
+
+	//
+	// Setup a number of common references
+	cmd = (struct command *) gnutls_session_get_ptr (session);
+	lid = cmd->cmd.pio_data.pioc_starttls.localid;
+
+	//
+	// Find the client-helloed ServerNameIndication, or the service name
+	memset (sni, 0, sizeof (sni));
+	if (gnutls_server_name_get (session, sni, &snilen, &snitype, 0) == 0) {
+		switch (snitype) {
+		case GNUTLS_NAME_DNS:
+			break;
+		// Note: In theory, other name types could be sent, and it would
+		// be useful to access indexes beyond 0.  In practice, nobody
+		// uses other name types than exactly one GNUTLS_NAME_DNS.
+		default:
+			sni [0] = '\0';
+			fprintf (stderr, "Received an unexpected SNI type; that is possible but uncommon; skipping SNI.\n");
+			break;
 		}
-		//TODO// SNI-based, existence-checking, STARTTLS_LOCALID choice
-		err = ldap_fetch_openpgp_cert (&pgpcrtdata, localid);
-		if (err) {
-			perror ("DEBUG: OpenPGP certificate not in LDAP");
-			return GNUTLS_A_CERTIFICATE_UNKNOWN;
-		}
-		err = -gnutls_pcert_import_openpgp (pc, pgpcrtdata, 0);
-		if (err) {
-			printf ("DEBUG: Failed to import OpenPGP certificate data\n");
-			free (pc);
-			return err;
-		}
-		//TODO// Fill p11url from a p11-kit search!
-		//TODO// Allocate pkey as privkey_t structure
-		err = -gnutls_privkey_import_pkcs11_url (*pkey, p11url);
-		if (err) {
-			printf ("DEBUG: Failed to import PKCS #11 private key URL for use with OpenPGP\n");
-			free (pc);
-			return err;
-		}
-		*pcert = pc;
-		*pcert_length = 0;
-		return GNUTLS_E_SUCCESS;
-	case GNUTLS_CRT_X509:
-	case GNUTLS_CRT_RAW:
-	case GNUTLS_CRT_UNKNOWN:
-	default:
-		printf ("DEBUG: Funny sort of certificate retrieval attempted\n");
-		return GNUTLS_E_CERTIFICATE_ERROR;
 	}
+	if (sni [0] != '\0') {
+		if (*lid != '\0') {
+			if (strncmp (sni, lid, sizeof (sni)) != 0) {
+				fprintf (stderr, "Mismatch between client-sent SNI %s and local identity %s\n", sni, lid);
+				return GNUTLS_E_UNEXPECTED_HANDSHAKE_PACKET;
+			}
+		} else {
+			memcpy (lid, sni, sizeof (sni));
+		}
+	} else {
+		memcpy (sni, lid, sizeof (sni));
+		sni [sizeof (sni) - 1] = '\0';
+	}
+
+	//
+	// Construct server credentials for anonymous access
+	gnutls_anon_allocate_server_credentials (
+		&anoncred);
+	gnutls_anon_set_server_dh_params (
+		anoncred,
+		dh_params);
+	gnutls_credentials_set (
+		session,
+		GNUTLS_CRD_ANON,
+		anoncred);
+
+	//
+	// Construct server credentials for X.509 and OpenPGP cert types
+	gnutls_certificate_allocate_credentials (
+		&certscred);
+	gnutls_certificate_set_dh_params (
+		certscred,
+		dh_params);
+/*
+	gnutls_certificate_set_x509_key_file (
+		certscred,
+		"../testdata/tlspool-test-server-cert.pem",
+		"../testdata/tlspool-test-server-key.pem",
+		GNUTLS_X509_FMT_PEM);
+	gnutls_certificate_set_x509_trust_file (
+		certscred,
+		"../testdata/tlspool-test-ca-cert.pem",
+		GNUTLS_X509_FMT_PEM);
+*/
+	gnutls_certificate_set_openpgp_key_file (
+		certscred,
+		"../testdata/tlspool-test-server-pubkey.asc",
+		"../testdata/tlspool-test-server-privkey.asc",
+		GNUTLS_OPENPGP_FMT_BASE64);
+	gnutls_credentials_set (
+		session,
+		GNUTLS_CRD_CERTIFICATE,
+		certscred);
+	gnutls_certificate_server_set_request (
+		session,
+		GNUTLS_CERT_REQUEST);
+
+	//
+	// Construct server credentials for SRP authentication
+	//TODO/// Only lookup srpuser when SRP is selected? So set a _function?
+	srpuser = gnutls_srp_server_get_username (
+		session);
+	if (srpuser != NULL) {
+		int bits = 3072;
+		gnutls_srp_set_prime_bits (
+			session,
+			bits);
+		gnutls_srp_allocate_server_credentials (
+			&srpcred);
+		//TODO// gnutls_srp_set_server_credentials_file (
+		//TODO// 	&srpcred,
+		//TODO// 	"../testdata/tlspool-test-server-srp.tpasswd",
+		//TODO// 	"../testdata/tlspool-test-server-srp.conf");
+		gnutls_credentials_set (session,
+			GNUTLS_CRD_SRP,
+			srpcred);
+	}
+
+	//
+	// Construct server credentials for KDH authentication
+	//TODO// gnutls_kdh_allocate_server_credentials (
+	//TODO// 	&kdhcred);
+	//TODO// gnutls_kdh_set_server_dh_params (
+	//TODO// 	kdhcred,
+	//TODO// 	dh_params);
+	//TODO// gnutls_credentials_set (
+	//TODO// 	session,
+	//TODO// 	GNUTLS_CRD_KDH,
+	//TODO// 	kdhcred);
+
+	//
+	// TODO: Setup specialised priorities string?
+
+	//
+	// Round off with an overal judgement
+	return GNUTLS_E_SUCCESS;
 }
 
 /* The callback function that retrieves certification information from the
  * client in the course of the handshake procedure.
  */
-int retrieve_cli_certification (gnutls_session_t session,
+int cli_cert_retrieve (gnutls_session_t session,
 				const gnutls_datum_t* req_ca_dn,
 				int nreqs,
 				const gnutls_pk_algorithm_t* pk_algos,
@@ -257,7 +332,78 @@ int retrieve_cli_certification (gnutls_session_t session,
 				gnutls_pcert_st** pcert,
 				unsigned int *pcert_length,
 				gnutls_privkey_t * pkey) {
-	//TODO//
+	gnutls_certificate_type_t certtp = gnutls_certificate_type_get (session);
+	gnutls_pcert_st *pc;
+	int err;
+	//TODO// char *p11url = "pkcs11:manufacturer=SoftHSM&token=vanrein&id=%1A%E5%13%E8%DE%D4%86%E6%11%3B%0F%D5%E6%EE%33%BD%7F%B1%39%02"; //TODO:FIXED//
+	struct command *cmd;
+	char *lid;
+	gnutls_datum_t privdatum, certdatum;
+	gnutls_openpgp_crt_t pgpcert;
+	gnutls_openpgp_privkey_t pgppriv;
+
+	//
+	// Setup a number of common references
+	cmd = (struct command *) gnutls_session_get_ptr (session);
+	lid = cmd->cmd.pio_data.pioc_starttls.localid;
+	*pcert_length = sizeof (gnutls_pcert_st);
+	*pcert = (gnutls_pcert_st *) malloc (*pcert_length);	//TODO:PREP//
+
+	//
+	// Create the structures for the response
+	switch (certtp) {
+	case GNUTLS_CRT_OPENPGP:
+		fprintf (stderr, "DEBUG: Serving OpenPGP certificate request\n");
+		privdatum.data = certdatum.data = NULL;
+		//TODO// SNI-based, existence-checking, STARTTLS_LOCALID choice
+		//TODO// err = ldap_fetch_openpgp_cert (&certdatum, lid);
+		gnutls_load_file (
+			"../testdata/tlspool-test-client-pubkey.asc",
+			&certdatum);
+		//TODO// gnutls_privkey_import_pkcs11_url (*pkey, p11url);
+		gnutls_load_file (
+			"../testdata/tlspool-test-client-privkey.asc",
+			&privdatum);
+		// raw skips gnutls_openpgp_crt_init / gnutls_openpgp_crt_import
+		gnutls_openpgp_crt_init (
+			&pgpcert);
+		gnutls_openpgp_crt_import (
+			pgpcert,
+			&certdatum,
+			GNUTLS_OPENPGP_FMT_BASE64);
+		gnutls_pcert_import_openpgp (
+			*pcert,
+			pgpcert,
+			0);
+		gnutls_openpgp_privkey_init (
+			&pgppriv);
+		gnutls_openpgp_privkey_import (
+			pgppriv,
+			&privdatum,
+			GNUTLS_OPENPGP_FMT_BASE64,
+			"",	//TODO:FIXED:NOPWD//
+			0);
+		//TODO// Fill p11url from a p11-kit search!
+		gnutls_privkey_init (
+			pkey);
+		gnutls_privkey_import_openpgp (
+			*pkey,
+			pgppriv,
+			GNUTLS_PRIVKEY_IMPORT_AUTO_RELEASE);
+		return GNUTLS_E_SUCCESS;
+	case GNUTLS_CRT_X509:
+		printf ("DEBUG: Funny, X.509 certificate retrieval attempted\n");
+		return GNUTLS_E_CERTIFICATE_ERROR;
+	case GNUTLS_CRT_RAW:
+	case GNUTLS_CRT_UNKNOWN:
+	default:
+		printf ("DEBUG: Funny sort of certificate retrieval attempted\n");
+		return GNUTLS_E_CERTIFICATE_ERROR;
+	}
+
+	//
+	// Return the final judgement
+	return GNUTLS_E_SUCCESS;
 }
 
 /* The callback function that retrieves a secure remote passwd for the server.
@@ -309,13 +455,20 @@ int retrieve_cli_psk_creds (gnutls_session_t session,
  * TODO: Are client and server routines different?
  */
 static void *starttls_thread (void *cmd_void) {
-	struct command *cmd = (struct command *) cmd_void;
+	struct command *cmd;
 	int soxx [2];	// Plaintext stream between TLS pool and application
-	int passfd = cmd->passfd;
-	int clientfd = cmd->clientfd;
+	int passfd;
+	int clientfd;
 	gnutls_session_t session;
-	gnutls_certificate_credentials_t pgpcred;
+	gnutls_certificate_credentials_t tlscred;
 	int ret;
+
+	//
+	// General thread setup
+	cmd = (struct command *) cmd_void;
+	passfd = cmd->passfd;
+	clientfd = cmd->clientfd;
+
 	//
 	// Permit cancellation of this thread
 	errno = pthread_setcancelstate (PTHREAD_CANCEL_ENABLE, NULL);
@@ -334,34 +487,135 @@ static void *starttls_thread (void *cmd_void) {
 		send_error (cmd, errno, "Failed to create 2ary sockets");
 		return;
 	}
+
 	//
-	// Negotiate TLS
-	gnutls_certificate_allocate_credentials (&pgpcred);
-	gnutls_certificate_set_pin_function (pgpcred, gnutls_pin_callback, NULL);
+	// Negotiate TLS; split client/server mode setup
 	if (cmd->cmd.pio_cmd == PIOC_STARTTLS_SERVER_V1) {
+		//
+		// Setup as a TLS server
+		//
 		gnutls_init (&session,  GNUTLS_SERVER);
-		// gnutls_priority_set_direct (session, "NORMAL:+CTYPE-OPENPGP:+ANON-ECDH:+ANON-DH", NULL);
-		// gnutls_priority_set_direct (session, "NORMAL:+CTYPE-OPENPGP", NULL);
-		gnutls_priority_set_direct (session, "NORMAL:+ANON-ECDH:+ANON-DH", NULL);
-		gnutls_credentials_set (session, GNUTLS_CRD_ANON, srv_anoncred);
-		//TODO// gnutls_certificate_set_retrieve_function2 (pgpcred, retrieve_srv_certification);
-		//TODO// gnutls_srp_set_server_credentials_function (srv_srpcred, retrieve_srp_srv_creds);
-		//TODO// gnutls_psk_set_server_credentials_function (srv_pskcred, retrieve_psk_srv_creds);
+		gnutls_session_set_ptr (session, cmd);
+		gnutls_priority_set_direct (
+			session,
+			"NORMAL:-CTYPE-X.509:+CTYPE-OPENPGP",
+			// "NORMAL:+ANON-ECDH:+ANON-DH",
+			NULL);
+		gnutls_handshake_set_post_client_hello_function (
+			session,
+			srv_clienthello);
+
+	} else if (cmd->cmd.pio_cmd == PIOC_STARTTLS_CLIENT_V1) {
+		//
+		// Setup as a TLS client
+		//
+		gnutls_anon_client_credentials_t anoncred;
+		gnutls_certificate_credentials_t certcred;
+		gnutls_srp_client_credentials_t srpcred;
+		//TODO// gnutls_kdh_client_credentials_t kdhcred;
+
+		//
+		// Setup as a TLS client
+		gnutls_init (
+			&session,
+			GNUTLS_CLIENT);
+		gnutls_session_set_ptr (
+			session,
+			cmd);
+
+		//
+		// Setup for potential sending of SNI
+		if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_SEND_SNI) {
+			char *str = cmd->cmd.pio_data.pioc_starttls.remoteid;
+			int len = 0;
+			while (str [len] && (len < 128)) {
+				len++;
+			}
+			if (len == 128) {
+				send_error (cmd, EINVAL, "Remote ID is not set");
+				close (soxx [0]);
+				close (soxx [1]);
+				close (passfd);
+				return;
+			}
+			cmd->cmd.pio_data.pioc_starttls.remoteid [127] = '\0';
+			gnutls_server_name_set (
+				session,
+				GNUTLS_NAME_DNS,
+				str,
+				len);
+		}
+
+		//
+		// Construct client credentials for anonymous access
+		gnutls_anon_allocate_client_credentials (
+			&anoncred);
+		gnutls_credentials_set (
+			session,
+			GNUTLS_CRD_ANON,
+			anoncred);
+
+		//
+		// Construct client credentials for X.509 and OpenPGP certs
+		gnutls_certificate_allocate_credentials (
+			&certcred);
+		gnutls_certificate_set_pin_function (
+			certcred,
+			gnutls_pin_callback,
+			NULL);
+		gnutls_priority_set_direct (
+			session,
+			// "NORMAL:+ANON-ECDH:+ANON-DH", NULL);
+			"NORMAL:-CTYPE-X.509:+CTYPE-OPENPGP", NULL);
+		gnutls_certificate_set_retrieve_function2 (
+			certcred,
+			cli_cert_retrieve);
+		gnutls_credentials_set (
+			session,
+			GNUTLS_CRD_CERTIFICATE,
+			certcred);
+
+		//
+		// Construct client credentials for SRP
+		/* TODO: Huh?!?  Supply username + password at once?!?
+		gnutls_srp_allocate_client_credentials (
+			&srpcred);
+		gnutls_srp_set_client_credentials_function (
+			srpcred,
+			...);
+		gnutls_credentials_set (
+			session,
+			GNUTLS_CRD_SRP,
+			srpcred);
+		*/
+
+		//
+		// Construct client credentials for KDH
+		//TODO// gnutls_kdh_allocate_client_credentials (
+		//TODO// 	&kdhcred);
+		//TODO// gnutls_kdh_set_client_credentials_function (
+		//TODO// 	kdhcred,
+		//TODO// 	cli_kdh_retrieve);
+		//TODO// gnutls_credentials_set (
+		//TODO// 	session,
+		//TODO// 	GNUTLS_CRD_KDH,
+		//TODO// 	kdhcred);
+
 	} else {
-		gnutls_init (&session, GNUTLS_CLIENT);
-		// gnutls_priority_set_direct (session, "PERFORMANCE:+CTYPE-OPENPGP:+ANON-ECDH:+ANON-DH", NULL);
-		// gnutls_priority_set_direct (session, "NORMAL:+CTYPE-OPENPGP", NULL);
-		gnutls_priority_set_direct (session, "NORMAL:+ANON-ECDH:+ANON-DH", NULL);
-		gnutls_credentials_set (session, GNUTLS_CRD_ANON, cli_anoncred);
-		//TODO// gnutls_certificate_set_retrieve_function2 (pgpcred, retrieve_cli_certification);
-		//TODO// gnutls_srp_set_client_credentials_function (cli_srpcred, retrieve_cli_srp_creds);
-		//TODO// gnutls_psk_set_client_credentials_function (cli_pskcred, retrieve_cli_psk_creds);
+		//
+		// Neither a TLS client nor a TLS server
+		//
+		send_error (cmd, ENOTSUP, "Command not supported");
+		close (soxx [0]);
+		close (soxx [1]);
+		close (passfd);
+		return;
 	}
 	gnutls_transport_set_int (session, passfd);
 	gnutls_handshake_set_timeout (session, GNUTLS_DEFAULT_HANDSHAKE_TIMEOUT);
 	do {
 		ret = gnutls_handshake (session);
-        } while (ret < 0 && gnutls_error_is_fatal (ret) == 0);
+        } while ((ret < 0) && (gnutls_error_is_fatal (ret) == 0));
 	if (ret < 0) {
 		gnutls_deinit (session);
 		fprintf (stderr, "TLS handshake failed: %s\n", gnutls_strerror (ret));
