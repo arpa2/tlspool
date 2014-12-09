@@ -196,7 +196,7 @@ int srv_clienthello (gnutls_session_t session) {
 	int snitype;
 	gnutls_anon_server_credentials_t anoncred;
 	gnutls_certificate_credentials_t certscred;
-	const char *srpuser;
+	int srpbits;
 	gnutls_srp_server_credentials_t srpcred;
 	//TODO// gnutls_kdh_server_credentials_t kdhcred;
 	int err, sub;
@@ -286,24 +286,19 @@ int srv_clienthello (gnutls_session_t session) {
 
 	//
 	// Construct server credentials for SRP authentication
-	//TODO/// Only lookup srpuser when SRP is selected? So set a _function?
-	srpuser = gnutls_srp_server_get_username (
-		session);
-	if (srpuser != NULL) {
-		int bits = 3072;
-		gnutls_srp_set_prime_bits (
-			session,
-			bits);
-		gnutls_srp_allocate_server_credentials (
-			&srpcred);
-		gnutls_srp_set_server_credentials_file (
-			srpcred,
-			"../testdata/tlspool-test-srp.passwd",
-			"../testdata/tlspool-test-srp.conf");
-		gnutls_credentials_set (session,
-			GNUTLS_CRD_SRP,
-			srpcred);
-	}
+	srpbits = 3072;
+	gnutls_srp_set_prime_bits (
+		session,
+		srpbits);
+	gnutls_srp_allocate_server_credentials (
+		&srpcred);
+	gnutls_srp_set_server_credentials_file (
+		srpcred,
+		"../testdata/tlspool-test-srp.passwd",
+		"../testdata/tlspool-test-srp.conf");
+	gnutls_credentials_set (session,
+		GNUTLS_CRD_SRP,
+		srpcred);
 
 	//
 	// Construct server credentials for KDH authentication
