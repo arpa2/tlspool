@@ -60,11 +60,11 @@ tlspool-test-server-pubkey.asc
 	The private key for the server OpenPGP public key, in ASCII armour.
 	No password encryption on this private key.
 
-tpasswd.conf
+tlspool-test-srp.conf
 
 	The configuration file for SRP, generated with srptool.
 
-tpasswd
+tlspool-test-srp.passwd
 
 	The configuration for file SRP, holding user "tester" with
 	password "test".

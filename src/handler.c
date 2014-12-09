@@ -296,10 +296,10 @@ int srv_clienthello (gnutls_session_t session) {
 			bits);
 		gnutls_srp_allocate_server_credentials (
 			&srpcred);
-		//TODO// gnutls_srp_set_server_credentials_file (
-		//TODO// 	&srpcred,
-		//TODO// 	"../testdata/tlspool-test-server-srp.tpasswd",
-		//TODO// 	"../testdata/tlspool-test-server-srp.conf");
+		gnutls_srp_set_server_credentials_file (
+			srpcred,
+			"../testdata/tlspool-test-srp.passwd",
+			"../testdata/tlspool-test-srp.conf");
 		gnutls_credentials_set (session,
 			GNUTLS_CRD_SRP,
 			srpcred);
@@ -448,6 +448,16 @@ int cli_cert_retrieve (gnutls_session_t session,
 	}
 }
 
+int cli_srpcreds_retrieve (gnutls_session_t session,
+				char **username,
+				char **password) {
+	//TODO:FIXED//
+	fprintf (stderr, "DEBUG: Picking up SRP credentials\n");
+	*username = strdup ("tester");
+	*password = strdup ("test");
+	return GNUTLS_E_SUCCESS;
+}
+
 /* The callback function that retrieves a secure remote passwd for the server.
  */
 int retrieve_srv_srp_creds (gnutls_session_t session,
@@ -540,7 +550,8 @@ static void *starttls_thread (void *cmd_void) {
 		gnutls_session_set_ptr (session, cmd);
 		gnutls_priority_set_direct (
 			session,
-			"NORMAL:+CTYPE-X.509:+CTYPE-OPENPGP:+CTYPE-X.509",
+			"NORMAL:-KX-ALL:+SRP:+SRP-RSA:+SRP-DSS",
+			// "NORMAL:+CTYPE-X.509:+CTYPE-OPENPGP:+CTYPE-X.509",
 			// "NORMAL:+ANON-ECDH:+ANON-DH",
 			NULL);
 		gnutls_handshake_set_post_client_hello_function (
@@ -607,8 +618,10 @@ static void *starttls_thread (void *cmd_void) {
 			NULL);
 		gnutls_priority_set_direct (
 			session,
-			// "NORMAL:+ANON-ECDH:+ANON-DH", NULL);
-			"NORMAL:+CTYPE-X.509:+CTYPE-OPENPGP:+CTYPE-X.509", NULL);
+			"NORMAL:+SRP:+SRP-RSA:+SRP-DSS",
+			// "NORMAL:+ANON-ECDH:+ANON-DH",
+			// "NORMAL:+CTYPE-X.509:+CTYPE-OPENPGP:+CTYPE-X.509",
+			NULL);
 		gnutls_certificate_set_x509_trust_file (
 			certcred,
 			"../testdata/tlspool-test-ca-cert.pem",
@@ -623,17 +636,15 @@ static void *starttls_thread (void *cmd_void) {
 
 		//
 		// Construct client credentials for SRP
-		/* TODO: Huh?!?  Supply username + password at once?!?
 		gnutls_srp_allocate_client_credentials (
 			&srpcred);
 		gnutls_srp_set_client_credentials_function (
 			srpcred,
-			...);
+			cli_srpcreds_retrieve);
 		gnutls_credentials_set (
 			session,
 			GNUTLS_CRD_SRP,
 			srpcred);
-		*/
 
 		//
 		// Construct client credentials for KDH
