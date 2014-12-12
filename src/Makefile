@@ -3,6 +3,8 @@ all: tlspool
 clean:
 	rm -f *.o tlspool
 
+anew: clean all
+
 .c.o:
 	gcc -ggdb3 -pthread -I ../include -I /usr/local/include -I /usr/include/p11-kit-1 -c -o $@ $<
 
