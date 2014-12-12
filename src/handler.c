@@ -78,10 +78,24 @@ static void generate_dh_params (void) {
 		bits);
 }
 
+/* A log printing function
+ */
+int log_gnutls (int level, const char *msg) {
+	fprintf (stderr, "GnuTLS_%d: %s", level, msg);
+	return GNUTLS_E_SUCCESS;
+}
+	
+
 /* The global and static setup function for the handler functions.
  */
 void setup_handler (void) {
+	char *curver;
+	fprintf (stderr, "DEBUG: Compiled against GnuTLS version %s\n", GNUTLS_VERSION);
+	curver = gnutls_check_version (GNUTLS_VERSION);
+	fprintf (stderr, "DEBUG: Running against %s GnuTLS version %s\n", curver? "acceptable": "OLDER", curver? curver: gnutls_check_version (NULL));
 	gnutls_global_init ();
+	gnutls_global_set_log_function (log_gnutls);
+	gnutls_global_set_log_level (3);
 	generate_dh_params ();
 }
 
@@ -278,11 +292,9 @@ int srv_clienthello (gnutls_session_t session) {
 		GNUTLS_CRD_CERTIFICATE,
 		certscred);
 
-/*
 	gnutls_certificate_server_set_request (
 		session,
-		GNUTLS_CERT_REQUEST);
-*/
+		GNUTLS_CERT_REQUIRE);
 
 	//
 	// Construct server credentials for SRP authentication
@@ -423,7 +435,7 @@ int cli_cert_retrieve (gnutls_session_t session,
 			x509priv,
 			&privdatum,
 			GNUTLS_X509_FMT_PEM,
-			"",	//TODO:FIXED:NOPWD//
+			NULL,	//TODO:FIXED:NOPWD//
 			0);
 		//TODO// Fill p11url from a p11-kit search!
 		gnutls_privkey_init (
@@ -545,8 +557,8 @@ static void *starttls_thread (void *cmd_void) {
 		gnutls_session_set_ptr (session, cmd);
 		gnutls_priority_set_direct (
 			session,
-			"NORMAL:-KX-ALL:+SRP:+SRP-RSA:+SRP-DSS",
-			// "NORMAL:+CTYPE-X.509:+CTYPE-OPENPGP:+CTYPE-X.509",
+			// "NORMAL:-KX-ALL:+SRP:+SRP-RSA:+SRP-DSS",
+			"NORMAL:+CTYPE-X.509:-CTYPE-OPENPGP:+CTYPE-X.509",
 			// "NORMAL:+ANON-ECDH:+ANON-DH",
 			NULL);
 		gnutls_handshake_set_post_client_hello_function (
@@ -613,9 +625,9 @@ static void *starttls_thread (void *cmd_void) {
 			NULL);
 		gnutls_priority_set_direct (
 			session,
-			"NORMAL:+SRP:+SRP-RSA:+SRP-DSS",
+			// "NORMAL:+SRP:+SRP-RSA:+SRP-DSS",
+			"NORMAL:+CTYPE-X.509:-CTYPE-OPENPGP:+CTYPE-X.509",
 			// "NORMAL:+ANON-ECDH:+ANON-DH",
-			// "NORMAL:+CTYPE-X.509:+CTYPE-OPENPGP:+CTYPE-X.509",
 			NULL);
 		gnutls_certificate_set_x509_trust_file (
 			certcred,
