@@ -270,13 +270,15 @@ int main (int argc, char *argv []) {
 		int cnx;
 		int fwd;
 		struct copydata *sub;
+		starttls_t curtlsdata;
+		memcpy (&curtlsdata, &tlsdata, sizeof (curtlsdata));
 		cnx = accept (sox, NULL, 0);
 		if (cnx == -1) {
 			perror ("Failed to accept incoming connection");
 			continue;
 		}
 		if (role == 's') {
-			cnx = starttls_server (cnx, &tlsdata, NULL);
+			cnx = starttls_server (cnx, &curtlsdata, NULL);
 			if (cnx == -1) {
 				perror ("Failed to setup TLS server");
 				continue;
@@ -304,10 +306,11 @@ int main (int argc, char *argv []) {
 			continue;
 		}
 		if (role == 'c') {
-			fwd = starttls_client (fwd, &tlsdata);
+			fwd = starttls_client (fwd, &curtlsdata);
 			if (fwd == -1) {
 				perror ("Failed to setup TLS client");
 				close (cnx);
+				close (fwd);
 				continue;
 			}
 		}

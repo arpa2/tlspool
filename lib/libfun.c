@@ -8,6 +8,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/select.h>
+
+#include <unistd.h>
 
 #include <tlspool/starttls.h>
 #include <tlspool/commands.h>
@@ -18,7 +21,35 @@
  */
 int tlspool_socket (char *path) {
 	static int poolfd = -1;	/* Kept open until program termination */
-	//TODO// Possibly really test if a poolfd is valid?
+poolfd = -1; //TODO// Recognise crashed TLS Pool daemon and _then_ reset poolfd
+/*
+	if (poolfd != -1) {
+		fd_set fdtest;
+		struct timeval fdtout;
+		FD_ZERO (&fdtest);
+		FD_SET (poolfd, &fdtest);
+		// select() with timeout 0.000000 becomes a quick poll
+		fdtout.tv_sec  = 0;
+		fdtout.tv_usec = 0;
+		// Select may return -1 on error, 1 on fd-except, 0 on no change
+		if (select (poolfd + 1, NULL, NULL, &fdtest, &fdtout) != 0) {
+			close (poolfd);	// Likely to fail silently
+			errno = 0;
+			poolfd = -1;
+		}
+	}
+*/
+/*
+	if (poolfd != -1) {
+		struct sockaddr_un sun;
+		socklen_t sunlen = sizeof (sun);
+		if (getpeername (poolfd, (struct sockaddr *) &sun, &sunlen) == -1) {
+			close (poolfd);	// Likely to fail silently
+			errno = 0;
+			poolfd = -1;
+		}
+	}
+*/
 	if (poolfd == -1) {
 		struct sockaddr_un sun;
 		if (!path) {

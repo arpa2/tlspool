@@ -20,6 +20,10 @@
 #include <tlspool/internal.h>
 
 
+#include "manage.h"
+#include "localid.h"
+
+
 /* This module hosts TLS handlers which treat an individual connection.
  *
  * Initially, the TLS setup is processed, which means validating the
@@ -103,6 +107,9 @@ if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 	gnutls_global_set_log_level (3);
 	err = err || generate_dh_params ();
 if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+	fprintf (stderr, "DEBUG: Setting up management databases\n");
+	err = err || manage_setup ();
+if (err) fprintf (stderr, "MISSER %s: %s:%d\n", db_strerror (err), __FILE__, __LINE__);
 	if (err != GNUTLS_E_SUCCESS) {
 		fprintf (stderr, "ERROR: GnuTLS setup failed: %s\n", gnutls_strerror (err));
 		exit (1);
@@ -421,7 +428,7 @@ int cli_cert_retrieve (gnutls_session_t session,
 	gnutls_pcert_st *pc = NULL;
 	//TODO// char *p11url = "pkcs11:manufacturer=SoftHSM&token=vanrein&id=%1A%E5%13%E8%DE%D4%86%E6%11%3B%0F%D5%E6%EE%33%BD%7F%B1%39%02"; //TODO:FIXED//
 	struct command *cmd;
-	char *lid;
+	char *lid, *rid;
 	gnutls_datum_t privdatum = { NULL, 0 };
 	gnutls_datum_t certdatum = { NULL, 0 };
 	gnutls_openpgp_crt_t pgpcert = NULL;
@@ -429,6 +436,13 @@ int cli_cert_retrieve (gnutls_session_t session,
 	gnutls_x509_crt_t x509cert = NULL;
 	gnutls_x509_privkey_t x509priv = NULL;
 	int err = GNUTLS_E_SUCCESS;
+	DBC *crs_disclose = NULL;
+	DBC *crs_localid = NULL;
+	DBT discpatn;
+	DBT keydata;
+	DBT creddata;
+	DB_TXN *txn = NULL;
+	int lidtype;
 
 	//
 	// Setup a number of common references and structures
@@ -438,6 +452,19 @@ int cli_cert_retrieve (gnutls_session_t session,
 		return -GNUTLS_E_INVALID_SESSION;
 	}
 	lid = cmd->cmd.pio_data.pioc_starttls.localid;
+	rid = cmd->cmd.pio_data.pioc_starttls.remoteid;
+
+	//
+	// Refuse to disclose client credentials when the server name is unset;
+	// note that server-claimed identities are unproven during handshake.
+	if (!*rid) {
+		fprintf (stderr, "DEBUG: No remote identity (server name) set, so no client credential disclosure\n");
+		return -GNUTLS_E_NO_CERTIFICATE_FOUND;
+	}
+
+	//
+	// Allocate response structures
+	// TODO: Add support for certificate chains (root cert is not needed)
 	*pcert_length = 1;
 	*pcert = (gnutls_pcert_st *) malloc (sizeof (gnutls_pcert_st));	//TODO:PREP//
 	if (*pcert == NULL) {
@@ -451,106 +478,62 @@ int cli_cert_retrieve (gnutls_session_t session,
 
 	case GNUTLS_CRT_OPENPGP:
 		fprintf (stderr, "DEBUG: Serving OpenPGP certificate request\n");
-		//TODO// SNI-based, existence-checking, STARTTLS_LOCALID choice
-		//TODO// err = ldap_fetch_openpgp_cert (&certdatum, lid);
-		err = err || gnutls_load_file (
-			"../testdata/tlspool-test-client-pubkey.asc",
-			&certdatum);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		//TODO// err = err || gnutls_privkey_import_pkcs11_url (*pkey, p11url);
-		err = err || gnutls_load_file (
-			"../testdata/tlspool-test-client-privkey.asc",
-			&privdatum);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		// raw skips gnutls_openpgp_crt_init / gnutls_openpgp_crt_import
-		err = err || gnutls_openpgp_crt_init (
-			&pgpcert);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		err = err || gnutls_openpgp_crt_import (
-			pgpcert,
-			&certdatum,
-			GNUTLS_OPENPGP_FMT_BASE64);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		err = err || gnutls_pcert_import_openpgp (
-			*pcert,
-			pgpcert,
-			0);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		err = err || gnutls_openpgp_privkey_init (
-			&pgppriv);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		err = err || gnutls_openpgp_privkey_import (
-			pgppriv,
-			&privdatum,
-			GNUTLS_OPENPGP_FMT_BASE64,
-			"",	//TODO:FIXED:NOPWD//
-			0);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		//TODO// Fill p11url from a p11-kit search!
-		err = err || gnutls_privkey_init (
-			pkey);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		err = err || gnutls_privkey_import_openpgp (
-			*pkey,
-			pgppriv,
-			0 /*TODO?GNUTLS_PRIVKEY_IMPORT_AUTO_RELEASE*/);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		if (err) {
-			free (*pcert);
-			*pcert = NULL;
-		}
-		return err;
+		lidtype = LID_TYPE_PGP;
+		break;
+//REPLACED// 		//TODO// SNI-based, existence-checking, STARTTLS_LOCALID choice
+//REPLACED// 		//TODO// err = ldap_fetch_openpgp_cert (&certdatum, lid);
+//REPLACED// 		err = err || gnutls_load_file (
+//REPLACED// 			"../testdata/tlspool-test-client-pubkey.asc",
+//REPLACED// 			&certdatum);
+//REPLACED// if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+//REPLACED// 		//TODO// err = err || gnutls_privkey_import_pkcs11_url (*pkey, p11url);
+//REPLACED// 		err = err || gnutls_load_file (
+//REPLACED// 			"../testdata/tlspool-test-client-privkey.asc",
+//REPLACED// 			&privdatum);
+//REPLACED// if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+//REPLACED// 		// raw skips gnutls_openpgp_crt_init / gnutls_openpgp_crt_import
+//REPLACED// 		err = err || gnutls_openpgp_crt_init (
+//REPLACED// 			&pgpcert);
+//REPLACED// if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+//REPLACED// 		err = err || gnutls_openpgp_crt_import (
+//REPLACED// 			pgpcert,
+//REPLACED// 			&certdatum,
+//REPLACED// 			GNUTLS_OPENPGP_FMT_BASE64);
+//REPLACED// if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+//REPLACED// 		err = err || gnutls_pcert_import_openpgp (
+//REPLACED// 			*pcert,
+//REPLACED// 			pgpcert,
+//REPLACED// 			0);
+//REPLACED// if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+//REPLACED// 		err = err || gnutls_openpgp_privkey_init (
+//REPLACED// 			&pgppriv);
+//REPLACED// if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+//REPLACED// 		err = err || gnutls_openpgp_privkey_import (
+//REPLACED// 			pgppriv,
+//REPLACED// 			&privdatum,
+//REPLACED// 			GNUTLS_OPENPGP_FMT_BASE64,
+//REPLACED// 			"",	//TODO:FIXED:NOPWD//
+//REPLACED// 			0);
+//REPLACED// if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+//REPLACED// 		//TODO// Fill p11url from a p11-kit search!
+//REPLACED// 		err = err || gnutls_privkey_init (
+//REPLACED// 			pkey);
+//REPLACED// if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+//REPLACED// 		err = err || gnutls_privkey_import_openpgp (
+//REPLACED// 			*pkey,
+//REPLACED// 			pgppriv,
+//REPLACED// 			0 /*TODO?GNUTLS_PRIVKEY_IMPORT_AUTO_RELEASE*/);
+//REPLACED// if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+//REPLACED// 		if (err) {
+//REPLACED// 			free (*pcert);
+//REPLACED// 			*pcert = NULL;
+//REPLACED// 		}
+//REPLACED// 		return err;
 
 	case GNUTLS_CRT_X509:
-		fprintf (stderr, "DEBUG: Serving X.509 certificate request\n");
-		//TODO// SNI-based, existence-checking, STARTTLS_LOCALID choice
-		//TODO// err = ldap_fetch_openpgp_cert (&certdatum, lid);
-		err = err || gnutls_load_file (
-			"../testdata/tlspool-test-client-cert.pem",
-			&certdatum);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		//TODO// err = err || gnutls_privkey_import_pkcs11_url (*pkey, p11url);
-		err = err || gnutls_load_file (
-			"../testdata/tlspool-test-client-key.pem",
-			&privdatum);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		err = err || gnutls_x509_crt_init (
-			&x509cert);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		err = err || gnutls_x509_crt_import (
-			x509cert,
-			&certdatum,
-			GNUTLS_X509_FMT_PEM);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		err = err || gnutls_pcert_import_x509 (
-			*pcert,
-			x509cert,
-			0);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		err = err || gnutls_x509_privkey_init (
-			&x509priv);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		err = err || gnutls_x509_privkey_import2 (
-			x509priv,
-			&privdatum,
-			GNUTLS_X509_FMT_PEM,
-			NULL,	//TODO:FIXED:NOPWD//
-			0);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		//TODO// Fill p11url from a p11-kit search!
-		err = err || gnutls_privkey_init (
-			pkey);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		err = err || gnutls_privkey_import_x509 (
-			*pkey,
-			x509priv,
-			GNUTLS_PRIVKEY_IMPORT_AUTO_RELEASE);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		if (err != GNUTLS_E_SUCCESS) {
-			free (*pcert);
-			*pcert = NULL;
-		}
-		return err;
+		fprintf (stderr, "DEBUG: Serving X.509 certificate request from localid.db + disclose.db\n");
+		lidtype = LID_TYPE_X509;
+		break;
 
 	case GNUTLS_CRT_RAW:
 	case GNUTLS_CRT_UNKNOWN:
@@ -561,6 +544,124 @@ if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 		return -GNUTLS_E_CERTIFICATE_ERROR;
 
 	}
+
+	err = err || dbh_disclose->cursor (
+		dbh_disclose,
+		txn,
+		&crs_disclose,
+		0);
+	err = err || dbh_localid->cursor (
+		dbh_localid,
+		txn,
+		&crs_localid,
+		0);
+if (err) fprintf (stderr, "MISSER %s: %s:%d\n", strerror (err), __FILE__, __LINE__);
+	memset (&discpatn, 0, sizeof (discpatn));
+	memset (& keydata, 0, sizeof ( keydata));
+	memset (&creddata, 0, sizeof (creddata));
+	// Setup initial disclosure pattern with the full remote identity
+	discpatn.size = strlen (rid);
+	discpatn.data = alloca (discpatn.size);
+	memcpy (discpatn.data, rid, discpatn.size);
+	err = err || dbcred_iterate_from_remoteid (crs_disclose, crs_localid, &discpatn, &keydata, &creddata);
+if (err) fprintf (stderr, "MISSER %s: %s:%d\n", strerror (err), __FILE__, __LINE__);
+	while (err == 0) {
+		int ok;
+		uint32_t flags;
+		char *p11priv;
+		uint8_t *pubdata;
+		int pubdatalen;
+		fprintf (stderr, "DEBUG: Found BDB entry %s disclosed to %s\n", creddata.data + 4, rid);
+		ok = dbcred_interpret (
+			&creddata,
+			&flags,
+			&p11priv,
+			&certdatum.data,
+			&certdatum.size);
+		fprintf (stderr, "DEBUG: DBD entry has flags=0x%08x, p11priv=\"%s\", cert.size=%d\n", flags, p11priv, certdatum.size);
+		ok = ok && ((flags & ( LID_TYPE_MASK | LID_ROLE_CLIENT)) == (lidtype | LID_ROLE_CLIENT));
+		//TODO// ok = ok && verify_cert_... (...); -- keyidlookup
+		if (ok) {
+			err = err || gnutls_privkey_init (
+				pkey);
+#ifdef TODO_PKCS11_ADDED
+			err = err || gnutls_privkey_import_pkcs11_url (
+				*pkey,
+				p11priv);
+if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+#else
+			switch (lidtype) {
+			case LID_TYPE_X509:
+				err = err || gnutls_load_file (
+					"../testdata/tlspool-test-client-key.pem",
+					&privdatum);
+if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+				err = err || gnutls_privkey_import_x509_raw (
+					*pkey,
+					&privdatum,
+					GNUTLS_X509_FMT_PEM,
+					NULL,
+					0);
+if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+				break;
+			case LID_TYPE_PGP:
+				err = err || gnutls_load_file (
+					"../testdata/tlspool-test-client-privkey.asc",
+					&privdatum);
+if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+				err = err || gnutls_privkey_import_openpgp_raw (
+					*pkey,
+					&privdatum,
+					GNUTLS_OPENPGP_FMT_BASE64,
+					NULL,	/* use master key */
+					0);
+if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+				break;
+			default:
+				/* Should not occur */
+				break;
+			}
+#endif
+			switch (lidtype) {
+			case LID_TYPE_X509:
+				err = err || gnutls_pcert_import_x509_raw (
+					*pcert,
+					&certdatum,
+					GNUTLS_X509_FMT_DER,
+					0);
+if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+				break;
+			case LID_TYPE_PGP:
+fprintf (stderr, "DEBUG: Importing from %d bytes: %02x %02x %02x ... %02x %02x %02x\n", certdatum.size, ((char *)certdatum.data) [0] & 0x00ff, ((char *)certdatum.data) [1] & 0x00ff, ((char *)certdatum.data) [2] & 0x00ff, ((char *)certdatum.data) [certdatum.size-3] & 0x00ff, ((char *)certdatum.data) [certdatum.size-2] & 0x00ff, ((char *)certdatum.data) [certdatum.size-1] & 0x00ff);
+				err = err || gnutls_pcert_import_openpgp_raw (
+					*pcert,
+					&certdatum,
+					GNUTLS_OPENPGP_FMT_RAW,
+					NULL,	/* use master key */
+					0);
+if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+				break;
+			default:
+				/* Should not happen */
+				break;
+			}
+			break;
+		}
+		err = err || dbcred_iterate_next (crs_disclose, crs_localid, &discpatn, &keydata, &creddata);
+	}
+	if (err == DB_NOTFOUND) {
+		err = 0;
+		//TODO// Deliver no certificate credential
+	}
+	if (crs_localid != NULL) {
+		crs_localid->close (crs_localid);
+		crs_localid = NULL;
+	}
+	if (crs_disclose != NULL) {
+		crs_disclose->close (crs_disclose);
+		crs_disclose = NULL;
+	}
+	return err;
 }
 
 
@@ -592,7 +693,6 @@ static void *starttls_thread (void *cmd_void) {
 	int passfd;
 	int clientfd;
 	gnutls_session_t session;
-	gnutls_certificate_credentials_t tlscred;
 	int err = GNUTLS_E_SUCCESS;
 	int sub;
 	int ret;
@@ -638,6 +738,7 @@ if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 		err = err || gnutls_priority_set_direct (
 			session,
 			// "NORMAL:-KX-ALL:+SRP:+SRP-RSA:+SRP-DSS",
+			// "NORMAL:+CTYPE-X.509:-CTYPE-OPENPGP:+CTYPE-X.509",
 			"NORMAL:-CTYPE-X.509:+CTYPE-OPENPGP:-CTYPE-X.509",
 			// "NORMAL:+ANON-ECDH:+ANON-DH",
 			NULL);
@@ -702,6 +803,7 @@ if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
 		sub = sub || gnutls_priority_set_direct (
 			session,
 			// "NORMAL:+SRP:+SRP-RSA:+SRP-DSS",
+			// "NORMAL:+CTYPE-X.509:-CTYPE-OPENPGP:+CTYPE-X.509",
 			"NORMAL:-CTYPE-X.509:+CTYPE-OPENPGP:-CTYPE-X.509",
 			// "NORMAL:+ANON-ECDH:+ANON-DH",
 			NULL);

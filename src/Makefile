@@ -8,8 +8,8 @@ anew: clean all
 .c.o:
 	gcc -ggdb3 -pthread -I ../include -I /usr/local/include -I /usr/include/p11-kit-1 -c -o $@ $<
 
-tlspool: daemon.o config.o service.o cache.o pinentry.o handler.o remote.o
-	gcc -ggdb3 -pthread -o $@ daemon.o config.o service.o cache.o pinentry.o handler.o remote.o -L /usr/local/lib -L /usr/lib -L /usr/lib/x86_64-linux-gnu -lgnutls -lmemcached -lldap -lp11-kit
+tlspool: daemon.o config.o manage.o service.o cache.o pinentry.o handler.o localid.o remote.o
+	gcc -ggdb3 -pthread -o $@ daemon.o config.o manage.o service.o cache.o pinentry.o handler.o localid.o remote.o -L /usr/local/lib -L /usr/lib -L /usr/lib/x86_64-linux-gnu -lgnutls -ldb -lmemcached -lldap -lp11-kit
 
 
 #
