@@ -110,13 +110,14 @@ int dbcred_interpret (DBT *creddata, uint32_t *flags, char **p11priv, uint8_t **
 struct userdomain {
 	char *user;	/* not NUL-terminated; user==NULL for no @ at all */
 	int userlen;	/* valid if user!=NULL; userlen<0 in selector_t for 0 */
-	char *domain;	/* not '', not NULL, start . signifies a pattern */
+	char *domain;	/* not NULL, start . signifies a pattern */
+	int domlen;	/* always >0 */
 };
 
 
-typedef struct userdomain donai_t;  /* user != '' AND *domain != '.' */
+typedef struct userdomain donai_t;  /* (user==NULL OR userlen>0) AND *domain!='.' */
 
-typedef struct userdomain selector_t;  /* IF user == '' THEN *domain != '.' */
+typedef struct userdomain selector_t;  /* userlen<0 should be read as userlen==0 */
 
 
 /* Iterate over selector values that would generalise the donai.  The
@@ -147,5 +148,5 @@ int donai_matches_selector (donai_t *donai, selector_t *pattern);
 /* Fill a donai structure from a stable string. The donai will share parts
  * of the string.
  */
-donai_t donai_from_stable_string (char *stable);
+donai_t donai_from_stable_string (char *stable, int stablelen);
 

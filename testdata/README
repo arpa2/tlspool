@@ -73,9 +73,346 @@ tlspool-test-srp.passwd
 PKCS #11 databases for SoftHSMv2
 --------------------------------
 
-softhsm-tlspool.db
+**softhsm-tlspool.db**
 
-	The slot database for SoftHSMv1.
-	TODO: Separate client and server.
-        TODO: Use v2 instead.
+The slot database for SoftHSMv1.  The user PIN is 1234.
+
+* TODO: Separate client and server.
+* TODO: Use v2 instead.
+
+``pkcs11-tool --module /usr/lib/softhsm/libsofthsm.so --list-slots``
+
+::
+
+	Available slots:
+	Slot 0           SoftHSM slot 0
+	  token label:   New Token
+	  token manuf:   SoftHSM project
+	  token model:   SoftHSM v2
+	  token flags:   rng, login required, PIN initialized, token initialized, other flags=0x20
+	  serial num  :  3d63cc9b319d0494
+	Slot 1           SoftHSM slot 1
+	  token state:   uninitialized
+
+``pkcs11-tool --module /usr/lib/softhsm/libsofthsm.so --login --list-objects``
+
+::
+
+	Please enter User PIN: 1234
+	Private Key Object; RSA 
+	  label:      
+	  ID:         b3c11d87271704b4ad2f6cd2ccecd93d7dbd9dbf
+	  Usage:      decrypt, sign, unwrap
+	Certificate Object, type = ; unknown cert type
+	  label:      
+	  ID:         6a7a079520a28de76c7470b46308c81d9a372a6e
+	Private Key Object; RSA 
+	  label:      
+	  ID:         6a7a079520a28de76c7470b46308c81d9a372a6e
+	  Usage:      decrypt, sign, unwrap
+	Certificate Object, type = ; unknown cert type
+	  label:      
+	  ID:         b3c11d87271704b4ad2f6cd2ccecd93d7dbd9dbf
+
+Token::
+
+	pkcs11:manufacturer=SoftHSM;model=SoftHSM;serial=3d63cc9b319d0494
+
+Private keys::
+
+	pkcs11:manufacturer=SoftHSM;model=SoftHSM;serial=3d63cc9b319d0494;object=b3c11d87271704b4ad2f6cd2ccecd93d7dbd9dbf;type=private
+	pkcs11:manufacturer=SoftHSM;model=SoftHSM;serial=3d63cc9b319d0494;object=6a7a079520a28de76c7470b46308c81d9a372a6e;type=private
+
+Usable for, respectively:
+
+* client PGP key???
+* server PGP key???
+
+``pkcs11-dump dump /usr/lib/softhsm/libsofthsm.so 0 1234``
+
+	Token Information:
+				 label: New Token                       
+			manufacturerID: SoftHSM project                 
+				 model: SoftHSM v2      
+			  serialNumber: 3d63cc9b319d0494
+				 flags: CKF_RNG,CKF_LOGIN_REQUIRED,CKF_USER_PIN_INITIALIZED,CKF_RESTORE_KEY_NOT_NEEDED,CKF_TOKEN_INITIALIZED
+		     ulMaxSessionCount: 0
+		     ulMaxSessionCount: 0
+			   ulMaxPinLen: 255
+			   ulMinPinLen: 4
+		   ulTotalPublicMemory: -1
+		    ulFreePublicMemory: -1
+		  ulTotalPrivateMemory: -1
+		   ulFreePrivateMemory: -1
+		       hardwareVersion: 002.000
+		       firmwareVersion: 002.000
+			       utcTime: 2014123110393200
+	Object 0
+			   Object size: -1
+			     CKA_CLASS: CKO_PRIVATE_KEY
+			     CKA_TOKEN: TRUE
+			   CKA_PRIVATE: TRUE
+			     CKA_LABEL: 
+			  CKA_KEY_TYPE: CKK_RSA
+			   CKA_SUBJECT: ERROR
+
+				CKA_ID: 
+	b3 c1 1d 87 27 17 04 b4 ad 2f 6c d2 cc ec d9 3d 
+	7d bd 9d bf 
+
+			 CKA_SENSITIVE: TRUE
+			   CKA_DECRYPT: TRUE
+			    CKA_UNWRAP: TRUE
+			      CKA_SIGN: TRUE
+		      CKA_SIGN_RECOVER: TRUE
+			    CKA_DERIVE: FALSE
+			CKA_START_DATE: 
+			  CKA_END_DATE: 
+			   CKA_MODULUS: 
+	c7 f4 7e 4a 91 23 1e 31 fe e7 0b 57 dc 68 bc 14 
+	03 1f 59 47 fb 5d 83 93 f5 94 c2 bc 5d 3c 36 ab 
+	61 76 d9 67 1c 7a 29 f3 56 16 79 3c 49 99 45 c5 
+	dc b5 49 16 91 2d 23 ee 68 30 6d f7 79 44 18 47 
+	49 e7 bf 79 cb e4 fb e7 c1 12 65 da e7 bd ed 9f 
+	71 f4 44 f6 ba 8f f4 69 f8 82 73 63 7e 8e f4 ad 
+	20 d9 91 fd ab 5d d1 95 8e fb 3c 33 5f 0c 7d 98 
+	67 31 fa 09 71 ca bf 5d 69 8b 9a 9b e9 48 be 6b 
+	6b 23 e1 7e cf a1 8e e5 94 5e 83 1b 54 8c a4 6d 
+	cc 8c a5 e6 c1 c1 73 e9 7a 3c 16 5a b8 77 6b a5 
+
+		   CKA_PUBLIC_EXPONENT: 
+	01 00 01 
+
+		       CKA_EXTRACTABLE: FALSE
+			     CKA_LOCAL: TRUE
+		 CKA_NEVER_EXTRACTABLE: TRUE
+		  CKA_ALWAYS_SENSITIVE: TRUE
+		 CKA_KEY_GEN_MECHANISM: CKM_RSA_PKCS_KEY_PAIR_GEN
+			CKA_MODIFIABLE: TRUE
+	       CKA_ALWAYS_AUTHENTICATE: FALSE
+		 CKA_WRAP_WITH_TRUSTED: FALSE
+		   CKA_UNWRAP_TEMPLATE: Exists but value not parsed
+	Object 1
+			   Object size: -1
+			     CKA_CLASS: CKO_CERTIFICATE
+			     CKA_TOKEN: TRUE
+			   CKA_PRIVATE: TRUE
+			     CKA_LABEL: 
+			     CKA_VALUE: 
+	c6 ad 04 52 e8 f8 8d 01 05 00 a5 bc c2 94 02 2c 
+	73 76 85 d4 62 c7 68 ed 56 59 74 39 a4 58 10 47 
+	3d 16 de 58 46 73 1a 0e b1 1c aa b5 a6 93 f1 03 
+	b0 5e 0a 08 89 41 7a a0 eb 53 76 6f c2 41 bc f3 
+	06 c1 90 0e 92 40 9b 7f f2 3d 7e 90 d1 e4 e1 1c 
+	73 26 19 2d fa e3 0a 8f 92 29 70 b6 d1 df 5c bd 
+	d8 6f d0 f8 e1 6f 34 c7 dc 66 9a 95 59 00 8f f5 
+	26 a9 be 2e fd 9c 17 ae 20 24 23 41 82 5c 57 31 
+	68 59 e6 6d 44 da 0f 45 c3 43 4b 13 59 65 12 5c 
+	9e 6b e7 dc 59 34 52 b7 52 c3 b0 c0 1d 9a 75 0a 
+	5e 4d 9d cc 49 48 37 d6 5c 85 00 11 01 00 01 cd 
+	16 3c 72 69 63 6b 40 6f 70 65 6e 66 6f 72 74 72 
+	65 73 73 2e 6e 6c 3e c2 bf 04 10 01 08 00 09 05 
+	02 52 e8 f8 8d 02 1b 21 00 0a 09 10 63 08 c8 1d 
+	9a 37 2a 6e f2 e8 04 ff 5f 31 39 b8 10 65 e4 8f 
+	f9 7a 27 e4 02 ad 68 c0 ab cd 48 d0 70 1b 9d 22 
+	53 2b c9 4a ff d4 92 45 79 1d 5c ff 2f 47 e5 b7 
+	78 ae fb 19 70 2e f7 b1 d4 cb e0 17 be 9d a2 6a 
+	f3 96 5e c1 f7 2b 3b 4f 8d b7 9e c8 6c 99 8b a0 
+	2a 49 0b d8 84 19 e5 99 97 da 01 2f 97 a4 65 60 
+	da b0 ba 97 a1 d5 cc 01 e1 d3 50 be 72 b8 75 a0 
+	7d fa 65 8b 2b ca e2 a4 6b ef 58 c4 52 82 2d 1b 
+	94 18 ff d8 fd a0 a7 d7 e6 9b e4 cc 59 1e b5 2d 
+	31 f9 42 a8 88 51 bb d5 df 6a 37 77 f5 c1 62 55 
+	3b 8f 39 af ba 55 c6 85 ce ad 04 52 e8 f8 8d 01 
+	05 00 a5 bc c2 94 02 2c 73 76 85 d4 62 c7 68 ed 
+	56 59 74 39 a4 58 10 47 3d 16 de 58 46 73 1a 0e 
+	b1 1c aa b5 a6 93 f1 03 b0 5e 0a 08 89 41 7a a0 
+	eb 53 76 6f c2 41 bc f3 06 c1 90 0e 92 40 9b 7f 
+	f2 3d 7e 90 d1 e4 e1 1c 73 26 19 2d fa e3 0a 8f 
+	92 29 70 b6 d1 df 5c bd d8 6f d0 f8 e1 6f 34 c7 
+	dc 66 9a 95 59 00 8f f5 26 a9 be 2e fd 9c 17 ae 
+	20 24 23 41 82 5c 57 31 68 59 e6 6d 44 da 0f 45 
+	c3 43 4b 13 59 65 12 5c 9e 6b e7 dc 59 34 52 b7 
+	52 c3 b0 c0 1d 9a 75 0a 5e 4d 9d cc 49 48 37 d6 
+	5c 85 00 11 01 00 01 c2 bf 04 18 01 08 00 09 05 
+	02 52 e8 f8 8d 02 1b 0c 00 0a 09 10 63 08 c8 1d 
+	9a 37 2a 6e f4 36 04 ff 7c bd a4 e1 70 40 12 b0 
+	72 08 1b 47 49 6b 13 60 c1 e5 6f 86 99 ec e6 df 
+	49 39 fa 0c 8d c1 c4 69 03 67 78 4f 5f 5a 90 60 
+	30 5d cc e1 6e 99 6a 67 90 d6 b7 a3 e5 e9 c4 e6 
+	68 a1 8b 99 3e aa 0d 2f eb 08 88 5a fe 63 e9 0a 
+	07 72 92 54 ff 35 70 96 85 b6 bd 0b 53 42 e6 54 
+	c7 99 65 cd 03 fc 5e 0e 44 af ff 8a fb f8 d0 64 
+	be 6b 4f 1c 7a 82 3c f1 7c 9e 62 14 ff 33 dc 69 
+	35 28 1f fa 20 1e 7e dc e6 f0 34 24 4e 0b 20 d8 
+	32 d8 a9 a9 4e 1f df 4f d2 78 93 7e d0 b8 4c 85 
+	49 59 72 81 7b 18 30 e2 
+
+		  CKA_CERTIFICATE_TYPE: Unknown CK_CERTIFICATE_TYPE 80504750
+			    CKA_ISSUER: ERROR
+
+		     CKA_SERIAL_NUMBER: 
+
+			   CKA_TRUSTED: FALSE
+	      CKA_CERTIFICATE_CATEGORY: 0
+			       CKA_URL: 
+		       CKA_CHECK_VALUE: 
+
+			   CKA_SUBJECT: ERROR
+
+				CKA_ID: 
+	6a 7a 07 95 20 a2 8d e7 6c 74 70 b4 63 08 c8 1d 
+	9a 37 2a 6e 
+
+			CKA_START_DATE: 
+			  CKA_END_DATE: 
+			CKA_MODIFIABLE: TRUE
+	Object 2
+			   Object size: -1
+			     CKA_CLASS: CKO_PRIVATE_KEY
+			     CKA_TOKEN: TRUE
+			   CKA_PRIVATE: TRUE
+			     CKA_LABEL: 
+			  CKA_KEY_TYPE: CKK_RSA
+			   CKA_SUBJECT: ERROR
+
+				CKA_ID: 
+	6a 7a 07 95 20 a2 8d e7 6c 74 70 b4 63 08 c8 1d 
+	9a 37 2a 6e 
+
+			 CKA_SENSITIVE: TRUE
+			   CKA_DECRYPT: TRUE
+			    CKA_UNWRAP: TRUE
+			      CKA_SIGN: TRUE
+		      CKA_SIGN_RECOVER: TRUE
+			    CKA_DERIVE: FALSE
+			CKA_START_DATE: 
+			  CKA_END_DATE: 
+			   CKA_MODULUS: 
+	a5 bc c2 94 02 2c 73 76 85 d4 62 c7 68 ed 56 59 
+	74 39 a4 58 10 47 3d 16 de 58 46 73 1a 0e b1 1c 
+	aa b5 a6 93 f1 03 b0 5e 0a 08 89 41 7a a0 eb 53 
+	76 6f c2 41 bc f3 06 c1 90 0e 92 40 9b 7f f2 3d 
+	7e 90 d1 e4 e1 1c 73 26 19 2d fa e3 0a 8f 92 29 
+	70 b6 d1 df 5c bd d8 6f d0 f8 e1 6f 34 c7 dc 66 
+	9a 95 59 00 8f f5 26 a9 be 2e fd 9c 17 ae 20 24 
+	23 41 82 5c 57 31 68 59 e6 6d 44 da 0f 45 c3 43 
+	4b 13 59 65 12 5c 9e 6b e7 dc 59 34 52 b7 52 c3 
+	b0 c0 1d 9a 75 0a 5e 4d 9d cc 49 48 37 d6 5c 85 
+
+		   CKA_PUBLIC_EXPONENT: 
+	01 00 01 
+
+		       CKA_EXTRACTABLE: FALSE
+			     CKA_LOCAL: TRUE
+		 CKA_NEVER_EXTRACTABLE: TRUE
+		  CKA_ALWAYS_SENSITIVE: TRUE
+		 CKA_KEY_GEN_MECHANISM: CKM_RSA_PKCS_KEY_PAIR_GEN
+			CKA_MODIFIABLE: TRUE
+	       CKA_ALWAYS_AUTHENTICATE: FALSE
+		 CKA_WRAP_WITH_TRUSTED: FALSE
+		   CKA_UNWRAP_TEMPLATE: Exists but value not parsed
+	Object 3
+			   Object size: -1
+			     CKA_CLASS: CKO_CERTIFICATE
+			     CKA_TOKEN: TRUE
+			   CKA_PRIVATE: TRUE
+			     CKA_LABEL: 
+			     CKA_VALUE: 
+	c6 ad 04 52 e8 f7 eb 01 05 00 c7 f4 7e 4a 91 23 
+	1e 31 fe e7 0b 57 dc 68 bc 14 03 1f 59 47 fb 5d 
+	83 93 f5 94 c2 bc 5d 3c 36 ab 61 76 d9 67 1c 7a 
+	29 f3 56 16 79 3c 49 99 45 c5 dc b5 49 16 91 2d 
+	23 ee 68 30 6d f7 79 44 18 47 49 e7 bf 79 cb e4 
+	fb e7 c1 12 65 da e7 bd ed 9f 71 f4 44 f6 ba 8f 
+	f4 69 f8 82 73 63 7e 8e f4 ad 20 d9 91 fd ab 5d 
+	d1 95 8e fb 3c 33 5f 0c 7d 98 67 31 fa 09 71 ca 
+	bf 5d 69 8b 9a 9b e9 48 be 6b 6b 23 e1 7e cf a1 
+	8e e5 94 5e 83 1b 54 8c a4 6d cc 8c a5 e6 c1 c1 
+	73 e9 7a 3c 16 5a b8 77 6b a5 00 11 01 00 01 cd 
+	16 3c 72 69 63 6b 40 6f 70 65 6e 66 6f 72 74 72 
+	65 73 73 2e 6e 6c 3e c2 bf 04 10 01 08 00 09 05 
+	02 52 e8 f7 eb 02 1b 21 00 0a 09 10 cc ec d9 3d 
+	7d bd 9d bf 23 be 04 fd 14 c3 8d 4e 78 54 09 e0 
+	ff ab 7b 87 f2 41 a4 f9 08 3f 25 ae f7 5e 98 6d 
+	93 2a ab 88 2c d9 7e 25 36 1c 7e f5 91 f4 6c 03 
+	58 53 93 05 d0 ad fa a4 2c 1c 33 8b 07 26 71 b2 
+	ab 39 a1 c9 99 8d a3 da 15 6e 87 d6 56 27 b2 be 
+	85 a8 4c 13 3f 8a 73 34 d0 7d 05 e3 31 44 63 a1 
+	35 43 b9 f4 e4 a0 9e 8f 5a 9c 77 d5 11 62 d7 05 
+	a1 2d 05 39 32 50 16 15 95 d8 70 01 c8 d1 f6 e0 
+	1e 3c d5 1d ba f0 5c e1 f8 d0 85 6b 0c ab ef b4 
+	b6 ce c2 c7 2b 1a 83 62 aa 44 88 62 fa 08 01 a9 
+	fc 1e 44 11 61 bf c1 2b ce ad 04 52 e8 f7 eb 01 
+	05 00 c7 f4 7e 4a 91 23 1e 31 fe e7 0b 57 dc 68 
+	bc 14 03 1f 59 47 fb 5d 83 93 f5 94 c2 bc 5d 3c 
+	36 ab 61 76 d9 67 1c 7a 29 f3 56 16 79 3c 49 99 
+	45 c5 dc b5 49 16 91 2d 23 ee 68 30 6d f7 79 44 
+	18 47 49 e7 bf 79 cb e4 fb e7 c1 12 65 da e7 bd 
+	ed 9f 71 f4 44 f6 ba 8f f4 69 f8 82 73 63 7e 8e 
+	f4 ad 20 d9 91 fd ab 5d d1 95 8e fb 3c 33 5f 0c 
+	7d 98 67 31 fa 09 71 ca bf 5d 69 8b 9a 9b e9 48 
+	be 6b 6b 23 e1 7e cf a1 8e e5 94 5e 83 1b 54 8c 
+	a4 6d cc 8c a5 e6 c1 c1 73 e9 7a 3c 16 5a b8 77 
+	6b a5 00 11 01 00 01 c2 bf 04 18 01 08 00 09 05 
+	02 52 e8 f7 eb 02 1b 0c 00 0a 09 10 cc ec d9 3d 
+	7d bd 9d bf dc c1 04 ff 4f 9c 24 cc df 56 b0 47 
+	c8 87 b6 01 45 b8 8b b1 5f 90 ab 7d 83 6a 40 ed 
+	2c 0c 63 e2 75 2a f2 3b b6 5f f8 c9 ef f6 14 92 
+	af d1 03 ec 76 eb 30 94 5b 10 ee 19 2f da 65 75 
+	57 b9 59 ae 63 1a 4a ab 14 0c 1f 80 e7 f5 db 18 
+	b1 26 bc fc ac b1 f1 52 9f aa af c1 ef c2 a0 5c 
+	64 a5 15 3e 20 10 c2 d3 d0 9c a3 5c f7 16 ca 39 
+	90 e6 11 95 c3 84 d5 5f b0 ee 22 a8 02 22 c7 4d 
+	e5 13 82 79 bb fd 51 02 0f 17 69 1a 05 24 b4 06 
+	02 bb cb aa d4 8a ac c2 56 55 3a 53 71 0e 44 e6 
+	e3 be 86 fb f5 08 f7 e9 
+
+		  CKA_CERTIFICATE_TYPE: Unknown CK_CERTIFICATE_TYPE 80504750
+			    CKA_ISSUER: ERROR
+
+		     CKA_SERIAL_NUMBER: 
+
+			   CKA_TRUSTED: FALSE
+	      CKA_CERTIFICATE_CATEGORY: 0
+			       CKA_URL: 
+		       CKA_CHECK_VALUE: 
+
+			   CKA_SUBJECT: ERROR
+
+				CKA_ID: 
+	b3 c1 1d 87 27 17 04 b4 ad 2f 6c d2 cc ec d9 3d 
+	7d bd 9d bf 
+
+			CKA_START_DATE: 
+			  CKA_END_DATE: 
+			CKA_MODIFIABLE: TRUE
+
+TODO::
+
+	Import the key and then: 
+
+	$ gpg --list-keys --with-key-data KEYID 
+
+	In the output look for pkd records: 
+
+	If field 1 has the tag "pkd", a listing looks like this: 
+	pkd:0:1024:B665B1435F4C2 .... FF26ABB: 
+	    ! !    !-- the value 
+	    ! !------- for information: number of bits in the value 
+	    !--------- index (eg. DSA goes from 0 to 3: p,q,g,y) 
+
+	The entire format is decribed in doc/DETAILS. 
+
+
+TODO:
+
+1. Reformat the RSA private keys for certificates from PKCS #1 to PKCS #8 using::
+
+	openssl pkcs8 -topk8 -in p1form.pem -out p8form.pem
+
+2. Import the PKCS #8 form into the token::
+
+	softhsm-util --slot 0 --pin 1234 --import p8form.pem --no-public-key --label XXX --id XXX
+
 

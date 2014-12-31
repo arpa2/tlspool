@@ -108,10 +108,9 @@ int dbcred_iterate_from_remoteid (DBC *crs_disclose, DBC *crs_localid, DBT *disc
 	donai_t remote_selector;
 	char *selector_text;
 	int more;
-	stable_rid = alloca (discpatn->size + 1);
+	stable_rid = alloca (discpatn->size);
 	memcpy (stable_rid, discpatn->data, discpatn->size);
-	stable_rid [discpatn->size] = '\0';
-	remote_donai = donai_from_stable_string (stable_rid);
+	remote_donai = donai_from_stable_string (stable_rid, discpatn->size);
 	more = selector_iterate_init (&remote_selector, &remote_donai);
 	while (more) {
 		int fnd;
@@ -178,8 +177,13 @@ int dbcred_iterate_next (DBC *opt_crs_disclose, DBC *crs_localid, DBT *opt_discp
  */
 int selector_iterate_init (selector_t *iterator, donai_t *donai) {
 	//
+	// If the user name is not NULL but empty, bail out in horror
+	if ((donai->user != NULL) && (donai->userlen == 0)) {
+		return 0;
+	}
+	//
 	// If the domain name is empty or NULL, bail out in horror
-	if ((donai->domain == NULL) || (! *donai->domain)) {
+	if ((donai->domain == NULL) || (donai->domlen == 0)) {
 		return 0;
 	}
 	//
@@ -189,10 +193,15 @@ int selector_iterate_init (selector_t *iterator, donai_t *donai) {
 }
 
 int selector_iterate_next (selector_t *iterator) {
-//TODO// Include the username, if any, on each first selector of two
+	int skip;
+	//
+	// If the user name is not NULL but empty, bail out in horror
+	if ((iterator->user != NULL) && (iterator->userlen == 0)) {
+		return 0;
+	}
 	//
 	// If the domain name is empty or NULL, bail out in horror
-	if ((iterator->domain == NULL) || (! *iterator->domain)) {
+	if ((iterator->domain == NULL) || (iterator->domlen == 0)) {
 		return 0;
 	}
 	//
@@ -207,15 +216,23 @@ int selector_iterate_next (selector_t *iterator) {
 	}
 	//
 	// If the domain is a single dot, we're done
-	if (strcmp (iterator->domain, ".") == 0) {
+	if ((iterator->domlen == 1) && (*iterator->domain == '.')) {
 		return 0;
 	}
 	//
 	// Replace the domain (known >= 1 chars) with the next dot's domain
-	iterator->domain = strchr (iterator->domain + 1, '.');
-	if (iterator->domain == NULL) {
-		iterator->domain = ".";	// Last resort is "."
+	skip = 1;
+	while ((skip < iterator->domlen) && (iterator->domain [skip] != '.')) {
+		skip++;
 	}
+	if (skip == iterator->domlen) {
+		iterator->domain = ".";		// Last resort domain
+		iterator->domlen = 1;
+	} else {
+		iterator->domain += skip;
+		iterator->domlen -= skip;
+	}
+	return 1;
 }
 
 
@@ -226,10 +243,13 @@ int donai_matches_selector (donai_t *donai, selector_t *pattern) {
 	int extra;
 	//
 	// Bail out in horror on misconfigurations
-	if ((donai  ->domain == NULL) || (! *donai  ->domain)) {
+	if ((donai->user != NULL) && (donai->userlen == 0)) {
 		return 0;
 	}
-	if ((pattern->domain == NULL) || (! *pattern->domain)) {
+	if ((donai  ->domain == NULL) || (donai  ->domlen == 0)) {
+		return 0;
+	}
+	if ((pattern->domain == NULL) || (pattern->domlen == 0)) {
 		return 0;
 	}
 	//
@@ -251,10 +271,6 @@ int donai_matches_selector (donai_t *donai, selector_t *pattern) {
 					return 0;
 				}
 			}
-			if (strcmp (donai->domain, pattern->domain) != 0) {
-				return 0;
-			}
-			return 1;
 		}
 	} else {
 		//
@@ -266,7 +282,7 @@ int donai_matches_selector (donai_t *donai, selector_t *pattern) {
 	//
 	// Domain name handling second
 	if (*pattern->domain == '.') {
-		extra = strlen (donai->domain) - strlen (pattern->domain);
+		extra = donai->domlen - pattern->domlen;
 		if (extra < 0) {
 			//
 			// No good having a longer pattern than a donai.domain
@@ -275,18 +291,16 @@ int donai_matches_selector (donai_t *donai, selector_t *pattern) {
 	} else {
 		extra = 0;
 	}
-	return (strcmp (donai->domain + extra, pattern->domain) == 0);
+	return (memcmp (donai->domain + extra, pattern->domain, pattern->domlen) == 0);
 }
 
 
 /* Fill a donai structure from a stable string. The donai will share parts
  * of the string.
  */
-donai_t donai_from_stable_string (char *stable) {
-	char *at = strrchr (stable, '@');
+donai_t donai_from_stable_string (char *stable, int stablelen) {
 	donai_t retval;
-	retval.user = stable;
-	retval.userlen = strlen (stable);
+	retval.userlen = stablelen - 1;
 	while (retval.userlen > 0) {
 		if (stable [retval.userlen] == '@') {
 			break;
@@ -294,11 +308,13 @@ donai_t donai_from_stable_string (char *stable) {
 		retval.userlen--;
 	}
 	if (stable [retval.userlen] == '@') {
-			retval.user = stable;
-			retval.domain = stable + (retval.userlen + 1);
+		retval.user = stable;
+		retval.domain = stable + (retval.userlen + 1);
+		retval.domlen = stablelen - 1 - retval.userlen;
 	} else {
-			retval.user = NULL;
-			retval.domain = stable;
+		retval.user = NULL;
+		retval.domain = stable;
+		retval.domlen = stablelen;
 	}
 	return retval;
 }
@@ -311,18 +327,15 @@ donai_t donai_from_stable_string (char *stable) {
  */
 int donai_iterate_memput (char *selector_text, donai_t *iterator) {
 	int len = 0;
-	int sublen;
 	if (iterator->user != NULL) {
 		if (iterator->userlen > 0) {
-			sublen = strlen (iterator->user);
 			memcpy (selector_text, iterator->user, iterator->userlen);
 			len += iterator->userlen;
 		}
 		selector_text [len++] = '@';
 	}
-	sublen = strlen (iterator->domain);
-	memcpy (selector_text + len, iterator->domain, sublen);
-	len += sublen;
+	memcpy (selector_text + len, iterator->domain, iterator->domlen);
+	len += iterator->domlen;
 	return len;
 }
 
