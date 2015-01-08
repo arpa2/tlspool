@@ -22,7 +22,7 @@ from bsddb import db
 usage = """Usage: %s localid.db [user@]fqdn type [p11priv pubdata...]
  - localid.db        is the database with local identities
  - user@fqdn or fqdn is a network access identifier
- - type              is a string, one of X.509 or OpenPGP
+ - type              comma-sep: X.509 or OpenPGP, and client or server
  - p11priv           is a PKCS #11 URI string for the private key
  - pubdata           is a file name    string for the public key package
 The pairs of p11priv and pubdata replace the old content.  An empty list of

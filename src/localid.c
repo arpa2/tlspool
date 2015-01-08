@@ -160,7 +160,7 @@ int dbcred_iterate_next (DBC *opt_crs_disclose, DBC *crs_localid, DBT *opt_discp
 			if (err == DB_NOTFOUND) {
 				return err;
 			}
-			err = crs_localid->get (crs_localid, NULL, creddata, DB_SET);
+			err = crs_localid->get (crs_localid, keydata, creddata, DB_SET);
 		}
 	}
 	return err;

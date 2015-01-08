@@ -7,8 +7,8 @@
 
 
 int main (int argc, char *argv []) {
-	char *pinentry = NULL;
 	char *cfgfile = NULL;
+	char *pinentry = NULL;
 	int parsing = 1;
 	int kill_competition = 0;
 
@@ -16,7 +16,7 @@ int main (int argc, char *argv []) {
 	 * Cmdline argument parsing
 	 */
 	while (parsing) {
-		int opt = getopt (argc, argv, "kp:c:");
+		int opt = getopt (argc, argv, "kc:p:P:");
 		switch (opt) {
 		case 'k':
 			if (kill_competition) {

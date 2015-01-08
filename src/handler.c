@@ -105,7 +105,7 @@ void setup_handler (void) {
 	err = err || gnutls_global_init ();
 if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 	gnutls_global_set_log_function (log_gnutls);
-	gnutls_global_set_log_level (10);
+	gnutls_global_set_log_level (3);
 	err = err || generate_dh_params ();
 if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 	fprintf (stderr, "DEBUG: Setting up management databases\n");
@@ -530,15 +530,16 @@ if (err) fprintf (stderr, "MISSER %s: %s:%d\n", strerror (err), __FILE__, __LINE
 			&p11priv,
 			&certdatum.data,
 			&certdatum.size);
-		fprintf (stderr, "DEBUG: DBD entry has flags=0x%08x, p11priv=\"%s\", cert.size=%d\n", flags, p11priv, certdatum.size);
+		fprintf (stderr, "DEBUG: BDB entry has flags=0x%08x, p11priv=\"%s\", cert.size=%d\n", flags, p11priv, certdatum.size);
 		ok = ok && ((flags & ( LID_TYPE_MASK | LID_ROLE_CLIENT)) == (lidtype | LID_ROLE_CLIENT));
 		//TODO// ok = ok && verify_cert_... (...); -- keyidlookup
 		if (ok) {
 			err = err || gnutls_privkey_init (
 				pkey);
+#define TODO_PKCS11_ADDED
 #ifdef TODO_PKCS11_ADDED
-//WONTWORK// p11priv = "pkcs11:manufacturer=SoftHSM;model=SoftHSM;serial=3d63cc9b319d0494;object=6a7a079520a28de76c7470b46308c81d9a372a6e;type=private"; //TODO//FIXED
-//WONTWORK// p11priv = "pkcs11:manufacturer=SoftHSM;model=SoftHSM;serial=3d63cc9b319d0494;object=b3c11d87271704b4ad2f6cd2ccecd93d7dbd9dbf;type=private"; //TODO//FIXED
+// p11priv = "pkcs11:model=SoftHSM;manufacturer=SoftHSM;serial=1;token=TLS%20Pool%20testdata;id=obj1id;object=obj1label;object-type=private";
+// p11priv = "pkcs11:model=SoftHSM;manufacturer=SoftHSM;serial=1;token=TLS%20Pool%20testdata;id=obj2id;object=obj2label;object-type=private";
 			err = err || gnutls_privkey_import_pkcs11_url (
 				*pkey,
 				p11priv);
@@ -596,6 +597,7 @@ if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 				break;
 			case LID_TYPE_PGP:
 fprintf (stderr, "DEBUG: Importing from %d bytes: %02x %02x %02x ... %02x %02x %02x\n", certdatum.size, ((char *)certdatum.data) [0] & 0x00ff, ((char *)certdatum.data) [1] & 0x00ff, ((char *)certdatum.data) [2] & 0x00ff, ((char *)certdatum.data) [certdatum.size-3] & 0x00ff, ((char *)certdatum.data) [certdatum.size-2] & 0x00ff, ((char *)certdatum.data) [certdatum.size-1] & 0x00ff);
+// gnutls_openpgp_keyid_t kid = { 0xFF, 0xE6, 0x17, 0xE8, 0x96, 0x99, 0xEF, 0x80 };
 				err = err || gnutls_pcert_import_openpgp_raw (
 					*pcert,
 					&certdatum,

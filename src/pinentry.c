@@ -20,6 +20,11 @@
 #include <p11-kit/uri.h>
 
 
+#ifdef FIXEDPIN
+#define getpass(prompt) ( fprintf (stderr, "%s: %s\n", prompt, FIXEDPIN), FIXEDPIN )
+#endif
+
+
 /*
  * The user facility for entering PINs.  This is a simple loop that
  * continually asks the TLS pool to send PIN inquiries, and then
@@ -245,8 +250,15 @@ int gnutls_pin_callback (void *userdata,
 	int retval = 0;
 	P11KitUri *p11kituri;
 	CK_TOKEN_INFO_PTR toktok;
+	char *cfgpin;
 	//
-	//TODO// First try to find the PIN in the configuration file
+	// First try to find the PIN in the configuration file
+	cfgpin = cfg_p11pin ();
+	if ((cfgpin != NULL) && (*cfgpin) && (strlen (cfgpin) < pin_max)) {
+		strcpy (pin, cfgpin);
+		printf ("DEBUG: Returning configured PIN and OK from PIN entry\n");
+		return 0;
+	}
 	//
 	// Grab the current PINENTRY registration or report failure
 	pthread_mutex_lock (&pinentry_lock);
@@ -306,7 +318,7 @@ int gnutls_pin_callback (void *userdata,
 	}
 	strcpy (pin, cmd->cmd.pio_data.pioc_pinentry.pin);
 	bzero (cmd->cmd.pio_data.pioc_pinentry.pin, sizeof (cmd->cmd.pio_data.pioc_pinentry.pin));
-	printf ("DEBUG: Returning PIN and OK from PIN entry\n");
+	printf ("DEBUG: Returning entered PIN and OK from PIN entry\n");
 	return 0;
 }
 

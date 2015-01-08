@@ -1,0 +1,35 @@
+DEBUG: Size of CKA_CERTIFICATE_TYPE is 8, value is 80504750 and contains 80000000
+Mapped DN to email address testcli@tlspool.arpa2.lab
+Created key pair.  Public 2, private 1.
+DEBUG: add_pubkey_rsa_pkt at 0
+DEBUG: add_userid_pkt at 272
+DEBUG: add_signature_sha256rsa_pkt at 301
+DEBUG: add_pubkey_rsa_pkt at 591
+DEBUG: add_pubkey_rsa_pkt at 591
+DEBUG: add_signature_sha256rsa_pkt at 863
+DEBUG: file ends at 1153
+DEBUG: add_pubkey_rsa_pkt at 0
+DEBUG: Fingerprint is 6871 2AFC 6806 9BBF 5E77  AA5B 6F59 63B6 AECD 5432
+DEBUG: add_userid_pkt at 272
+DEBUG: UserID set to ===<testcli@tlspool.arpa2.lab>===
+DEBUG: add_signature_sha256rsa_pkt at 301
+DEBUG: signature packet after header is 31
+DEBUG: p11siglen  pre-sign is 256
+DEBUG: p11siglen post-sign is 256
+DEBUG: p11sig is 76 09...ba 9e
+DEBUG: add_pubkey_rsa_pkt at 591
+DEBUG: Fingerprint is 6871 2AFC 6806 9BBF 5E77  AA5B 6F59 63B6 AECD 5432
+DEBUG: add_pubkey_rsa_pkt at 591
+DEBUG: Fingerprint is 6871 2AFC 6806 9BBF 5E77  AA5B 6F59 63B6 AECD 5432
+DEBUG: add_signature_sha256rsa_pkt at 863
+DEBUG: signature packet after header is 31
+DEBUG: p11siglen  pre-sign is 256
+DEBUG: p11siglen post-sign is 256
+DEBUG: p11sig is 5c 3b...19 40
+DEBUG: file ends at 1153
+Constructed PGP public key filedata (1153 bytes) and wrote it to /tmp/newkey.pgp
+DEBUG: pgpkeytemplate[0]==8
+DEBUG: pgpkeytemplate[1]==8
+DEBUG: pgpkeytemplate[2]=uid=testcli,dc=tlspool,dc=arpa2,dc=lab=38
+DEBUG: pgpkeytemplate[3]==0
+DEBUG: pgpkeytemplate[4]=ÆÀMT®…=1153

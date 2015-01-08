@@ -345,7 +345,7 @@ static void free_p11pin (void) {
 void cfg_p11path (char *item, int itemno, char *value) {
 	fprintf (stdout, "DEBUG: DECLARE %s AS %s\n", item, value);
 	cfg_setvar (item, itemno, value);
-	free_p11pin ();
+	//TODO:WHY?// free_p11pin ();
 }
 
 void cfg_p11token (char *item, int itemno, char *value) {
@@ -368,7 +368,11 @@ void cfg_p11token (char *item, int itemno, char *value) {
 	}
 	//TODO// Select token by name (value)
 	//TODO// if PIN available then set it up
-	free_p11pin ();
+	//TODO:WHY?// free_p11pin ();
+}
+
+char *cfg_p11pin (void) {
+	return configvars [CFGVAR_PKCS11_PIN];
 }
 
 void cfg_ldap (char *item, int itemno, char *value) {
