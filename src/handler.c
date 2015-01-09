@@ -488,6 +488,15 @@ if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 		dh_params);
 
 	sub = err;
+	/* TODO: Bad code.  GnuTLS 3.2.1 ignores retrieve_function2 when
+	 * checking if it can handle the OpenPGP certificate type in
+	 * _gnutls_session_cert_type_supported (gnutls_status.c:175) but
+	 * it does see the "1" version field.  It does not callback the
+	 * "1" version if "2" is present though.
+	 */
+	if (!sub) /* TODO:GnuTLSversions sub = */ gnutls_certificate_set_retrieve_function (
+		certscred,
+		(void *) exit);
 	if (!sub) /* TODO:GnuTLSversions sub = */ gnutls_certificate_set_retrieve_function2 (
 		certscred,
 		cert_retrieve);
