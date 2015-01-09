@@ -207,6 +207,9 @@ int main (int argc, char *argv []) {
 		}
 	}
 	tlsdata.flags = (dtls? PIOF_STARTTLS_DTLS: 0);
+	if (role == 'c') {
+		tlsdata.flags |= PIOF_STARTTLS_SEND_SNI;
+	}
 	//
 	// Parse addresses and ports in the remaining arguments
 	if (inet_pton (AF_INET6, argv [optind + 0], &insa.sin6_addr) == 0) {

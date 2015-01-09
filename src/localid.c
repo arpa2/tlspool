@@ -153,7 +153,7 @@ int dbcred_iterate_next (DBC *opt_crs_disclose, DBC *crs_localid, DBT *opt_discp
 	if (err != DB_NOTFOUND) {
 		return err;
 	}
-	// Inner loop ended in DB_NOTFOUND, continue in outer loop
+	// Inner loop ended in DB_NOTFOUND, optionally continue in outer loop
 	if ((opt_crs_disclose != NULL) && (opt_discpatn != NULL)) {
 		while (err == DB_NOTFOUND) {
 			err = opt_crs_disclose->get (opt_crs_disclose, opt_discpatn, keydata, DB_NEXT_DUP);

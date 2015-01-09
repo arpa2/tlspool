@@ -10,6 +10,10 @@
 #include <fcntl.h>
 #include <poll.h>
 
+#ifdef __GNUC__
+#include <mcheck.h>
+#endif
+
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -140,7 +144,14 @@ void register_socket (int sox, uint32_t soxinfo_flags) {
 	soxpoll [num_sox].revents = 0;
 	soxinfo [num_sox].flags = soxinfo_flags;
 	soxinfo [num_sox].cbq = NULL;
+#if defined (__GNUC__) // && defined (DEBUG)
+	if (num_sox == 1) {
+		/* Note: 1st registration of service itself is skipped */
+		fprintf (stderr, "DEBUG: Starting to trace memory leaks to %s\n", getenv ("MALLOC_TRACE"));
+		mtrace ();
+	}
 	num_sox++;
+#endif
 }
 
 
@@ -165,6 +176,13 @@ static void unregister_client_socket_byindex (int soxidx) {
 		memcpy (&soxinfo [soxidx], &soxinfo [num_sox], sizeof (*soxinfo));
 		memcpy (&soxpoll [soxidx], &soxpoll [num_sox], sizeof (*soxpoll));
 	}
+#if defined (__GNUC__) // && defined (DEBUG)
+	if (num_sox == 1) {
+		/* Stop tracing when only the server socket is left */
+		fprintf (stderr, "DEBUG: Stopping to trace memory leaks to %s\n", getenv ("MALLOC_TRACE"));
+		muntrace ();
+	}
+#endif
 }
 
 

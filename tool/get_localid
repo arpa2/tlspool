@@ -1,0 +1,95 @@
+#!/usr/bin/python
+#
+# tlspool/get_localid.py -- Retrieve local identity credentials */
+#
+# Provide a database, a NAI and see what types of credentials are available.
+#
+# This program was created for test/development purposes only.
+#
+# Dependency: The python-bsddb module
+#
+# From: Rick van Rein <rick@openfortress.nl>
+
+
+import sys
+import struct
+
+from bsddb import db
+
+
+usage = """Usage: %s localid.db [user@]fqdn
+ - localid.db        is the database with local identities
+ - user@fqdn or fqdn is a network access identifier
+""";
+
+typemap = {
+	1: 'X.509',
+	2: 'OpenPGP',
+	256: 'client',
+	512: 'server',
+}
+
+
+#
+# Create an environment for transactions
+#
+env = db.DBEnv ()
+print 'Opening database environment'
+env.open ('../testdata', db.DB_CREATE | db.DB_RECOVER | db.DB_INIT_TXN | db.DB_INIT_LOCK | db.DB_INIT_LOG | db.DB_THREAD | db.DB_INIT_MPOOL)
+if env:
+	print 'Starting transaction'
+	txn = env.txn_begin ()
+else:
+	print 'No environment, so not beginning a transaction'
+
+
+#
+# Parse the commandline
+#
+if len (sys.argv) != 3:
+	sys.stderr.write (usage % sys.argv [0])
+	sys.exit (1)
+
+try:
+	dbh = db.DB (dbEnv=env)
+	dbh.set_flags (db.DB_DUP)
+	dbh.open (sys.argv [1], dbtype=db.DB_HASH, flags=db.DB_CREATE, txn=txn)
+except:
+	sys.stderr.write ('%s: Failed to open database %s\n' % (sys.argv [0], sys.argv [1]))
+	raise
+
+localid = sys.argv [2]
+
+#
+# Retrieve the value(s) from the database
+#
+crs = dbh.cursor (txn=txn)
+obj = crs.get (localid, db.DB_SET)
+while obj:
+	(objtp,) = struct.unpack (">I", obj [1][:4])
+	print 'Found an object with type 0x%x:' % objtp,
+	for mask in [ 0xff, 0x300 ]:
+		if typemap.has_key (objtp & mask):
+			print typemap [objtp & mask],
+		else:
+			print 'UNKNOWN_%d' % (objtp & mask),
+	print
+	if objtp & 0xff in [ 1, 2]:
+		(p11priv,pubdata) = obj [1][4:].split ('\x00', 1)
+		print 'Private:', p11priv
+		print 'Public:', pubdata [0:1].encode ('hex'), pubdata [1:2].encode ('hex'), pubdata [2:3].encode ('hex'), '...', pubdata [-2:-1].encode ('hex'), pubdata [-1:].encode ('hex'), '(length %d)' % len (pubdata)
+	obj = crs.next_dup ()
+crs.close ()
+
+if txn:
+	print 'Ending transaction'
+	txn.commit ()
+
+print 'Closing database'
+dbh.close ()
+
+if env:
+	env.close ()
+else:
+	print 'No environment to close'
+

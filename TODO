@@ -3,9 +3,13 @@ There are many ways in which the current TLS Pool can be improved:
 - Graylist callbacks, preferrably by the application, with generic fallback
 - Support for UDP and SCTP and not just TCP
 - Application-specific support, with things like mod_tlspool and HTTP proxy
-- Support for all of X.509, OpenPGP, PSK and SRP schemes
-- Extension of GnuTLS' PKCS #11 support to OpenPGP, PSK and SRP
-- TOFU callbacks and storage (where?) of (signed?) acceptance
-- Incorporate session resumption (on both ends) (how to safely store creds?)
-- Key derivation with the PRF functionality of TLS 1.2
-
++ Support for all of X.509, OpenPGP and SRP schemes (undecided on PSK)
++ Extension of GnuTLS' PKCS #11 support to OpenPGP, PSK and SRP
+- TOFU callbacks and storage of (signed?) acceptance
+- Incorporate session resumption (on both ends) (store creds in database?)
+- Key derivation API with the PRF functionality of TLS 1.2
+- Error translation from GnuTLS and BerkeleyDB to errno (with detail report)
+- Transactions for an entire thread
+- Thread cleanup with pthread_setcanceltype(), pthread_cleanup_push()
+- Free memory as assumed by GnuTLS and BerkeleyDB API's
+- Setup server credentials for searching databases as is done in the client
