@@ -61,9 +61,23 @@
 
 
 /*
- * GnuTLS infrastructure setup.  Generate keys and so on.
+ * GnuTLS infrastructure setup.
+ * Session-shared DH-keys, credentials structures, and so on.
  */
 static gnutls_dh_params_t dh_params;
+
+struct credinfo {
+	gnutls_credentials_type_t credtp;
+	void *cred;
+};
+
+#define EXPECTED_SRV_CREDCOUNT 3
+#define EXPECTED_CLI_CREDCOUNT 2
+static struct credinfo srv_creds [EXPECTED_SRV_CREDCOUNT];
+static struct credinfo cli_creds [EXPECTED_CLI_CREDCOUNT];
+static int srv_credcount = 0;
+static int cli_credcount = 0;
+
 
 
 /* Generate Diffie-Hellman parameters - for use with DHE
@@ -92,23 +106,35 @@ if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 void log_gnutls (int level, const char *msg) {
 	fprintf (stderr, "GnuTLS_%d: %s", level, msg);
 }
-	
+
 
 /* The global and static setup function for the handler functions.
  */
 void setup_handler (void) {
+	int setup_handler_credentials (void);	/* Defined below */
 	const char *curver;
 	int err = GNUTLS_E_SUCCESS;
+	//
+	// Basic library actions
 	fprintf (stderr, "DEBUG: Compiled against GnuTLS version %s\n", GNUTLS_VERSION);
 	curver = gnutls_check_version (GNUTLS_VERSION);
 	fprintf (stderr, "DEBUG: Running against %s GnuTLS version %s\n", curver? "acceptable": "OLDER", curver? curver: gnutls_check_version (NULL));
 	err = err || gnutls_global_init ();
 if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+	//
+	// Setup logging / debugging
 	gnutls_global_set_log_function (log_gnutls);
 	gnutls_global_set_log_level (2);
+	//
+	// Setup DH parameters
 	err = err || generate_dh_params ();
 if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 	fprintf (stderr, "DEBUG: Setting up management databases\n");
+	//
+	// Setup shared credentials for all client server processes
+	err = err || setup_handler_credentials ();
+	//
+	// Setup the management databases
 	err = err || manage_setup ();
 if (err) fprintf (stderr, "MISSER %s: %s:%d\n", db_strerror (err), __FILE__, __LINE__);
 	if (err != GNUTLS_E_SUCCESS) {
@@ -214,7 +240,7 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 /* The callback function that retrieves certification information from either
  * the client or the server in the course of the handshake procedure.
  */
-int cert_retrieve (gnutls_session_t session,
+int clisrv_cert_retrieve (gnutls_session_t session,
 				const gnutls_datum_t* req_ca_dn,
 				int nreqs,
 				const gnutls_pk_algorithm_t* pk_algos,
@@ -412,7 +438,7 @@ if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 		crs_disclose->close (crs_disclose);
 		crs_disclose = NULL;
 	}
-fprintf (stderr, "DEBUG: Returning %s from cert_retrieve()\n", gnutls_strerror (err));
+fprintf (stderr, "DEBUG: Returning %s from clisrv_cert_retrieve()\n", gnutls_strerror (err));
 	return err;
 }
 
@@ -430,11 +456,6 @@ int srv_clienthello (gnutls_session_t session) {
 	char sni [sizeof (cmd->cmd.pio_data.pioc_starttls.remoteid)]; // static
 	size_t snilen = sizeof (sni);
 	int snitype;
-	gnutls_anon_server_credentials_t anoncred = NULL;
-	gnutls_certificate_credentials_t certscred = NULL;
-	int srpbits;
-	gnutls_srp_server_credentials_t srpcred = NULL;
-	//TODO// gnutls_kdh_server_credentials_t kdhcred = NULL;
 	int err = GNUTLS_E_SUCCESS;
 	int sub;
 	int ret;
@@ -479,121 +500,6 @@ int srv_clienthello (gnutls_session_t session) {
 	}
 
 	//
-	// Construct server credentials for X.509 and OpenPGP cert types
-	err = err || gnutls_certificate_allocate_credentials (
-		&certscred);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-	if (!err) gnutls_certificate_set_dh_params (
-		certscred,
-		dh_params);
-
-	sub = err;
-	/* TODO: Bad code.  GnuTLS 3.2.1 ignores retrieve_function2 when
-	 * checking if it can handle the OpenPGP certificate type in
-	 * _gnutls_session_cert_type_supported (gnutls_status.c:175) but
-	 * it does see the "1" version field.  It does not callback the
-	 * "1" version if "2" is present though.
-	 */
-	if (!sub) /* TODO:GnuTLSversions sub = */ gnutls_certificate_set_retrieve_function (
-		certscred,
-		(void *) exit);
-	if (!sub) /* TODO:GnuTLSversions sub = */ gnutls_certificate_set_retrieve_function2 (
-		certscred,
-		cert_retrieve);
-	if (sub == GNUTLS_E_SUCCESS) {
-		// Setup for certificates
-		fprintf (stderr, "DEBUG: Setting server certificate credentials\n");
-		err = err || gnutls_credentials_set (
-			session,
-			GNUTLS_CRD_CERTIFICATE,
-			certscred);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		if (!err) gnutls_certificate_server_set_request (
-			session,
-			GNUTLS_CERT_REQUIRE);
-	} else if (certscred != NULL) {
-		gnutls_certificate_free_credentials (certscred);
-		certscred = NULL;
-	}
-
-	//
-	// Construct server credentials for anonymous access
-	sub = err;
-	sub = sub || gnutls_anon_allocate_server_credentials (
-		&anoncred);
-if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
-	if (!sub) gnutls_anon_set_server_dh_params (
-		anoncred,
-		dh_params);
-	if (sub == GNUTLS_E_SUCCESS) {
-		fprintf (stderr, "DEBUG: Setting server anonymous credentials\n");
-		err = err || gnutls_credentials_set (
-			session,
-			GNUTLS_CRD_ANON,
-			anoncred);
-if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
-	} else if (anoncred) {
-		gnutls_anon_free_server_credentials (anoncred);
-		anoncred = NULL;
-	}
-
-	//
-	// Construct server credentials for SRP authentication
-	sub = err;
-	srpbits = 3072;
-	if (!sub) gnutls_srp_set_prime_bits (
-		session,
-		srpbits);
-	sub = sub || gnutls_srp_allocate_server_credentials (
-		&srpcred);
-if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
-	sub = sub || gnutls_srp_set_server_credentials_file (
-		srpcred,
-		"../testdata/tlspool-test-srp.passwd",
-		"../testdata/tlspool-test-srp.conf");
-if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
-	if (sub == GNUTLS_E_SUCCESS) {
-		fprintf (stderr, "DEBUG: Setting server SRP credentials\n");
-		err = err || gnutls_credentials_set (session,
-			GNUTLS_CRD_SRP,
-			srpcred);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-	} else if (srpcred != NULL) {
-		gnutls_srp_free_server_credentials (srpcred);
-		srpcred = NULL;
-	}
-
-	//
-	// Construct server credentials for KDH authentication
-	//TODO// err = err || sub;
-	//TODO// sub = sub || gnutls_kdh_allocate_server_credentials (
-	//TODO// 	&kdhcred);
-	//TODO// sub = sub || gnutls_kdh_set_server_dh_params (
-	//TODO// 	kdhcred,
-	//TODO// 	dh_params);
-	//TODO// if (sub == GNUTLS_E_SUCCESS) {
-	//TODO// 	sub = sub || gnutls_credentials_set (
-	//TODO// 		session,
-	//TODO// 		GNUTLS_CRD_KDH,
-	//TODO// 		kdhcred);
-	//TODO// } else if (kdhcred != NULL) {
-	//TODO// 	gnutls_kdh_free_server_credentials (kdhcred);
-	//TODO// 	kdhcred = NULL;
-	//TODO// }
-
-	//
-	// Ensure that at least one credential has been set
-	if ((err == GNUTLS_E_SUCCESS)
-			&& (certscred == NULL)
-			&& (srpcred == NULL)
-			&& (anoncred == NULL)) {
-			//TODO// && (kdhcred == NULL)) {
-		fprintf (stderr, "DEBUG: No server credentials could be setup\n");
-		err = -GNUTLS_E_INSUFFICIENT_CREDENTIALS;
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-	}
-
-	//
 	// TODO: Setup specialised priorities string?
 
 	//
@@ -610,6 +516,192 @@ int cli_srpcreds_retrieve (gnutls_session_t session,
 	*username = strdup ("tester");
 	*password = strdup ("test");
 	return GNUTLS_E_SUCCESS;
+}
+
+
+/* Setup credentials to be shared by all clients and servers.
+ * Credentials are generally implemented through callback functions.
+ * This should be called after setting up DH parameters.
+ */
+int setup_handler_credentials (void) {
+	gnutls_anon_server_credentials_t srv_anoncred = NULL;
+	gnutls_anon_client_credentials_t cli_anoncred = NULL;
+	gnutls_certificate_credentials_t clisrv_certcred = NULL;
+	//TODO:NOTHERE// int srpbits;
+	gnutls_srp_server_credentials_t srv_srpcred = NULL;
+	gnutls_srp_client_credentials_t cli_srpcred = NULL;
+	//TODO// gnutls_kdh_server_credentials_t srv_kdhcred = NULL;
+	//TODO// gnutls_kdh_server_credentials_t cli_kdhcred = NULL;
+	int err = GNUTLS_E_SUCCESS;
+	int sub;
+
+	//
+	// Construct certificate credentials for X.509 and OpenPGP cli/srv
+	err = err || gnutls_certificate_allocate_credentials (
+		&clisrv_certcred);
+if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+	if (!err) gnutls_certificate_set_dh_params (
+		clisrv_certcred,
+		dh_params);
+	sub = err;
+	/* TODO: Bad code.  GnuTLS 3.2.1 ignores retrieve_function2 when
+	 * checking if it can handle the OpenPGP certificate type in
+	 * _gnutls_session_cert_type_supported (gnutls_status.c:175) but
+	 * it does see the "1" version field.  It does not callback the
+	 * "1" version if "2" is present though.
+	 */
+	if (!sub) /* TODO:GnuTLSversions sub = */ gnutls_certificate_set_retrieve_function (
+		clisrv_certcred,
+		(void *) exit);
+	if (!sub) /* TODO:GnuTLSversions sub = */ gnutls_certificate_set_retrieve_function2 (
+		clisrv_certcred,
+		clisrv_cert_retrieve);
+	if (sub == GNUTLS_E_SUCCESS) {
+		// Setup for certificates
+		fprintf (stderr, "DEBUG: Setting client and server certificate credentials\n");
+		cli_creds [cli_credcount].credtp = GNUTLS_CRD_CERTIFICATE;
+		cli_creds [cli_credcount].cred   = (void *) clisrv_certcred;
+		cli_credcount++;
+		srv_creds [srv_credcount].credtp = GNUTLS_CRD_CERTIFICATE;
+		srv_creds [srv_credcount].cred   = (void *) clisrv_certcred;
+		srv_credcount++;
+	} else if (clisrv_certcred != NULL) {
+		gnutls_certificate_free_credentials (clisrv_certcred);
+		clisrv_certcred = NULL;
+	}
+
+	//
+	// Construct anonymous server credentials
+	sub = err;
+	sub = sub || gnutls_anon_allocate_server_credentials (
+		&srv_anoncred);
+if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
+	if (!sub) gnutls_anon_set_server_dh_params (
+		srv_anoncred,
+		dh_params);
+	if (sub == GNUTLS_E_SUCCESS) {
+		fprintf (stderr, "DEBUG: Setting server anonymous credentials\n");
+		srv_creds [srv_credcount].credtp = GNUTLS_CRD_ANON;
+		srv_creds [srv_credcount].cred   = (void *) srv_anoncred;
+		srv_credcount++;
+	} else if (srv_anoncred) {
+		gnutls_anon_free_server_credentials (srv_anoncred);
+		srv_anoncred = NULL;
+	}
+
+#if DEFINED_MIRRORR_IMAGE_OF_SERVER_ANONYMOUS_CREDENTIALS
+	//
+	// Construct anonymous client credentials
+	sub = err;
+	sub = sub || gnutls_anon_allocate_client_credentials (
+		&cli_anoncred);
+if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
+	if (!sub) gnutls_anon_set_client_dh_params (
+		cli_anoncred,
+		dh_params);
+	if (sub == GNUTLS_E_SUCCESS) {
+		fprintf (stderr, "DEBUG: Setting client anonymous credentials\n");
+		cli_creds [cli_credcount].credtp = GNUTLS_CRD_ANON;
+		cli_creds [cli_credcount].cred   = (void *) cli_anoncred;
+		cli_credcount++;
+	} else if (cli_anoncred) {
+		gnutls_anon_free_client_credentials (cli_anoncred);
+		cli_anoncred = NULL;
+	}
+#endif
+
+	//
+	// Construct server credentials for SRP authentication
+	sub = err;
+	sub = sub || gnutls_srp_allocate_server_credentials (
+		&srv_srpcred);
+if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
+	sub = sub || gnutls_srp_set_server_credentials_file (
+		srv_srpcred,
+		"../testdata/tlspool-test-srp.passwd",
+		"../testdata/tlspool-test-srp.conf");
+if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
+	if (sub == GNUTLS_E_SUCCESS) {
+		fprintf (stderr, "DEBUG: Setting server SRP credentials\n");
+		srv_creds [srv_credcount].credtp = GNUTLS_CRD_SRP;
+		srv_creds [srv_credcount].cred   = (void *) srv_srpcred;
+		srv_credcount++;
+	} else if (srv_srpcred != NULL) {
+		gnutls_srp_free_server_credentials (srv_srpcred);
+		srv_srpcred = NULL;
+	}
+
+	//
+	// Construct client credentials for SRP authentication
+	sub = err;
+	sub = sub || gnutls_srp_allocate_client_credentials (
+		&cli_srpcred);
+if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
+	if (!sub) gnutls_srp_set_client_credentials_function (
+		cli_srpcred,
+		cli_srpcreds_retrieve);
+if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
+	if (sub == GNUTLS_E_SUCCESS) {
+		fprintf (stderr, "DEBUG: Setting client SRP credentials\n");
+		cli_creds [cli_credcount].credtp = GNUTLS_CRD_SRP;
+		cli_creds [cli_credcount].cred   = (void *) cli_srpcred;
+		cli_credcount++;
+	} else if (cli_srpcred) {
+		gnutls_srp_free_client_credentials (cli_srpcred);
+		cli_srpcred = NULL;
+	}
+	err = err || sub;
+
+	//
+	// Construct server credentials for KDH authentication
+	//TODO// err = err || sub;
+	//TODO// sub = sub || gnutls_kdh_allocate_server_credentials (
+	//TODO// 	&srv_kdhcred);
+	//TODO// sub = sub || gnutls_kdh_set_server_dh_params (
+	//TODO// 	srv_kdhcred,
+	//TODO// 	dh_params);
+	//TODO// if (sub == GNUTLS_E_SUCCESS) {
+	//TODO// 	fprintf (stderr, "DEBUG: Setting server KDH credentials\n");
+	//TODO// 	srv_creds [srv_credcount].credtp = GNUTLS_CRD_KDH;
+	//TODO// 	srv_creds [srv_credcount].cred   = (void *) srv_kdhcred;
+	//TODO// 	srv_credcount++;
+	//TODO// } else if (srv_kdhcred != NULL) {
+	//TODO// 	gnutls_kdh_free_server_credentials (srv_kdhcred);
+	//TODO// 	srv_kdhcred = NULL;
+	//TODO// }
+
+	//
+	// Construct client credentials for KDH
+	//TODO// sub = err;
+	//TODO// sub = sub || gnutls_kdh_allocate_client_credentials (
+	//TODO// 	&cli_kdhcred);
+	//TODO// sub = sub || gnutls_kdh_set_client_credentials_function (
+	//TODO// 	cli_kdhcred,
+	//TODO// 	cli_kdh_retrieve);
+	//TODO// if (sub == GNUTLS_E_SUCCESS) {
+	//TODO// 	fprintf (stderr, "DEBUG: Setting client KDH credentials\n");
+	//TODO// 	cli_creds [cli_credcount].credtp = GNUTLS_CRD_KDH;
+	//TODO// 	cli_creds [cli_credcount].cred   = (void *) cli_kdhcred;
+	//TODO// 	cli_credcount++;
+	//TODO// } else if (cli_kdhcred) {
+	//TODO// 	gnutls_kdh_free_client_credentials (cli_kdhcred);
+	//TODO//	cli_kdhcred = NULL;
+	//TODO// }
+
+	//
+	// Ensure that at least one credential has been set
+	// TODO: Look at the counters; but at boot, we can require all okay
+	if ((err == GNUTLS_E_SUCCESS) &&
+			( (cli_credcount != EXPECTED_CLI_CREDCOUNT) ||
+			  (srv_credcount != EXPECTED_SRV_CREDCOUNT) ) ) {
+		fprintf (stderr, "DEBUG: Not all credential types could be setup (cli %d/%d, srv %d/%d, err %d)\n", cli_credcount, EXPECTED_CLI_CREDCOUNT, srv_credcount, EXPECTED_SRV_CREDCOUNT, err);
+		err = -GNUTLS_E_INSUFFICIENT_CREDENTIALS;
+if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+	}
+
+	//
+	// Report overall error or success
+	return err;
 }
 
 
@@ -633,6 +725,9 @@ static void *starttls_thread (void *cmd_void) {
 	int err = GNUTLS_E_SUCCESS;
 	int sub;
 	int ret;
+	int i;
+	struct credinfo *clisrv_creds;
+	int clisrv_credcount;
 
 	//
 	// General thread setup
@@ -671,27 +766,25 @@ static void *starttls_thread (void *cmd_void) {
 		err = err || gnutls_init (&session,  GNUTLS_SERVER);
 if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 		if (!err) gnutls_session_set_ptr (session, cmd);
-		err = err || gnutls_priority_set_direct (
-			session,
-			// "NORMAL:-KX-ALL:+SRP:+SRP-RSA:+SRP-DSS",
-			// "NORMAL:+CTYPE-X.509:-CTYPE-OPENPGP:+CTYPE-X.509",
-			"NORMAL:-CTYPE-X.509:+CTYPE-OPENPGP:-CTYPE-X.509",
-			// "NORMAL:+ANON-ECDH:+ANON-DH",
-			NULL);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 		if (!err) gnutls_handshake_set_post_client_hello_function (
 			session,
 			srv_clienthello);
+		//
+		// Setup for server credential installation in this session
+		clisrv_creds     = srv_creds;
+		clisrv_credcount = srv_credcount;
 
 	} else if (cmd->cmd.pio_cmd == PIOC_STARTTLS_CLIENT_V1) {
 		//
 		// Setup as a TLS client
 		//
-		gnutls_anon_client_credentials_t anoncred = NULL;
-		gnutls_certificate_credentials_t certcred = NULL;
-		gnutls_srp_client_credentials_t srpcred = NULL;
-		//TODO// gnutls_kdh_client_credentials_t kdhcred = NULL;
-
+		int srpbits;
+		//
+		// Require a minimum security level for SRP
+		srpbits = 3072;
+		if (!sub) gnutls_srp_set_prime_bits (
+			session,
+			srpbits);
 		//
 		// Setup as a TLS client
 		err = err || gnutls_init (
@@ -701,7 +794,6 @@ if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 		if (!err) gnutls_session_set_ptr (
 			session,
 			cmd);
-
 		//
 		// Setup for potential sending of SNI
 		if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_SEND_SNI) {
@@ -725,117 +817,10 @@ if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 				len);
 if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 		}
-
 		//
-		// Construct client credentials for X.509 and OpenPGP certs
-		sub = err;
-		sub = sub || gnutls_certificate_allocate_credentials (
-			&certcred);
-if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
-		if (!sub) gnutls_certificate_set_pin_function (
-			certcred,
-			gnutls_pin_callback,
-			NULL);
-		sub = sub || gnutls_priority_set_direct (
-			session,
-			// "NORMAL:+SRP:+SRP-RSA:+SRP-DSS",
-			// "NORMAL:+CTYPE-X.509:-CTYPE-OPENPGP:+CTYPE-X.509",
-			"NORMAL:-CTYPE-X.509:+CTYPE-OPENPGP:-CTYPE-X.509",
-			// "NORMAL:+ANON-ECDH:+ANON-DH",
-			NULL);
-if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
-		if (!sub) {
-			ret = gnutls_certificate_set_x509_trust_file (
-				certcred,
-				"../testdata/tlspool-test-ca-cert.pem",
-				GNUTLS_X509_FMT_PEM);
-			if (ret < 0) {
-				sub = ret;
-			}
-		}
-if (sub) fprintf (stderr, "SUB-MISSER: %s:%d -- %s\n", __FILE__, __LINE__, gnutls_strerror (-sub));
-		if (!sub) /* TODO:GnuTLSversions sub = */ gnutls_certificate_set_retrieve_function2 (
-			certcred,
-			cert_retrieve);
-		if (sub == GNUTLS_E_SUCCESS) {
-			fprintf (stderr, "DEBUG: Setting client certificate credentials\n");
-			err = err || gnutls_credentials_set (
-				session,
-				GNUTLS_CRD_CERTIFICATE,
-				certcred);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		} else if (certcred != NULL) {
-			gnutls_certificate_free_credentials (certcred);
-			certcred = NULL;
-		}
-
-		//
-		// Construct client credentials for anonymous access
-		sub = err;
-		sub = sub || gnutls_anon_allocate_client_credentials (
-			&anoncred);
-if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
-		if (sub == GNUTLS_E_SUCCESS) {
-			fprintf (stderr, "DEBUG: Setting client anonymous credentials\n");
-			err = err || gnutls_credentials_set (
-				session,
-				GNUTLS_CRD_ANON,
-				anoncred);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		} else if (anoncred != NULL) {
-			gnutls_anon_free_client_credentials (anoncred);
-			anoncred = NULL;
-		}
-
-		//
-		// Construct client credentials for SRP
-		sub = err;
-		sub = sub || gnutls_srp_allocate_client_credentials (
-			&srpcred);
-if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
-		if (!sub) gnutls_srp_set_client_credentials_function (
-			srpcred,
-			cli_srpcreds_retrieve);
-		if (sub == GNUTLS_E_SUCCESS) {
-			fprintf (stderr, "DEBUG: Setting client SRP credentials\n");
-			err = err || gnutls_credentials_set (
-				session,
-				GNUTLS_CRD_SRP,
-				srpcred);
-if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
-		} else if (srpcred) {
-			gnutls_srp_free_client_credentials (srpcred);
-			srpcred = NULL;
-		}
-
-		//
-		// Construct client credentials for KDH
-		//TODO// sub = err;
-		//TODO// sub = sub || gnutls_kdh_allocate_client_credentials (
-		//TODO// 	&kdhcred);
-		//TODO// sub = sub || gnutls_kdh_set_client_credentials_function (
-		//TODO// 	kdhcred,
-		//TODO// 	cli_kdh_retrieve);
-		//TODO// if (sub == GNUTLS_E_SUCCESS) {
-		//TODO// 	sub = sub || gnutls_credentials_set (
-		//TODO// 		session,
-		//TODO// 		GNUTLS_CRD_KDH,
-		//TODO// 		kdhcred);
-		//TODO// } else if (kdhcred) {
-		//TODO// 	gnutls_kdh_free_client_credentials (kdhcred);
-		//TODO//	kdhcred = NULL;
-		//TODO// }
-
-		//
-		// Ensure that at least one credential has been set
-		if ((err == GNUTLS_E_SUCCESS)
-				&& (certcred == NULL)
-				&& (srpcred == NULL)
-				&& (anoncred == NULL)) {
-				//TODO// && (kdhcred == NULL)) {
-			fprintf (stderr, "DEBUG: No client credentials could be setup\n");
-			err = -GNUTLS_E_INSUFFICIENT_CREDENTIALS;
-		}
+		// Setup for client credential installation in this session
+		clisrv_creds     = cli_creds;
+		clisrv_credcount = cli_credcount;
 
 	} else {
 		//
@@ -847,6 +832,26 @@ if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 		close (passfd);
 		return;
 	}
+
+	//
+	// Install the shared credentials for the client or server role
+	for (i=0; i<clisrv_credcount; i++) {
+		err = err || gnutls_credentials_set (
+			session,
+			clisrv_creds [i].credtp,
+			clisrv_creds [i].cred  );
+	}
+
+	//
+	// Setup the priority string for this session
+	err = err || gnutls_priority_set_direct (
+		session,
+		// "NORMAL:-KX-ALL:+SRP:+SRP-RSA:+SRP-DSS",
+		"NORMAL:+CTYPE-X.509:-CTYPE-OPENPGP:+CTYPE-X.509",
+		// "NORMAL:-CTYPE-X.509:+CTYPE-OPENPGP:-CTYPE-X.509",
+		// "NORMAL:+ANON-ECDH:+ANON-DH",
+		NULL);
+if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 
 	//
 	// Now setup for the GnuTLS handshake
