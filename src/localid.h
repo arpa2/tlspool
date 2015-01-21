@@ -26,6 +26,11 @@
 #define LID_TYPE_SRP	0x00000003	/* No data, flags existence */
 #define LID_TYPE_KRB5	0x00000004	/* Ticket */
 
+#define LID_TYPE_MIN	LID_TYPE_X509
+#define LID_TYPE_MAX	LID_TYPE_KRB5
+#define LID_TYPE_OFS	LID_TYPE_MIN
+#define LID_TYPE_CNT	(1 + LID_TYPE_MAX - LID_TYPE_MIN)
+
 #define LID_ROLE_MASK	0x00000300	/* Separate out the LID_ROLE_xxx bits */
 #define LID_ROLE_CLIENT	0x00000100	/* This may be used for clients */
 #define LID_ROLE_SERVER	0x00000200	/* This may be used for servers */
@@ -41,6 +46,73 @@
 #define DONAI_MAXLEN 512
 
 
+/* A donai is a structure holding either user@domain.name or domain.name.
+ * A selector is a simple pattern that can match with a donain, by stripping
+ * local components.  For instance user@domain.name or @domain.name or @.name
+ * or @. to match with user@domain.name; and, for instance domain.name or
+ * .name or . to match with domain.name.
+ */
+
+struct userdomain {
+	char *user;	/* not NUL-terminated; user==NULL for no @ at all */
+	int userlen;	/* valid if user!=NULL; userlen<0 in selector_t for 0 */
+	char *domain;	/* not NULL, start . signifies a pattern */
+	int domlen;	/* always >0 */
+};
+
+
+typedef struct userdomain donai_t;  /* (user==NULL OR userlen>0) AND *domain!='.' */
+
+typedef struct userdomain selector_t;  /* userlen<0 should be read as userlen==0 */
+
+
+
+/* Setup a DBT data handle to point to a pre-allocated, fixed-size
+ * data buffer that will be used throughout the use of the handle.
+ * Cleanup is not necessary, but the buffer must not be cleared
+ * before the last use of the data handle.
+ */
+static inline void dbt_init_fixbuf (DBT *dbt, void *buffer, u_int32_t bufsize) {
+	bzero (dbt, sizeof (DBT));
+	dbt->data = buffer;
+	dbt->size =
+	dbt->ulen = bufsize;
+	dbt->flags |= DB_DBT_USERMEM;
+}
+
+/* Setup a DBT data handle for malloc() by the database, and free() by the
+ * calling program.
+ * Cleanup with dbt_free() or dbt_store() is needed after every lookup
+ * that succeeded.
+ */
+static inline void dbt_init_malloc (DBT *dbt) {
+	bzero (dbt, sizeof (DBT));
+	dbt->flags |= DB_DBT_MALLOC;
+}
+
+/* Free the DBT data handle that was setup with dbt_init_malloc().  This
+ * or dbt_store() must be called after every successfully returned data
+ * item.
+ */
+static inline void dbt_free (DBT *dbt) {
+	/* assert (dbt->flags & DB_DBT_MALLOC); */
+	free (dbt->data);
+	dbt->data = NULL;
+}
+
+/* Store the DBT data handle's data into external structures, moving both
+ * the data pointer and size.  The data handle must have been setup with
+ * dbt_init_malloc().  Afterwards, clear the data handle for use in
+ * another iteration.
+ */
+static inline void dbt_store (DBT *dbt, gnutls_datum_t *output) {
+	/* assert (dbt->flags & DB_DBT_MALLOC); */
+	output->data = dbt->data;
+	output->size = dbt->size;
+	dbt->data = NULL;
+}
+
+
 /* Create an iterator for a given localid value.  Use keys from dhb_lid.
  * The first value is delivered; continue with dbcred_iterate_next().
  *
@@ -50,14 +122,26 @@
  * The value returned is only non-zero if a value was setup.
  * The DB_NOTFOUND value indicates that the key was not found.
  */
-int dbcred_iterate_from_localid (DBC *cursor, char *localid, DBT *keydata, DBT *creddata);
+int dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata);
 
-/* Construct an iterator for a given remoteid value.
- * Apply stepwise generalisation to selectors to find the most concrete match.
- * The first value is delivered; continue with dbcred_iterate_next().
+/* Construct an iterator for a given remoteid selector.  Apply stepwise
+ * generalisation to find the most concrete match.  The first value found
+ * is delivered; continue with dbcred_iterate_next().
+ *
+ * The remotesel value in string representation is the key to discpatn,
+ * forming the initial disclosure pattern.  This key should be setup with
+ * enough space to store the pattern (which is never longer than the original
+ * remoteid) plus a terminating NUL character.
+ *
+ * Note that remotesel already has the first value activated, usually the
+ * same as the remoteid.  This is assumed to be available, so don't call
+ * this function otherwise.  In practice, this is hardly a problem; any
+ * valid remoteid will provide a valid selector whose first iteration is to
+ * repeat the remoteid.  Failure to start even this is a sign of a syntax
+ * error, which is good to be treating separately from not-found conditions.
  *
  * The started iteration is a nested iteration over dbh_disclose for the
- * given remoteid, and inside that an iteration over dbh_localid for the
+ * pattern found, and inside that an iteration over dbh_localid for the
  * localid values that this gave.  This means that two cursors are needed,
  * both here and in the subsequent dbcred_iterate_next() calls.
  *
@@ -69,7 +153,7 @@ int dbcred_iterate_from_localid (DBC *cursor, char *localid, DBT *keydata, DBT *
  * The DB_NOTFOUND value indicates that no selector matching the remoteid
  * was found in dbh_disclose.
  */
-int dbcred_iterate_from_remoteid (DBC *crs_disclose, DBC *crs_localid, DBT *discpatn, DBT *keydata, DBT *creddata);
+int dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_localid, selector_t *remotesel, DBT *discpatn, DBT *keydata, DBT *creddata);
 
 /* Move an iterator to the next credential data value.  When done, the value
  * returned should be DB_NOTFOUND.
@@ -97,27 +181,7 @@ int dbcred_iterate_next (DBC *opt_crs_disclose, DBC *crs_localid, DBT *opt_discp
  *  - a (data,size) structure for the public credential
  * The function returns non-zero on success (zero indicates syntax error).
  */
-int dbcred_interpret (DBT *creddata, uint32_t *flags, char **p11priv, uint8_t **pubdata, int *pubdatalen);
-
-
-/* A donai is a structure holding either user@domain.name or domain.name.
- * A selector is a simple pattern that can match with a donain, by stripping
- * local components.  For instance user@domain.name or @domain.name or @.name
- * or @. to match with user@domain.name; and, for instance domain.name or
- * .name or . to match with domain.name.
- */
-
-struct userdomain {
-	char *user;	/* not NUL-terminated; user==NULL for no @ at all */
-	int userlen;	/* valid if user!=NULL; userlen<0 in selector_t for 0 */
-	char *domain;	/* not NULL, start . signifies a pattern */
-	int domlen;	/* always >0 */
-};
-
-
-typedef struct userdomain donai_t;  /* (user==NULL OR userlen>0) AND *domain!='.' */
-
-typedef struct userdomain selector_t;  /* userlen<0 should be read as userlen==0 */
+int dbcred_interpret (gnutls_datum_t *creddata, uint32_t *flags, char **p11priv, uint8_t **pubdata, int *pubdatalen);
 
 
 /* Iterate over selector values that would generalise the donai.  The
@@ -146,7 +210,9 @@ int donai_matches_selector (donai_t *donai, selector_t *pattern);
 
 
 /* Fill a donai structure from a stable string. The donai will share parts
- * of the string.
+ * of the string.  The function can also be used to construct a selector
+ * from a string; their structures are the same and the syntax is not
+ * parsed to ensure non-empty usernames and non-dot-prefixed domain names.
  */
 donai_t donai_from_stable_string (char *stable, int stablelen);
 

@@ -1,6 +1,7 @@
 /* tlspool/localid.c -- Map the keys of local identities to credentials */
 
 
+#include <stdlib.h>
 #include <string.h>
 #include <alloca.h>
 
@@ -27,6 +28,19 @@
 
 
 
+/* Retrieve flags from the credentials structure found in dbh_localid.
+ * The function returns non-zero on success (zero indicates syntax error).
+ */
+int dbcred_flags (DBT *creddata, uint32_t *flags) {
+	int p11privlen;
+	if (creddata->size <= 4) {
+		return 0;
+	}
+	*flags = ntohl (* (uint32_t *) creddata->data);
+	return 1;
+}
+
+
 /* Interpret the credentials structure found in dbh_localid.
  * This comes down to splitting the (data,size) structure into fields:
  *  - a 32-bit flags field
@@ -34,7 +48,7 @@
  *  - a (data,size) structure for the public credential
  * The function returns non-zero on success (zero indicates syntax error).
  */
-int dbcred_interpret (DBT *creddata, uint32_t *flags, char **p11priv, uint8_t **pubdata, int *pubdatalen) {
+int dbcred_interpret (gnutls_datum_t *creddata, uint32_t *flags, char **p11priv, uint8_t **pubdata, int *pubdatalen) {
 	int p11privlen;
 	if (creddata->size <= 4) {
 		return 0;
@@ -69,27 +83,29 @@ int dbcred_interpret (DBT *creddata, uint32_t *flags, char **p11priv, uint8_t **
  * The value returned is only non-zero if a value was setup.
  * The DB_NOTFOUND value indicates that the key was not found.
  */
-int dbcred_iterate_from_localid (DBC *cursor, char *localid, DBT *keydata, DBT *creddata) {
-	int err = 0;
-	memset (keydata, 0, sizeof (*keydata));
-	keydata->data = localid;
-	keydata->size = strlen (localid);
-	err = cursor->get (cursor, keydata, creddata, DB_SET);
-	return err;
+int dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata) {
+	return cursor->get (cursor, keydata, creddata, DB_SET);
 }
 
 
-/* Construct an iterator for a given remoteid value.
- * Apply stepwise generalisation to selectors to find the most concrete match.
- * The first value is delivered; continue with dbcred_iterate_next().
+/* Construct an iterator for a given remoteid selector.  Apply stepwise
+ * generalisation to find the most concrete match.  The first value found
+ * is delivered; continue with dbcred_iterate_next().
  *
- * The remoteid value is stored in discpatn, forming the initial disclosure
- * pattern, which is the full address.  Upon return, the actual matching
- * pattern is filled in; it is never longer, so the allocated memory is
- * never overwritten; at worst it is not fully utilised due to a lower size.
+ * The remotesel value in string representation is the key to discpatn,
+ * forming the initial disclosure pattern.  This key should be setup with
+ * enough space to store the pattern (which is never longer than the original
+ * remoteid) plus a terminating NUL character.
+ *
+ * Note that remotesel already has the first value activated, usually the
+ * same as the remoteid.  This is assumed to be available, so don't call
+ * this function otherwise.  In practice, this is hardly a problem; any
+ * valid remoteid will provide a valid selector whose first iteration is to
+ * repeat the remoteid.  Failure to start even this is a sign of a syntax
+ * error, which is good to be treating separately from not-found conditions.
  *
  * The started iteration is a nested iteration over dbh_disclose for the
- * given remoteid, and inside that an iteration over dbh_localid for the
+ * pattern found, and inside that an iteration over dbh_localid for the
  * localid values that this gave.  This means that two cursors are needed,
  * both here and in the subsequent dbcred_iterate_next() calls.
  *
@@ -101,22 +117,14 @@ int dbcred_iterate_from_localid (DBC *cursor, char *localid, DBT *keydata, DBT *
  * The DB_NOTFOUND value indicates that no selector matching the remoteid
  * was found in dbh_disclose.
  */
-int dbcred_iterate_from_remoteid (DBC *crs_disclose, DBC *crs_localid, DBT *discpatn, DBT *keydata, DBT *creddata) {
+int dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_localid, selector_t *remotesel, DBT *discpatn, DBT *keydata, DBT *creddata) {
 	int err = 0;
-	char *stable_rid = NULL;
-	donai_t remote_donai;
-	donai_t remote_selector;
-	char *selector_text;
-	int more;
-	stable_rid = alloca (discpatn->size);
-	memcpy (stable_rid, discpatn->data, discpatn->size);
-	remote_donai = donai_from_stable_string (stable_rid, discpatn->size);
-	more = selector_iterate_init (&remote_selector, &remote_donai);
+	int more = 1;
 	while (more) {
 		int fnd;
-		discpatn->size = donai_iterate_memput (discpatn->data, &remote_selector);
+		discpatn->size = donai_iterate_memput (discpatn->data, remotesel);
+fprintf (stderr, "DEBUG: Looking up remote selector %.*s\n", discpatn->size, (char *) discpatn->data);
 		fnd = crs_disclose->get (crs_disclose, discpatn, keydata, DB_SET);
-fprintf (stderr, "DEBUG: crs_disclose->get(%.*s) returned %s\n", discpatn->size, discpatn->data, db_strerror (fnd));
 		if (fnd == 0) {
 			// Got the selector pattern!
 			// Now continue, even when no localids will work.
@@ -126,11 +134,12 @@ fprintf (stderr, "DEBUG: crs_disclose->get(%.*s) returned %s\n", discpatn->size,
 			err = fnd;
 			break;
 		}
-		more = selector_iterate_next (&remote_selector);
+		more = selector_iterate_next (remotesel);
 	}
 	// Ended here with nothing more to find
 	return DB_NOTFOUND;
 }
+
 
 /* Move an iterator to the next credential data value.  When done, the value
  * returned should be DB_NOTFOUND.
@@ -148,7 +157,7 @@ fprintf (stderr, "DEBUG: crs_disclose->get(%.*s) returned %s\n", discpatn->size,
  * The DB_NOTFOUND value indicates that no further duplicate was not found.
  */
 int dbcred_iterate_next (DBC *opt_crs_disclose, DBC *crs_localid, DBT *opt_discpatn, DBT *keydata, DBT *creddata) {
-	int err;
+	int err = 0;
 	err = crs_localid->get (crs_localid, keydata, creddata, DB_NEXT_DUP);
 	if (err != DB_NOTFOUND) {
 		return err;
@@ -167,7 +176,6 @@ int dbcred_iterate_next (DBC *opt_crs_disclose, DBC *crs_localid, DBT *opt_discp
 }
 
 
-
 /* Iterate over selector values that would generalise the donai.  The
  * selector_t shares data from the donai, so it allocates no internal
  * storage and so it can be dropped at any time during the iteration.
@@ -178,7 +186,7 @@ int dbcred_iterate_next (DBC *opt_crs_disclose, DBC *crs_localid, DBT *opt_discp
 int selector_iterate_init (selector_t *iterator, donai_t *donai) {
 	//
 	// If the user name is not NULL but empty, bail out in horror
-	if ((donai->user != NULL) && (donai->userlen == 0)) {
+	if ((donai->user != NULL) && (donai->userlen <= 0)) {
 		return 0;
 	}
 	//
@@ -243,13 +251,13 @@ int donai_matches_selector (donai_t *donai, selector_t *pattern) {
 	int extra;
 	//
 	// Bail out in horror on misconfigurations
-	if ((donai->user != NULL) && (donai->userlen == 0)) {
+	if ((donai->user != NULL) && (donai->userlen <= 0)) {
 		return 0;
 	}
-	if ((donai  ->domain == NULL) || (donai  ->domlen == 0)) {
+	if ((donai  ->domain == NULL) || (donai  ->domlen <= 0)) {
 		return 0;
 	}
-	if ((pattern->domain == NULL) || (pattern->domlen == 0)) {
+	if ((pattern->domain == NULL) || (pattern->domlen <= 0)) {
 		return 0;
 	}
 	//
@@ -296,7 +304,9 @@ int donai_matches_selector (donai_t *donai, selector_t *pattern) {
 
 
 /* Fill a donai structure from a stable string. The donai will share parts
- * of the string.
+ * of the string.  The function can also be used to construct a selector
+ * from a string; their structures are the same and the syntax is not
+ * parsed to ensure non-empty usernames and non-dot-prefixed domain names.
  */
 donai_t donai_from_stable_string (char *stable, int stablelen) {
 	donai_t retval;

@@ -8,6 +8,11 @@
 
 #include <gnutls/gnutls.h>
 
+#include <db.h>
+
+
+#define EXPECTED_LID_TYPE_COUNT 4
+
 
 /* The command structure contains the literal packet and additional
  * information for local administrative purposes.
@@ -18,6 +23,9 @@ struct command {
 	int claimed;
 	pthread_t handler;
 	struct tlspool_command cmd;
+	struct pioc_starttls *orig_piocdata;
+	DB_TXN *txn;
+	gnutls_datum_t lids [EXPECTED_LID_TYPE_COUNT];
 };
 
 

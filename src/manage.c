@@ -40,6 +40,39 @@ static int manage_secondary_disclose (DB *secondary, const DBT *key, const DBT *
 	return 0;
 }
 
+/* Begin a database transaction, if possible; otherwise setup as NULL */
+void manage_txn_begin (DB_TXN **txn) {
+	int err = dbenv->txn_begin (dbenv, NULL, txn, 0);
+	if (err != 0) {
+		txn = NULL;
+	}
+}
+
+/* Commit a database transaction, setting it to NULL.  Ignore when NULL. */
+int manage_txn_commit (DB_TXN **txn) {
+	int err = 0;
+	if (*txn != NULL) {
+		(*txn)->commit (*txn, 0);
+	}
+	if (err == 0) {
+		*txn = NULL;
+	}
+	return err;
+}
+
+/* Rollback a database transaction, setting it to NULL.  Ignore when NULL. */
+int manage_txn_rollback (DB_TXN **txn) {
+	int err = 0;
+	if (*txn != NULL) {
+		err = (*txn)->abort (*txn);
+	}
+	if (err == 0) {
+		*txn = NULL;
+	}
+	return err;
+}
+
+/* Setup the management databases; for the reverse, see manage_cleanup() */
 int manage_setup (void) {
 	int err = 0;
 	u_int32_t flags = 0;
@@ -58,7 +91,7 @@ if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
 if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
 	err = err || dbh_localid->set_flags (dbh_disclose, flags);
 if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
-	flags = DB_RDONLY | DB_THREAD /* TODO: | DB_AUTO_COMMIT */;
+	flags = DB_RDONLY | DB_THREAD | DB_AUTO_COMMIT;
 	err = err || dbh_localid->open (dbh_localid,  tract, "../localid.db",  NULL, DB_HASH, flags, 0);
 if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
 	err = err || dbh_localid->open (dbh_disclose, tract, "../disclose.db", NULL, DB_HASH, flags, 0);
@@ -69,8 +102,7 @@ if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
 	return err;
 }
 
-
-
+/* Cleanup the management databases, undoing any effects of manage_setup() */
 void manage_cleanup (void) {
 	if (dbh_disclose != NULL) {
 		dbh_disclose->close (dbh_disclose, 0);

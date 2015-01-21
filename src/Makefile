@@ -1,9 +1,19 @@
 all: tlspool
 
+debug: tlspool
+	./tlspool -kc ../etc/tlspool.conf
+	sleep 2
+	gdb ./tlspool `pidof tlspool`
+
 clean:
 	rm -f *.o tlspool
 
 anew: clean all
+
+.PHONEY:
+
+tags: .PHONEY
+	ctags *.[ch] ../include/tlspool/*.h
 
 .c.o:
 	gcc -ggdb3 -pthread -I ../include -I /usr/local/include -I /usr/include/p11-kit-1 -c -o $@ $<
