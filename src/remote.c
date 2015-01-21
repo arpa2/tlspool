@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include <gnutls/gnutls.h>
+#include <gnutls/abstract.h>
 
 #include <tlspool/internal.h>
 

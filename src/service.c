@@ -18,6 +18,9 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
+#include <gnutls/gnutls.h>
+#include <gnutls/abstract.h>
+
 #include <tlspool/commands.h>
 #include <tlspool/internal.h>
 
@@ -177,9 +180,12 @@ int send_command (struct command *cmd, int passfd) {
 	int newfd;
 	char anc [CMSG_SPACE(sizeof (int))];
 	struct iovec iov;
-	struct msghdr mh = { 0 };
+	struct msghdr mh;
 	struct cmsghdr *cmsg;
 
+	bzero (anc, sizeof (anc));
+	bzero (&iov, sizeof (iov));
+	bzero (&mh, sizeof (mh));
 	iov.iov_base = &cmd->cmd;
 	iov.iov_len = sizeof (cmd->cmd);
 	mh.msg_iov = &iov;

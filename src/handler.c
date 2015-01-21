@@ -332,7 +332,7 @@ int clisrv_cert_retrieve (gnutls_session_t session,
 				int pk_algos_length,
 				gnutls_pcert_st** pcert,
 				unsigned int *pcert_length,
-				gnutls_privkey_t * pkey) {
+				gnutls_privkey_t *pkey) {
 	gnutls_certificate_type_t certtp;
 	gnutls_pcert_st *pc = NULL;
 	struct command *cmd;
@@ -450,12 +450,12 @@ int clisrv_cert_retrieve (gnutls_session_t session,
 	//
 	// Allocate response structures
 	// TODO: Add support for certificate chains (root cert is not needed)
-	// TODO: Externalise allocation / freeing
 	*pcert_length = 1;
-	*pcert = (gnutls_pcert_st *) malloc (sizeof (gnutls_pcert_st));		//TODO//VALGRIND//CLEANUP
+	*pcert = (gnutls_pcert_st *) malloc (sizeof (gnutls_pcert_st));
 	if (*pcert == NULL) {
 		return -GNUTLS_E_MEMORY_ERROR;
 	}
+	cmd->session_pcert = *pcert;	//TODO// Used for session cleanup
 
 	ok = dbcred_interpret (
 		&cmd->lids [lidtype - LID_TYPE_MIN],
@@ -472,8 +472,11 @@ int clisrv_cert_retrieve (gnutls_session_t session,
 	//
 	// Setup private key
 	err = err || gnutls_privkey_init (
-		pkey);		//TODO//VALGRIND//CLEANUP
+		pkey);
 if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
+	if (!err) {
+		cmd->session_pkey = *pkey;	//TODO// Used for session cleanup
+	}
 	err = err || gnutls_privkey_import_pkcs11_url (
 		*pkey,
 		p11priv);
@@ -985,6 +988,8 @@ static void *starttls_thread (void *cmd_void) {
 	cmd->orig_piocdata = &orig_piocdata;
 	passfd = cmd->passfd;
 	clientfd = cmd->clientfd;
+	cmd->session_pcert = NULL;
+	cmd->session_pkey = NULL;
 
 	//
 	// Setup BDB transactions and reset credential datum fields
@@ -1142,6 +1147,15 @@ if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 		}
 	}
 	bzero (cmd->lids, sizeof (cmd->lids));
+	if (cmd->session_pkey) {
+		gnutls_privkey_deinit (cmd->session_pkey);
+		cmd->session_pkey = NULL;
+	}
+	if (cmd->session_pcert) {
+		gnutls_pcert_deinit (cmd->session_pcert);
+		free (cmd->session_pcert);
+		cmd->session_pcert = NULL;
+	}
 
 	//
 	// From here, assume nothing about the cmd structure; as part of the

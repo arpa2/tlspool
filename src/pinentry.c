@@ -13,6 +13,7 @@
 #include <sys/un.h>
 
 #include <gnutls/gnutls.h>
+#include <gnutls/abstract.h>
 
 #include <tlspool/internal.h>
 

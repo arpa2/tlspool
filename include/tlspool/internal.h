@@ -26,6 +26,8 @@ struct command {
 	struct pioc_starttls *orig_piocdata;
 	DB_TXN *txn;
 	gnutls_datum_t lids [EXPECTED_LID_TYPE_COUNT];
+	gnutls_pcert_st *session_pcert;
+	gnutls_privkey_t session_pkey;
 };
 
 
