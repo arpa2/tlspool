@@ -72,8 +72,8 @@ int manage_txn_rollback (DB_TXN **txn) {
 	return err;
 }
 
-/* Setup the management databases; for the reverse, see manage_cleanup() */
-int manage_setup (void) {
+/* Setup the management databases; for the reverse, see cleanup_management() */
+int setup_management (void) {
 	int err = 0;
 	u_int32_t flags = 0;
 	DB_TXN *tract = NULL;
@@ -97,13 +97,13 @@ if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
 	err = err || dbh_localid->open (dbh_disclose, tract, "../disclose.db", NULL, DB_HASH, flags, 0);
 if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
 	if (err) {
-		manage_cleanup ();
+		cleanup_management ();
 	}
 	return err;
 }
 
 /* Cleanup the management databases, undoing any effects of manage_setup() */
-void manage_cleanup (void) {
+void cleanup_management (void) {
 	if (dbh_disclose != NULL) {
 		dbh_disclose->close (dbh_disclose, 0);
 		dbh_disclose = NULL;

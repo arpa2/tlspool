@@ -379,13 +379,14 @@ void cfg_ldap (char *item, int itemno, char *value) {
 	if (configvars [CFGVAR_LDAP_PROXY]) {
 		fprintf (stderr, "This version ignores additional LDAP proxy servers\n");
 	} else {
-		ldap_handle = NULL;
-		if (ldap_initialize (&ldap_handle, value) || !ldap_handle) {
-			fprintf (stderr, "Failure to setup LDAP proxy server\n");
-			exit (1);
-		} else {
-			cfg_setvar (item, itemno, value);
-		}
+		fprintf (stderr, "This version ignores all LDAP proxy servers\n");
+		//TODO// ldap_handle = NULL;
+		//TODO// if (ldap_initialize (&ldap_handle, value) || !ldap_handle) {
+		//TODO// 	fprintf (stderr, "Failure to setup LDAP proxy server\n");
+		//TODO// 	exit (1);
+		//TODO// } else {
+		//TODO// 	cfg_setvar (item, itemno, value);
+		//TODO// }
 	}
 }
 
@@ -393,20 +394,20 @@ void cfg_cachehost (char *item, int itemno, char *value) {
 	int port;
 	int ttl;
 	if (cache == NULL) {
-		cache = memcached_create (NULL);
-		if (cache == NULL) {
+		//TODO// cache = memcached_create (NULL);
+		//TODO// if (cache == NULL) {
 			fprintf (stderr, "Failed to create memcached administrative structures\n");
 			exit (1);
-		}
+		//TODO// }
 	}
 	port = MEMCACHED_DEFAULT_PORT;
 	if (configvars [CFGVAR_CACHE_PORT]) {
 		port = atoi (configvars [CFGVAR_CACHE_PORT]);
 	}
-	if (memcached_server_add (cache, value, port)) {
+	//TODO// if (memcached_server_add (cache, value, port)) {
 		fprintf (stderr, "Failed to add memcached server %s\n");
 		exit (1);
-	}
+	//TODO// }
 }
 
 

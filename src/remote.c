@@ -81,7 +81,7 @@ int ldap_fetch_openpgp_cert (gnutls_openpgp_crt_t *pgpcrtdata, char *localid) {
 		static char *attrs [2] = { LDAP_NO_ATTRS, NULL };
 		static struct timeval timeout_10s = { .tv_sec = 10 };
 		LDAPMessage *res;
-		int lderr = ldap_search_ext_s (server, basedn, LDAP_SCOPE_SUBTREE, filter, attrs, 0, NULL, NULL, &timeout_10s, 1, &res);
+		int lderr = LDAP_SUCCESS+1; //TODO// ldap_search_ext_s (server, basedn, LDAP_SCOPE_SUBTREE, filter, attrs, 0, NULL, NULL, &timeout_10s, 1, &res);
 		if (lderr != LDAP_SUCCESS) {
 			switch (lderr) {
 			//TODO// Better translation of error conditions

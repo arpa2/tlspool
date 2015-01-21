@@ -55,6 +55,7 @@
 static struct soxinfo soxinfo [1024];
 static struct pollfd soxpoll [1024];
 static int num_sox = 0;
+static int stop_service = 0;
 
 static struct callback cblist [1024];
 static struct callback *cbfree;
@@ -144,14 +145,7 @@ void register_socket (int sox, uint32_t soxinfo_flags) {
 	soxpoll [num_sox].revents = 0;
 	soxinfo [num_sox].flags = soxinfo_flags;
 	soxinfo [num_sox].cbq = NULL;
-#if defined (__GNUC__) // && defined (DEBUG)
-	if (num_sox == 1) {
-		/* Note: 1st registration of service itself is skipped */
-		fprintf (stderr, "DEBUG: Starting to trace memory leaks to %s\n", getenv ("MALLOC_TRACE"));
-		mtrace ();
-	}
 	num_sox++;
-#endif
 }
 
 
@@ -176,13 +170,6 @@ static void unregister_client_socket_byindex (int soxidx) {
 		memcpy (&soxinfo [soxidx], &soxinfo [num_sox], sizeof (*soxinfo));
 		memcpy (&soxpoll [soxidx], &soxpoll [num_sox], sizeof (*soxpoll));
 	}
-#if defined (__GNUC__) // && defined (DEBUG)
-	if (num_sox == 1) {
-		/* Stop tracing when only the server socket is left */
-		fprintf (stderr, "DEBUG: Stopping to trace memory leaks to %s\n", getenv ("MALLOC_TRACE"));
-		muntrace ();
-	}
-#endif
 }
 
 
@@ -414,6 +401,13 @@ void process_activity (int sox, int soxidx, struct soxinfo *soxi, short int reve
 	}
 }
 
+/* Request orderly hangup of the service.
+ */
+void hangup_service (void) {
+	stop_service = 1;
+	fprintf (stderr, "DEBUG: Requested service to hangup soon\n");
+}
+
 /* The main service loop.  It uses poll() to find things to act upon. */
 void run_service (void) {
 	int i;
@@ -446,10 +440,13 @@ void run_service (void) {
 				process_activity (soxpoll [i].fd, i, &soxinfo [i], soxpoll [i].revents);
 			}
 		}
-		printf ("DEBUG: Polling %d sockets numbered %d, %d, %d, ...\n", num_sox, soxpoll [0].fd, soxpoll [1].fd, soxpoll [2].fd);
+		fprintf (stderr, "DEBUG: Polling %d sockets numbered %d, %d, %d, ...\n", num_sox, soxpoll [0].fd, soxpoll [1].fd, soxpoll [2].fd);
 	}
-	printf ("DEBUG: Polled %d sockets, returned %d\n", num_sox, polled);
-	perror ("Failed to poll for activity");
-	exit (1);
+	if (stop_service) {
+		fprintf (stderr, "DEBUG: Service hangup in response to request\n");
+	} else {
+		fprintf (stderr, "DEBUG: Polled %d sockets, returned %d\n", num_sox, polled);
+		perror ("Failed to poll for activity");
+	}
 }
 

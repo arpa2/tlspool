@@ -36,12 +36,12 @@ extern DB *dbh_disclose;
 
 
 /* Setup the management databases.  Returns 0 on success, errno otherwise. */
-int manage_setup (void);
+int setup_management (void);
 
 /* Cleanup management database state, if any.  Note that cursors are assumed
  * to have been closed by application code already.  BerkeleyDB is quite
  * strict on that, and may spill resources if cursors are left dangling when
  * closing databases, so be careful when handling errors.
  */
-void manage_cleanup (void);
+void cleanup_management (void);
 

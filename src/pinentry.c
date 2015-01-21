@@ -328,3 +328,8 @@ void setup_pinentry (void) {
 	gnutls_pkcs11_set_pin_function (gnutls_pin_callback, NULL);
 }
 
+void cleanup_pinentry (void) {
+	gnutls_pkcs11_set_pin_function (NULL, NULL);
+	gnutls_pkcs11_set_token_function (NULL, NULL);
+}
+

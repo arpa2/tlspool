@@ -16,6 +16,7 @@
 #include <sys/socket.h>
 
 #include <gnutls/gnutls.h>
+#include <gnutls/pkcs11.h>
 #include <gnutls/abstract.h>
 
 #include <tlspool/internal.h>
@@ -96,15 +97,82 @@ static int generate_dh_params (void) {
 	bits = gnutls_sec_param_to_pk_bits (
 		GNUTLS_PK_DH,
 		GNUTLS_SEC_PARAM_LEGACY);
+	//TODO// Acquire DH-params lock
 	err = err || gnutls_dh_params_init (
 		&dh_params);
 if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 	err = err || gnutls_dh_params_generate2 (
 		dh_params,
 		bits);
+	//TODO// Release DH-params lock
 if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 	return err;
 }
+
+/* Load Diffie-Hellman parameters from file - or generate them when load fails.
+ */
+static int load_dh_params (void) {
+	gnutls_dh_params_t dhp;
+	gnutls_datum_t pkcs3;
+	char *filename = "../testdata/tlspool-dh-params.pkcs3";
+	int err = 0;
+	bzero (&pkcs3, sizeof (pkcs3));
+	err = err || gnutls_load_file (
+		filename,
+		&pkcs3);
+	err = err || gnutls_dh_params_init (
+		&dhp);
+	err = err || gnutls_dh_params_import_pkcs3 (
+		dhp,
+		&pkcs3,
+		GNUTLS_X509_FMT_PEM);
+	if (pkcs3.data != NULL) {
+		free (pkcs3.data);
+	}
+	if (err) {
+		int sub;
+		fprintf (stderr, "DEBUG: Failed to load DH params from %s; generating fresh parameters\n", filename);
+		err = 0;
+		err = err || generate_dh_params ();
+		sub = err;
+		//TODO// Acquire DH-params lock
+		sub = sub || gnutls_dh_params_export2_pkcs3 (
+			dh_params,
+			GNUTLS_X509_FMT_PEM,
+			&pkcs3);
+		//TODO// Release DH-params lock
+		if (!sub) {
+			FILE *pemf;
+			//
+			// Best effor file save -- readback will parse
+			pemf = fopen (filename, "w");
+			if (pemf != NULL) {
+				fwrite (pkcs3.data, 1, pkcs3.size, pemf);
+				fclose (pemf);
+				fprintf (stderr, "DEBUG: Saved DH params to %s (best-effort)\n", filename);
+			}
+		}
+	} else {
+		gnutls_dh_params_t old_dh;
+		//TODO// Acquire DH-params lock
+		old_dh = dh_params;
+		dh_params = dhp;
+		//TODO// Release DH-params lock
+		if (old_dh) {
+			gnutls_dh_params_deinit (old_dh);
+		}
+	}
+	return err;
+}
+
+/* Remove DH parameters, to be used during program cleanup. */
+static void remove_dh_params (void) {
+	if (dh_params) {
+		gnutls_dh_params_deinit (dh_params);
+		dh_params = NULL;
+	}
+}
+
 
 /* A log printing function
  */
@@ -125,6 +193,7 @@ void setup_handler (void) {
 	curver = gnutls_check_version (GNUTLS_VERSION);
 	fprintf (stderr, "DEBUG: Running against %s GnuTLS version %s\n", curver? "acceptable": "OLDER", curver? curver: gnutls_check_version (NULL));
 	err = err || gnutls_global_init ();
+	err = err || gnutls_pkcs11_init (GNUTLS_PKCS11_FLAG_MANUAL, NULL);
 if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 	//
 	// Setup logging / debugging
@@ -132,7 +201,7 @@ if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 	gnutls_global_set_log_level (2);
 	//
 	// Setup DH parameters
-	err = err || generate_dh_params ();
+	err = err || load_dh_params ();
 if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 	fprintf (stderr, "DEBUG: Setting up management databases\n");
 	//
@@ -140,12 +209,23 @@ if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 	err = err || setup_handler_credentials ();
 	//
 	// Setup the management databases
-	err = err || manage_setup ();
+	err = err || setup_management ();
 if (err) fprintf (stderr, "MISSER %s: %s:%d\n", db_strerror (err), __FILE__, __LINE__);
 	if (err != GNUTLS_E_SUCCESS) {
 		fprintf (stderr, "ERROR: GnuTLS setup failed: %s\n", gnutls_strerror (err));
 		exit (1);
 	}
+}
+
+/* Cleanup the structures and resources that were setup for handling TLS.
+ */
+void cleanup_handler (void) {
+	void cleanup_handler_credentials (void);	/* Defined below */
+	cleanup_management ();
+	cleanup_handler_credentials ();
+	remove_dh_params ();
+	gnutls_pkcs11_deinit ();
+	gnutls_global_deinit ();
 }
 
 
@@ -372,7 +452,7 @@ int clisrv_cert_retrieve (gnutls_session_t session,
 	// TODO: Add support for certificate chains (root cert is not needed)
 	// TODO: Externalise allocation / freeing
 	*pcert_length = 1;
-	*pcert = (gnutls_pcert_st *) malloc (sizeof (gnutls_pcert_st));
+	*pcert = (gnutls_pcert_st *) malloc (sizeof (gnutls_pcert_st));		//TODO//VALGRIND//CLEANUP
 	if (*pcert == NULL) {
 		return -GNUTLS_E_MEMORY_ERROR;
 	}
@@ -392,7 +472,7 @@ int clisrv_cert_retrieve (gnutls_session_t session,
 	//
 	// Setup private key
 	err = err || gnutls_privkey_init (
-		pkey);
+		pkey);		//TODO//VALGRIND//CLEANUP
 if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 	err = err || gnutls_privkey_import_pkcs11_url (
 		*pkey,
@@ -704,7 +784,7 @@ if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
 		srv_creds [srv_credcount].credtp = GNUTLS_CRD_ANON;
 		srv_creds [srv_credcount].cred   = (void *) srv_anoncred;
 		srv_credcount++;
-	} else if (srv_anoncred) {
+	} else if (srv_anoncred != NULL) {
 		gnutls_anon_free_server_credentials (srv_anoncred);
 		srv_anoncred = NULL;
 	}
@@ -724,7 +804,7 @@ if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
 		cli_creds [cli_credcount].credtp = GNUTLS_CRD_ANON;
 		cli_creds [cli_credcount].cred   = (void *) cli_anoncred;
 		cli_credcount++;
-	} else if (cli_anoncred) {
+	} else if (cli_anoncred != NULL) {
 		gnutls_anon_free_client_credentials (cli_anoncred);
 		cli_anoncred = NULL;
 	}
@@ -766,7 +846,7 @@ if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
 		cli_creds [cli_credcount].credtp = GNUTLS_CRD_SRP;
 		cli_creds [cli_credcount].cred   = (void *) cli_srpcred;
 		cli_credcount++;
-	} else if (cli_srpcred) {
+	} else if (cli_srpcred != NULL) {
 		gnutls_srp_free_client_credentials (cli_srpcred);
 		cli_srpcred = NULL;
 	}
@@ -803,7 +883,7 @@ if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
 	//TODO// 	cli_creds [cli_credcount].credtp = GNUTLS_CRD_KDH;
 	//TODO// 	cli_creds [cli_credcount].cred   = (void *) cli_kdhcred;
 	//TODO// 	cli_credcount++;
-	//TODO// } else if (cli_kdhcred) {
+	//TODO// } else if (cli_kdhcred != NULL) {
 	//TODO// 	gnutls_kdh_free_client_credentials (cli_kdhcred);
 	//TODO//	cli_kdhcred = NULL;
 	//TODO// }
@@ -815,13 +895,55 @@ if (sub) fprintf (stderr, "SUB-MISSER: %s:%d\n", __FILE__, __LINE__);
 			( (cli_credcount != EXPECTED_CLI_CREDCOUNT) ||
 			  (srv_credcount != EXPECTED_SRV_CREDCOUNT) ) ) {
 		fprintf (stderr, "DEBUG: Not all credential types could be setup (cli %d/%d, srv %d/%d, err %d)\n", cli_credcount, EXPECTED_CLI_CREDCOUNT, srv_credcount, EXPECTED_SRV_CREDCOUNT, err);
-		err = -GNUTLS_E_INSUFFICIENT_CREDENTIALS;
+		err = GNUTLS_E_INSUFFICIENT_CREDENTIALS;
 if (err) fprintf (stderr, "MISSER: %s:%d\n", __FILE__, __LINE__);
 	}
 
 	//
 	// Report overall error or success
 	return err;
+}
+
+
+/* Cleanup all credentials created, just before exiting the daemon.
+ */
+void cleanup_handler_credentials (void) {
+	while (srv_credcount-- > 0) {
+		struct credinfo *crd = &srv_creds [srv_credcount];
+		switch (crd->credtp) {
+		case GNUTLS_CRD_CERTIFICATE:
+			// Shared with client; skipped in server and removed in client
+			// gnutls_certificate_free_credentials (crd->cred);
+			break;
+		case GNUTLS_CRD_ANON:
+			gnutls_anon_free_server_credentials (crd->cred);
+			break;
+		case GNUTLS_CRD_SRP:
+			gnutls_srp_free_server_credentials (crd->cred);
+			break;
+		//TODO// case GNUTLS_CRD_KDH:
+		//TODO// 	gnutls_kdh_free_server_credentials (crd->cred);
+		//TODO// 	break;
+		}
+	}
+	while (cli_credcount-- > 0) {
+		struct credinfo *crd = &cli_creds [cli_credcount];
+		switch (crd->credtp) {
+		case GNUTLS_CRD_CERTIFICATE:
+			// Shared with client; skipped in server and removed in client
+			gnutls_certificate_free_credentials (crd->cred);
+			break;
+		case GNUTLS_CRD_ANON:
+			gnutls_anon_free_client_credentials (crd->cred);
+			break;
+		case GNUTLS_CRD_SRP:
+			gnutls_srp_free_client_credentials (crd->cred);
+			break;
+		//TODO// case GNUTLS_CRD_KDH:
+		//TODO// 	gnutls_kdh_free_client_credentials (crd->cred);
+		//TODO// 	break;
+		}
+	}
 }
 
 

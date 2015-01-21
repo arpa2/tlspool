@@ -2,8 +2,21 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <signal.h>
 #include <unistd.h>
 #include <string.h>
+
+
+
+void process_hangup (int hangupsignal) {
+	fprintf (stderr, "DEBUG: Received signal %d as a hangup request\n");
+	hangup_service ();
+}
+
+
+static struct sigaction hupaction = {
+	.sa_handler = process_hangup,
+};
 
 
 int main (int argc, char *argv []) {
@@ -46,6 +59,7 @@ int main (int argc, char *argv []) {
 	}
 	if (cfgfile && pinentry) {
 		fprintf (stderr, "You should specify either a pinentry socket file or a config file\n");
+		free (cfgfile);
 		exit (1);
 	}
 	if (kill_competition && pinentry) {
@@ -53,7 +67,7 @@ int main (int argc, char *argv []) {
 		exit (1);
 	}
 	if (!cfgfile) {
-		cfgfile = "/etc/tlspool.conf";
+		cfgfile = strdup ("/etc/tlspool.conf");
 	}
 
 	//TODO// setup syslogging
@@ -71,11 +85,18 @@ int main (int argc, char *argv []) {
 			exit (1);
 		case 0:
 			setsid ();
+			if (sigaction (SIGHUP, &hupaction, NULL) != 0) {
+				perror ("Failed to setup HUP signal handler");
+			}
 			//TODO// close the common fd's 0/1/2
 			setup_handler ();
 			setup_pinentry ();
 			parse_cfgfile (cfgfile, kill_competition);
 			run_service ();
+			fprintf (stderr, "DEBUG: Cleanup started\n");
+			cleanup_pinentry ();
+			cleanup_handler ();
+			fprintf (stderr, "DEBUG: Orderly shutdown seems to have worked\n");
 			break;
 		default:
 			fprintf (stderr, "Started tlspool daemon on PID %d\n", pid);
@@ -86,6 +107,7 @@ int main (int argc, char *argv []) {
 	/*
 	 * Done.  Exit, closing all resources in the parent.
 	 */
+	free (cfgfile);
 	return 0;
 }
 

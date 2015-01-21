@@ -71,12 +71,14 @@ void parse_cfgfile (char *filename, int kill_competition);
 
 /* service.c */
 void run_service (void);
+void hangup_service (void);
 void send_error (struct command *cmd, int tlserrno, char *msg);
 int send_command (struct command *cmd, int passfd);
 struct command *send_callback_and_await_response (struct command *cmdresp);
 
 /* pinentry.c */
 void setup_pinentry (void);
+void cleanup_pinentry (void);
 void register_pinentry_command (struct command *cmd);
 int gnutls_pin_callback (void *userdata,
                                 int attempt,
@@ -88,11 +90,15 @@ int gnutls_pin_callback (void *userdata,
 
 /* handler.c */
 void setup_handler (void);
+void cleanup_handler (void);
 void starttls_client (struct command *cmd);
 void starttls_server (struct command *cmd);
 
 /* remote.c */
 int ldap_fetch_openpgp_cert (gnutls_openpgp_crt_t *pgpcrtdata, char *localid);
 
+
+/* config.c */
+char *cfg_p11pin (void);
 
 #endif //TLSPOOL_INTERNAL_H
