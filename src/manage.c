@@ -1,7 +1,16 @@
 /* tlspool/manage.c -- Management setup in local databases */
 
 
+#include <errno.h>
+
 #include <sys/stat.h>
+
+#include <db.h>
+
+#include <gnutls/gnutls.h>
+#include <gnutls/abstract.h>
+
+#include <tlspool/internal.h>
 
 #include "manage.h"
 
@@ -73,33 +82,37 @@ int manage_txn_rollback (DB_TXN **txn) {
 }
 
 /* Setup the management databases; for the reverse, see cleanup_management() */
-int setup_management (void) {
-	int err = 0;
+gtls_error setup_management (void) {
+	int gtls_errno = GNUTLS_E_SUCCESS;
 	u_int32_t flags = 0;
 	DB_TXN *tract = NULL;
-	mkdir ("../testdata/tlspool.env", S_IRWXU);
-	err = err || db_env_create (&dbenv, 0);
-if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
-	err = err || dbenv->open (dbenv, "../testdata/tlspool.env", DB_CREATE | DB_RECOVER | DB_INIT_TXN | DB_INIT_LOG | DB_INIT_LOCK | DB_THREAD | DB_INIT_MPOOL, S_IRUSR | S_IWUSR);
-if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
-	err = err || db_create (&dbh_localid,  dbenv, 0);
-if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
-	err = err || db_create (&dbh_disclose, dbenv, 0);
-if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
+	if (errno == 0) {
+		mkdir ("../testdata/tlspool.env", S_IRWXU);
+		errno = 0;
+	}
+	E_d2ge ("Failed to create DB environment",
+		db_env_create (&dbenv, 0));
+	E_d2ge ("Failed to open DB environment",
+		dbenv->open (dbenv, "../testdata/tlspool.env", DB_CREATE | DB_RECOVER | DB_INIT_TXN | DB_INIT_LOG | DB_INIT_LOCK | DB_THREAD | DB_INIT_MPOOL, S_IRUSR | S_IWUSR));
+	E_d2ge ("Failed to create localid.db handle",
+		db_create (&dbh_localid,  dbenv, 0));
+	E_d2ge ("Failed to create disclose.db handle",
+		db_create (&dbh_disclose, dbenv, 0));
 	flags = DB_DUP;
-	err = err || dbh_localid->set_flags (dbh_localid,  flags);
-if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
-	err = err || dbh_localid->set_flags (dbh_disclose, flags);
-if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
+	E_d2ge ("Failed to set localid.db flags",
+		dbh_localid->set_flags (dbh_localid,  flags));
+	E_d2ge ("Failed to set disclose.db flags",
+		dbh_disclose->set_flags (dbh_disclose, flags));
 	flags = DB_RDONLY | DB_THREAD | DB_AUTO_COMMIT;
-	err = err || dbh_localid->open (dbh_localid,  tract, "../localid.db",  NULL, DB_HASH, flags, 0);
-if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
-	err = err || dbh_localid->open (dbh_disclose, tract, "../disclose.db", NULL, DB_HASH, flags, 0);
-if (err) printf ("MISSER %s:%d %s\n", __FILE__, __LINE__, db_strerror (err));
-	if (err) {
+	E_d2ge ("Failed to open localid.db",
+		dbh_localid->open (dbh_localid,  tract, "../localid.db",  NULL, DB_HASH, flags, 0));
+	E_d2ge ("Failed to open disclose.db",
+		dbh_disclose->open (dbh_disclose, tract, "../disclose.db", NULL, DB_HASH, flags, 0));
+	if (gtls_errno != 0) {
 		cleanup_management ();
 	}
-	return err;
+	E_gnutls_clear_errno ();
+	return gtls_errno;
 }
 
 /* Cleanup the management databases, undoing any effects of manage_setup() */

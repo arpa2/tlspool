@@ -103,4 +103,67 @@ int ldap_fetch_openpgp_cert (gnutls_openpgp_crt_t *pgpcrtdata, char *localid);
 /* config.c */
 char *cfg_p11pin (void);
 
+/* error.c -- Mapping various error code systems to others.
+ *
+ * These macros assume the presence of error variables in the context, and
+ * provide a shorthand to continue execution dependent on this variable.
+ * The classical errno variable is used too, because it is thread-safe.
+ *
+ * GnuTLS errors are stored in gtls_errno and also mapped to errno values.
+ * If either is set, the GnuTLS call is not made.  Note that all errors are
+ * treated as fatal; use gnutls_error_is_fatal to recover in case of coubt.
+ *
+ * DB errors are mapped to both gtls_errno and errno.  If either is set,
+ * the DB call is not made.  Note that all errors are treated as fatal;
+ * check for known values (like DB_NOT_FOUND) to recover in case of doubt.
+ *
+ * The macro have_error_codes() can be used to check if either errno or
+ * gtls_errno is set; this can be used to run a test before executing a
+ * function that is later provided to the E_x2y functions.
+ */
+
+typedef int gtls_error;
+typedef int db_error;
+
+#define have_error_codes() ((gtls_errno != GNUTLS_E_SUCCESS) || (errno != 0))
+
+/* Map a DB call (usually a function call) to errno and GnuTLS errvar
+ * gtls_errno, optionally printing an errstr to avoid loosing information.
+ * Define gtls_errno globally; process errno too, as an additional error system.
+ * Skip if gtls_errno is not GNUTLS_E_SUCCESS but continue if errno is not 0. */
+#define E_d2ge(errstr,dbcall) { \
+	if (gtls_errno == 0) { \
+		int _db_errno = (dbcall); \
+		if (_db_errno != 0) { \
+			error_db2gnutls2posix (&gtls_errno, _db_errno, (errstr)); \
+		} \
+	} \
+}
+
+/* Map a GnuTLS call (usually a function call) to a POSIX errno,
+ * optionally reporting an errstr to avoid loosing information.
+ * Retain errno if it already exists.
+ * Continue if errno differs from 0, GnuTLS may "damage" it even when OK. */
+#define E_g2e(errstr,gtlscall) { \
+	if (gtls_errno == GNUTLS_E_SUCCESS) { \
+		int gtls_errno = (gtlscall); \
+		if (gtls_errno != GNUTLS_E_SUCCESS) { \
+			error_gnutls2posix (gtls_errno, errstr); \
+		} \
+	} \
+}
+
+/* Cleanup when GnuTLS leaves errno damaged but returns no gtls_errno */
+#define E_gnutls_clear_errno() { \
+	if (gtls_errno == GNUTLS_E_SUCCESS) { \
+		errno = 0; \
+	} \
+}
+
+/* Workhorse functions to map error systems, concealed by shorthand macros
+ * defined below.
+ */
+void error_db2gnutls2posix (int *gtls_errno, int db_errno, char *opt_errstr);
+void error_gnutls2posix (int gtls_errno, char *opt_errstr);
+
 #endif //TLSPOOL_INTERNAL_H

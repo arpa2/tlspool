@@ -7,9 +7,10 @@ There are many ways in which the current TLS Pool can be improved:
 + Extension of GnuTLS' PKCS #11 support to OpenPGP, PSK and SRP
 - TOFU callbacks and storage of (signed?) acceptance
 - Incorporate session resumption (on both ends) (store creds in database?)
-- Key derivation API with the PRF functionality of TLS 1.2
-- Error translation from GnuTLS and BerkeleyDB to errno (with detail report)
-- Transactions for an entire thread
+- Key derivation API with the PRF functionality of TLS 1.2 (RFC 5705)
++ Error translation from GnuTLS and BerkeleyDB to errno (with detail report)
++ Transactions for an entire thread
 - Thread cleanup with pthread_setcanceltype(), pthread_cleanup_push()
-- Free memory as assumed by GnuTLS and BerkeleyDB API's
-- Setup server credentials for searching databases as is done in the client
++ Free memory as assumed by GnuTLS and BerkeleyDB API's
++ Setup server credentials for searching databases as is done in the client
+- Regularly refresh DH parameters ; find out how to apply refcnt and/or locks

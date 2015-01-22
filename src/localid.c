@@ -3,10 +3,12 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <alloca.h>
+#include <errno.h>
 
 #include <gnutls/gnutls.h>
 #include <gnutls/abstract.h>
+
+#include <tlspool/internal.h>
 
 #include "manage.h"
 #include "localid.h"
@@ -83,8 +85,11 @@ int dbcred_interpret (gnutls_datum_t *creddata, uint32_t *flags, char **p11priv,
  * The value returned is only non-zero if a value was setup.
  * The DB_NOTFOUND value indicates that the key was not found.
  */
-int dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata) {
-	return cursor->get (cursor, keydata, creddata, DB_SET);
+gtls_error dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata) {
+	int gtls_errno = GNUTLS_E_SUCCESS;
+	E_d2ge ("Key not found in localid.db",
+		cursor->get (cursor, keydata, creddata, DB_SET));
+	return gtls_errno;
 }
 
 
@@ -117,8 +122,8 @@ int dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata) {
  * The DB_NOTFOUND value indicates that no selector matching the remoteid
  * was found in dbh_disclose.
  */
-int dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_localid, selector_t *remotesel, DBT *discpatn, DBT *keydata, DBT *creddata) {
-	int err = 0;
+gtls_error dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_localid, selector_t *remotesel, DBT *discpatn, DBT *keydata, DBT *creddata) {
+	int gtls_errno = GNUTLS_E_SUCCESS;
 	int more = 1;
 	while (more) {
 		int fnd;
@@ -128,16 +133,23 @@ fprintf (stderr, "DEBUG: Looking up remote selector %.*s\n", discpatn->size, (ch
 		if (fnd == 0) {
 			// Got the selector pattern!
 			// Now continue, even when no localids will work.
-			err = err || crs_localid->get (crs_localid, keydata, creddata, DB_SET);
-			return err;
+			E_d2ge ("Key not found in localid.db",
+				crs_localid->get (
+					crs_localid,
+					keydata,
+					creddata,
+					DB_SET));
+			return gtls_errno;
 		} else if (fnd != DB_NOTFOUND) {
-			err = fnd;
+			E_d2ge ("Failed while searching with remote ID selector", fnd);
 			break;
 		}
 		more = selector_iterate_next (remotesel);
 	}
 	// Ended here with nothing more to find
-	return DB_NOTFOUND;
+	E_d2ge ("No selector matches remote ID in disclose.db",
+		DB_NOTFOUND);
+	return gtls_errno;
 }
 
 
@@ -156,23 +168,23 @@ fprintf (stderr, "DEBUG: Looking up remote selector %.*s\n", discpatn->size, (ch
  * The value returned is zero if a value was setup; otherwise an error code.
  * The DB_NOTFOUND value indicates that no further duplicate was not found.
  */
-int dbcred_iterate_next (DBC *opt_crs_disclose, DBC *crs_localid, DBT *opt_discpatn, DBT *keydata, DBT *creddata) {
-	int err = 0;
-	err = crs_localid->get (crs_localid, keydata, creddata, DB_NEXT_DUP);
-	if (err != DB_NOTFOUND) {
-		return err;
+db_error dbcred_iterate_next (DBC *opt_crs_disclose, DBC *crs_localid, DBT *opt_discpatn, DBT *keydata, DBT *creddata) {
+	int db_errno = 0;
+	db_errno = crs_localid->get (crs_localid, keydata, creddata, DB_NEXT_DUP);
+	if (db_errno != DB_NOTFOUND) {
+		return db_errno;
 	}
 	// Inner loop ended in DB_NOTFOUND, optionally continue in outer loop
 	if ((opt_crs_disclose != NULL) && (opt_discpatn != NULL)) {
-		while (err == DB_NOTFOUND) {
-			err = opt_crs_disclose->get (opt_crs_disclose, opt_discpatn, keydata, DB_NEXT_DUP);
-			if (err == DB_NOTFOUND) {
-				return err;
+		while (db_errno == DB_NOTFOUND) {
+			db_errno = opt_crs_disclose->get (opt_crs_disclose, opt_discpatn, keydata, DB_NEXT_DUP);
+			if (db_errno == DB_NOTFOUND) {
+				return db_errno;
 			}
-			err = crs_localid->get (crs_localid, keydata, creddata, DB_SET);
+			db_errno = crs_localid->get (crs_localid, keydata, creddata, DB_SET);
 		}
 	}
-	return err;
+	return db_errno;
 }
 
 
