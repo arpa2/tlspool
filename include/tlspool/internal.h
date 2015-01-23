@@ -102,6 +102,10 @@ int ldap_fetch_openpgp_cert (gnutls_openpgp_crt_t *pgpcrtdata, char *localid);
 
 /* config.c */
 char *cfg_p11pin (void);
+unsigned int cfg_log_perror (void);
+unsigned int cfg_log_level (void);
+unsigned int cfg_log_filter (void);
+
 
 /* error.c -- Mapping various error code systems to others.
  *
@@ -122,6 +126,8 @@ char *cfg_p11pin (void);
  * function that is later provided to the E_x2y functions.
  */
 
+void setup_error (void);
+void cleanup_error (void);
 typedef int gtls_error;
 typedef int db_error;
 
@@ -165,5 +171,26 @@ typedef int db_error;
  */
 void error_db2gnutls2posix (int *gtls_errno, int db_errno, char *opt_errstr);
 void error_gnutls2posix (int gtls_errno, char *opt_errstr);
+
+
+/* Log a message to syslog (assuming that the configuration wants it) */
+void tlog (unsigned int logmask, int priority, char *format, ...);
+
+
+/* Loglevel masking words, to help weed out logging output */
+#define TLOG_TLS	0x00000001
+#define TLOG_PKCS11	0x00000002
+#define TLOG_DB		0x00000004
+#define TLOG_FILES	0x00000008
+#define TLOG_CRYPTO	0x00000010
+#define TLOG_CERT	0x00000020
+#define TLOG_USER	0x00000100
+// Unused: #define TLOG_AUTHN	0x00000200
+// Unused: #define TLOG_AUTHZ	0x00000400
+// Unused: #define TLOG_CREDS	0x00000800
+// Unused: #define TLOG_SESSION	0x00001000
+#define TLOG_COPYCAT	0x00002000
+#define TLOG_UNIXSOCK	0x00004000
+#define TLOG_DAEMON	0x00008000
 
 #endif //TLSPOOL_INTERNAL_H

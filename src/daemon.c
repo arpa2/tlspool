@@ -6,10 +6,16 @@
 #include <unistd.h>
 #include <string.h>
 
+#include <syslog.h>
+
+#include <gnutls/gnutls.h>
+#include <gnutls/abstract.h>
+
+#include <tlspool/internal.h>
 
 
 void process_hangup (int hangupsignal) {
-	fprintf (stderr, "DEBUG: Received signal %d as a hangup request\n");
+	tlog (TLOG_DAEMON, LOG_NOTICE, "Received signal %d as a hangup request");
 	hangup_service ();
 }
 
@@ -89,17 +95,20 @@ int main (int argc, char *argv []) {
 				perror ("Failed to setup HUP signal handler");
 			}
 			//TODO// close the common fd's 0/1/2
+			parse_cfgfile (cfgfile, kill_competition);
+			setup_error ();
+			tlog (TLOG_DAEMON, LOG_INFO, "TLS Pool started");
 			setup_handler ();
 			setup_pinentry ();
-			parse_cfgfile (cfgfile, kill_competition);
 			run_service ();
-			fprintf (stderr, "DEBUG: Cleanup started\n");
+			tlog (TLOG_DAEMON, LOG_DEBUG, "Preparing to stop -- Cleanup started");
 			cleanup_pinentry ();
 			cleanup_handler ();
-			fprintf (stderr, "DEBUG: Orderly shutdown seems to have worked\n");
+			cleanup_error ();
+			tlog (TLOG_DAEMON, LOG_DEBUG, "Orderly shutdown seems to have worked");
+			tlog (TLOG_DAEMON, LOG_INFO, "TLS Pool stopped");
 			break;
 		default:
-			fprintf (stderr, "Started tlspool daemon on PID %d\n", pid);
 			break;
 		}
 	}

@@ -17,4 +17,4 @@ There are many ways in which the current TLS Pool can be improved:
 - Introduce (at least a basic form of) certificate validation
 + Support X.509 certificate chains
 - Derive GnuTLS priority string automatically from credentials for localid
-- Migrate from fprintf (stderr, ...) to syslog()
++ Migrate from fprintf (stderr, ...) to syslog()

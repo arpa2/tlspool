@@ -9,6 +9,7 @@
 #include <alloca.h>
 
 #include <unistd.h>
+#include <syslog.h>
 #include <errno.h>
 #include <poll.h>
 
@@ -138,7 +139,7 @@ static gtls_error load_dh_params (void) {
 		// File failed to load, so try to generate fresh DH params
 		int gtls_errno_stack0;
 		gtls_errno = GNUTLS_E_SUCCESS;
-		fprintf (stderr, "DEBUG: Failed to load DH params from %s; generating fresh parameters\n", filename);
+		tlog (TLOG_CRYPTO, LOG_DEBUG, "Failed to load DH params from %s; generating fresh parameters", filename);
 		E_g2e ("Failed to generate DH params",
 			generate_dh_params ());
 		gtls_errno_stack0 = gtls_errno;
@@ -157,7 +158,7 @@ static gtls_error load_dh_params (void) {
 			if (pemf != NULL) {
 				fwrite (pkcs3.data, 1, pkcs3.size, pemf);
 				fclose (pemf);
-				fprintf (stderr, "DEBUG: Saved DH params to %s (best-effort)\n", filename);
+				tlog (TLOG_FILES, LOG_DEBUG, "Saved DH params to %s (best-effort)", filename);
 			}
 			E_gnutls_clear_errno ();
 		}
@@ -187,7 +188,7 @@ static void remove_dh_params (void) {
 /* A log printing function
  */
 void log_gnutls (int level, const char *msg) {
-	fprintf (stderr, "GnuTLS_%d: %s", level, msg);
+	tlog (TLOG_TLS, level, "GnuTLS: %s", msg);
 }
 
 
@@ -199,22 +200,21 @@ void setup_handler (void) {
 	int gtls_errno = GNUTLS_E_SUCCESS;
 	//
 	// Basic library actions
-	fprintf (stderr, "DEBUG: Compiled against GnuTLS version %s\n", GNUTLS_VERSION);
+	tlog (TLOG_TLS, LOG_DEBUG, "Compiled against GnuTLS version %s", GNUTLS_VERSION);
 	curver = gnutls_check_version (GNUTLS_VERSION);
-	fprintf (stderr, "DEBUG: Running against %s GnuTLS version %s\n", curver? "acceptable": "OLDER", curver? curver: gnutls_check_version (NULL));
-fprintf (stderr, "Now errno=%d, gtls_errno=%d\n", errno, gtls_errno);
+	tlog (TLOG_TLS, LOG_DEBUG, "Running against %s GnuTLS version %s", curver? "acceptable": "OLDER", curver? curver: gnutls_check_version (NULL));
 	E_g2e ("GnuTLS global initialisation failed",
 		gnutls_global_init ());
 	E_gnutls_clear_errno ();
 	E_g2e ("GnuTLS PKCS #11 initialisation failed",
 		gnutls_pkcs11_init (
 			GNUTLS_PKCS11_FLAG_MANUAL, NULL));
-fprintf (stderr, "Now errno=%d, gtls_errno=%d\n", errno, gtls_errno);
 	//
 	// Setup logging / debugging
-	gnutls_global_set_log_function (log_gnutls);
-	gnutls_global_set_log_level (2);
-fprintf (stderr, "Now errno=%d, gtls_errno=%d\n", errno, gtls_errno);
+	if (cfg_log_level () == LOG_DEBUG) {
+		gnutls_global_set_log_function (log_gnutls);
+		gnutls_global_set_log_level (2);
+	}
 	//
 	// Setup DH parameters
 	E_g2e ("Loading DH params failed",
@@ -224,16 +224,16 @@ fprintf (stderr, "Now errno=%d, gtls_errno=%d\n", errno, gtls_errno);
 	E_g2e ("Failed to setup GnuTLS callback credentials",
 		setup_handler_credentials ());
 	if (gtls_errno != GNUTLS_E_SUCCESS) {
-		fprintf (stderr, "FATAL: GnuTLS setup failed: %s\n", gnutls_strerror (gtls_errno));
+		tlog (TLOG_TLS, LOG_CRIT, "FATAL: GnuTLS setup failed: %s", gnutls_strerror (gtls_errno));
 		exit (1);
 	}
 	//
 	// Setup the management databases
-	fprintf (stderr, "DEBUG: Setting up management databases\n");
+	tlog (TLOG_DB, LOG_DEBUG, "Setting up management databases");
 	E_g2e ("Failed to setup management databases",
 		setup_management ());
 	if (errno != 0) {
-		fprintf (stderr, "FATAL: TLS handler setup failed: %s\n", strerror (errno));
+		tlog (TLOG_DB, LOG_CRIT, "FATAL: Management databases setup failed: %s", strerror (errno));
 		exit (1);
 	}
 }
@@ -285,18 +285,18 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 	inout [2].fd = master;
 	inout [0].events = inout [1].events = POLLIN;
 	inout [2].events = 0;	// error events only
-	printf ("DEBUG: Starting copycat cycle for local=%d, remote=%d\n", local, remote);
+	tlog (TLOG_COPYCAT, LOG_DEBUG, "Starting copycat cycle for local=%d, remote=%d", local, remote);
 	while (((inout [0].events | inout [1].events) & POLLIN) != 0) {
 		if (poll (inout, 3, -1) == -1) {
-			printf ("DEBUG: Copycat polling returned an error\n");
+			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat polling returned an error");
 			break;	// Polling sees an error
 		}
 		if (inout [0].revents & POLLIN) {
 			// Read local and encrypt to remote
 			sz = recv (local, buf, sizeof (buf), MSG_DONTWAIT);
-			printf ("DEBUG: Copycat received %d local bytes (or error<0) from %d\n", (int) sz, local);
+			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat received %d local bytes (or error<0) from %d", (int) sz, local);
 			if (sz == -1) {
-				fprintf (stderr, "Error while receiving: %s\n", strerror (errno));
+				tlog (TLOG_COPYCAT, LOG_ERR, "Error while receiving: %s", strerror (errno));
 				break;	// stream error
 			} else if (sz == 0) {
 				inout [0].events &= ~POLLIN;
@@ -304,22 +304,22 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 				setsockopt (remote, SOL_SOCKET, SO_LINGER, &linger, sizeof (linger));
 				gnutls_bye (wrapped, GNUTLS_SHUT_WR);
 			} else if (gnutls_record_send (wrapped, buf, sz) != sz) {
-				fprintf (stderr, "gnutls_record_send() failed to pass on the requested bytes\n");
+				tlog (TLOG_COPYCAT, LOG_ERR, "gnutls_record_send() failed to pass on the requested bytes");
 				break;	// communication error
 			} else {
-				printf ("DEBUG: Copycat sent %d bytes to remote %d\n", (int) sz, remote);
+				tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat sent %d bytes to remote %d", (int) sz, remote);
 			}
 		}
 		if (inout [1].revents & POLLIN) {
 			// Read remote and decrypt to local
 			sz = gnutls_record_recv (wrapped, buf, sizeof (buf));
-			printf ("DEBUG: Copycat received %d remote bytes from %d (or error if <0)\n", (int) sz, remote);
+			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat received %d remote bytes from %d (or error if <0)", (int) sz, remote);
 			if (sz < 0) {
 				if (gnutls_error_is_fatal (sz)) {
-					fprintf (stderr, "GnuTLS fatal error: %s\n", gnutls_strerror (sz));
+					tlog (TLOG_TLS, LOG_ERR, "GnuTLS fatal error: %s", gnutls_strerror (sz));
 					break;	// stream error
 				} else {
-					fprintf (stderr, "GnuTLS recoverable error: %s\n", gnutls_strerror (sz));
+					tlog (TLOG_TLS, LOG_INFO, "GnuTLS recoverable error: %s", gnutls_strerror (sz));
 				}
 			} else if (sz == 0) {
 				inout [1].events &= ~POLLIN;
@@ -329,17 +329,17 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 			} else if (send (local, buf, sz, MSG_DONTWAIT) != sz) {
 				break;	// communication error
 			} else {
-				printf ("DEBUG: Copycat sent %d bytes to local %d\n", (int) sz, local);
+				tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat sent %d bytes to local %d", (int) sz, local);
 			}
 		}
 		inout [0].revents &= ~(POLLIN | POLLHUP); // Thy copying cat?
 		inout [1].revents &= ~(POLLIN | POLLHUP); // Retract thee claws!
 		if ((inout [0].revents | inout [1].revents | inout [2].revents) & ~POLLIN) {
-			printf ("DEBUG: Copycat polling returned a special condition\n");
+			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat polling returned a special condition");
 			break;	// Apparently, one of POLLERR, POLLHUP, POLLNVAL
 		}
 	}
-	printf ("DEBUG: Ending copycat cycle for local=%d, remote=%d\n", local, remote);
+	tlog (TLOG_COPYCAT, LOG_DEBUG, "Ending copycat cycle for local=%d, remote=%d", local, remote);
 }
 
 
@@ -413,7 +413,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 		}
 		if (*lid != '\0') {
 			if (strncmp (sni, lid, snilen) != 0) {
-				fprintf (stderr, "DEBUG: SNI %s does not match preset local identity %s\n", sni, lid);
+				tlog (TLOG_TLS, LOG_ERR, "SNI %s does not match preset local identity %s", sni, lid);
 				E_g2e ("Requested SNI does not match local identity",
 					GNUTLS_E_NO_CERTIFICATE_FOUND);
 				return gtls_errno;
@@ -428,14 +428,14 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 	// Setup the lidtype parameter for responding
 	certtp = gnutls_certificate_type_get (session);
 	if (certtp == GNUTLS_CRT_OPENPGP) {
-		fprintf (stderr, "DEBUG: Serving OpenPGP certificate request as a %s\n", rolestr);
+		tlog (TLOG_TLS, LOG_INFO, "Serving OpenPGP certificate request as a %s", rolestr);
 		lidtype = LID_TYPE_PGP;
 	} else if (certtp == GNUTLS_CRT_X509) {
-		fprintf (stderr, "DEBUG: Serving X.509 certificate request as a %s\n", rolestr);
+		tlog (TLOG_TLS, LOG_INFO, "Serving X.509 certificate request as a %s", rolestr);
 		lidtype = LID_TYPE_X509;
 	} else {
 		// GNUTLS_CRT_RAW, GNUTLS_CRT_UNKNOWN, or other
-		fprintf (stderr, "DEBUG: Funny sort of certificate retrieval attempted as a %s\n", rolestr);
+		tlog (TLOG_TLS, LOG_ERR, "Funny sort of certificate retrieval attempted as a %s", rolestr);
 		E_g2e ("Requested certtype is neither X.509 nor OpenPGP",
 			GNUTLS_E_CERTIFICATE_ERROR);
 		return gtls_errno;
@@ -447,11 +447,11 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 	if (cmd->lids [lidtype - LID_TYPE_MIN].data == NULL) {
 		uint32_t oldcmd = cmd->cmd.pio_cmd;
 		cmd->cmd.pio_cmd = PIOC_STARTTLS_LOCALID_V1;
-		fprintf (stderr, "DEBUG: Calling send_callback_and_await_response with PIOC_STARTTLS_LOCALID_V1\n");
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response with PIOC_STARTTLS_LOCALID_V1");
 		cmd = send_callback_and_await_response (cmd);
-		fprintf (stderr, "DEBUG: Processing callback response that sets lid:=\"%s\" for rid==\"%s\"\n", lid, rid);
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that sets lid:=\"%s\" for rid==\"%s\"", lid, rid);
 		if (cmd->cmd.pio_cmd != PIOC_STARTTLS_LOCALID_V1) {
-			fprintf (stderr, "DEBUG: Callback responses has bad command code\n");
+			tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has bad command code");
 			cmd->cmd.pio_cmd = oldcmd;
 			return GNUTLS_E_CERTIFICATE_ERROR;
 		}
@@ -491,7 +491,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 		&p11priv,
 		&certdatum.data,
 		&certdatum.size);
-	fprintf (stderr, "DEBUG: BDB entry has flags=0x%08x, p11priv=\"%s\", cert.size=%d\n", flags, p11priv, certdatum.size);
+	tlog (TLOG_DB, LOG_DEBUG, "BDB entry has flags=0x%08x, p11priv=\"%s\", cert.size=%d", flags, p11priv, certdatum.size);
 	//TODO// ok = ok && verify_cert_... (...); -- keyidlookup
 	if (!ok) {
 		gtls_errno = GNUTLS_E_CERTIFICATE_ERROR;
@@ -552,7 +552,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 
 	//
 	// Return the overral error code, hopefully GNUTLS_E_SUCCESS
-fprintf (stderr, "DEBUG: Returning %d / %s from clisrv_cert_retrieve()\n", gtls_errno, gnutls_strerror (gtls_errno));
+	tlog (TLOG_TLS, LOG_DEBUG, "Returning %d / %s from clisrv_cert_retrieve()", gtls_errno, gnutls_strerror (gtls_errno));
 	return gtls_errno;
 }
 
@@ -648,13 +648,13 @@ gnutls_pcert_st *load_certificate_chain (uint32_t flags, unsigned int *chainlen,
 			certdatum->size,
 			&lenlen);
 		certlen += 1 + lenlen;
-		fprintf (stderr, "DEBUG: Found LID_CHAINED certificate size %d\n", certlen);
+		tlog (TLOG_CERT, LOG_DEBUG, "Found LID_CHAINED certificate size %d", certlen);
 		if (certlen > certdatum->size) {
-			fprintf (stderr, "ERROR: Refusing LID_CHAINED certificate beyond data size %d\n", certdatum->size);
+			tlog (TLOG_CERT, LOG_ERR, "Refusing LID_CHAINED certificate beyond data size %d", certdatum->size);
 			*chainlen = 0;
 			return NULL;
 		} else if (certlen <= 0) {
-			fprintf (stderr, "ERROR: Refusing LID_CHAINED certificate of too-modest data size %d\n", certlen);
+			tlog (TLOG_CERT, LOG_ERR, "Refusing LID_CHAINED certificate of too-modest data size %d", certlen);
 			*chainlen = 0;
 			return NULL;
 		}
@@ -748,7 +748,7 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 	// Refuse to disclose client credentials when the server name is unset;
 	// note that server-claimed identities are unproven during handshake.
 	if ((lidrole == LID_ROLE_CLIENT) && (*rid == '\0')) {
-		fprintf (stderr, "DEBUG: No remote identity (server name) set, so no client credential disclosure\n");
+		tlog (TLOG_USER, LOG_ERR, "No remote identity (server name) set, so no client credential disclosure");
 		E_g2e ("Missing remote ID",
 			GNUTLS_E_NO_CERTIFICATE_FOUND);
 		return gtls_errno;
@@ -814,7 +814,7 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 		uint32_t flags;
 		int lidtype;
 
-		fprintf (stderr, "DEBUG: Found BDB entry %s disclosed to %s\n", creddata.data + 4, (lidrole == LID_ROLE_CLIENT)? rid: "all clients");
+		tlog (TLOG_DB, LOG_DEBUG, "Found BDB entry %s disclosed to %s", creddata.data + 4, (lidrole == LID_ROLE_CLIENT)? rid: "all clients");
 		ok = dbcred_flags (
 			&creddata,
 			&flags);
@@ -823,7 +823,7 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 		ok = ok && ((flags & LID_NO_PKCS11) == 0);
 		ok = ok && (lidtype >= LID_TYPE_MIN);
 		ok = ok && (lidtype <= LID_TYPE_MAX);
-		fprintf (stderr, "DEBUG: BDB entry has flags=0x%08x, so we (%04x/%04x) %s it\n", flags, lidrole, LID_ROLE_MASK, ok? "store": "skip ");
+		tlog (TLOG_DB, LOG_DEBUG, "BDB entry has flags=0x%08x, so we (%04x/%04x) %s it", flags, lidrole, LID_ROLE_MASK, ok? "store": "skip ");
 		if (ok) {
 			// Move the credential into the command structure
 			dbt_store (&creddata,
@@ -849,7 +849,6 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 		crs_disclose->close (crs_disclose);
 		crs_disclose = NULL;
 	}
-fprintf (stderr, "DEBUG: Returning %d / %s from fetch_local_credentials()\n", gtls_errno, gnutls_strerror (gtls_errno));
 	return gtls_errno;
 }
 
@@ -890,14 +889,14 @@ int srv_clienthello (gnutls_session_t session) {
 		// uses other name types than exactly one GNUTLS_NAME_DNS.
 		default:
 			sni [0] = '\0';
-			fprintf (stderr, "Received an unexpected SNI type; that is possible but uncommon; skipping SNI.\n");
+			tlog (TLOG_TLS, LOG_ERR, "Received an unexpected SNI type; that is possible but uncommon; skipping SNI");
 			break;
 		}
 	}
 	if (sni [0] != '\0') {
 		if (*lid != '\0') {
 			if (strncmp (sni, lid, sizeof (sni)) != 0) {
-				fprintf (stderr, "Mismatch between client-sent SNI %s and local identity %s\n", sni, lid);
+				tlog (TLOG_USER | TLOG_TLS, LOG_ERR, "Mismatch between client-sent SNI %s and local identity %s", sni, lid);
 				return GNUTLS_E_UNEXPECTED_HANDSHAKE_PACKET;
 			}
 		} else {
@@ -921,7 +920,7 @@ int cli_srpcreds_retrieve (gnutls_session_t session,
 				char **username,
 				char **password) {
 	//TODO:FIXED//
-	fprintf (stderr, "DEBUG: Picking up SRP credentials\n");
+	tlog (TLOG_CRYPTO, LOG_DEBUG, "DEBUG: Picking up SRP credentials");
 	*username = strdup ("tester");
 	*password = strdup ("test");
 	return GNUTLS_E_SUCCESS;
@@ -968,7 +967,7 @@ int setup_handler_credentials (void) {
 		clisrv_cert_retrieve);
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
 		// Setup for certificates
-		fprintf (stderr, "DEBUG: Setting client and server certificate credentials\n");
+		tlog (TLOG_CERT, LOG_INFO, "Setting client and server certificate credentials");
 		cli_creds [cli_credcount].credtp = GNUTLS_CRD_CERTIFICATE;
 		cli_creds [cli_credcount].cred   = (void *) clisrv_certcred;
 		cli_credcount++;
@@ -990,7 +989,7 @@ int setup_handler_credentials (void) {
 		srv_anoncred,
 		dh_params);
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
-		fprintf (stderr, "DEBUG: Setting server anonymous credentials\n");
+		tlog (TLOG_CRYPTO, LOG_INFO, "Setting server anonymous credentials");
 		srv_creds [srv_credcount].credtp = GNUTLS_CRD_ANON;
 		srv_creds [srv_credcount].cred   = (void *) srv_anoncred;
 		srv_credcount++;
@@ -1010,7 +1009,7 @@ int setup_handler_credentials (void) {
 		cli_anoncred,
 		dh_params);
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
-		fprintf (stderr, "DEBUG: Setting client anonymous credentials\n");
+		tlog (TLOG_CRYPTO, LOG_INFO, "Setting client anonymous credentials");
 		cli_creds [cli_credcount].credtp = GNUTLS_CRD_ANON;
 		cli_creds [cli_credcount].cred   = (void *) cli_anoncred;
 		cli_credcount++;
@@ -1032,7 +1031,7 @@ int setup_handler_credentials (void) {
 			"../testdata/tlspool-test-srp.passwd",
 			"../testdata/tlspool-test-srp.conf"));
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
-		fprintf (stderr, "DEBUG: Setting server SRP credentials\n");
+		tlog (TLOG_CRYPTO, LOG_INFO, "Setting server SRP credentials");
 		srv_creds [srv_credcount].credtp = GNUTLS_CRD_SRP;
 		srv_creds [srv_credcount].cred   = (void *) srv_srpcred;
 		srv_credcount++;
@@ -1051,7 +1050,7 @@ int setup_handler_credentials (void) {
 		cli_srpcred,
 		cli_srpcreds_retrieve);
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
-		fprintf (stderr, "DEBUG: Setting client SRP credentials\n");
+		tlog (TLOG_CRYPTO, LOG_INFO, "Setting client SRP credentials");
 		cli_creds [cli_credcount].credtp = GNUTLS_CRD_SRP;
 		cli_creds [cli_credcount].cred   = (void *) cli_srpcred;
 		cli_credcount++;
@@ -1071,7 +1070,7 @@ int setup_handler_credentials (void) {
 	//TODO// 		srv_kdhcred,
 	//TODO// 		dh_params));
 	//TODO// if (gtls_errno == GNUTLS_E_SUCCESS) {
-	//TODO// 	fprintf (stderr, "DEBUG: Setting server KDH credentials\n");
+	//TODO// 	tlog (TLOG_CRYPTO, LOG_INFO, "Setting server KDH credentials");
 	//TODO// 	srv_creds [srv_credcount].credtp = GNUTLS_CRD_KDH;
 	//TODO// 	srv_creds [srv_credcount].cred   = (void *) srv_kdhcred;
 	//TODO// 	srv_credcount++;
@@ -1091,7 +1090,7 @@ int setup_handler_credentials (void) {
 	//TODO// 		cli_kdhcred,
 	//TODO// 		cli_kdh_retrieve));
 	//TODO// if (gtls_errno == GNUTLS_E_SUCCESS) {
-	//TODO// 	fprintf (stderr, "DEBUG: Setting client KDH credentials\n");
+	//TODO// 	tlog (TLOG_CRYPTO, LOG_INFO, "Setting client KDH credentials");
 	//TODO// 	cli_creds [cli_credcount].credtp = GNUTLS_CRD_KDH;
 	//TODO// 	cli_creds [cli_credcount].cred   = (void *) cli_kdhcred;
 	//TODO// 	cli_credcount++;
@@ -1106,7 +1105,7 @@ int setup_handler_credentials (void) {
 	if ((gtls_errno == GNUTLS_E_SUCCESS) &&
 			( (cli_credcount != EXPECTED_CLI_CREDCOUNT) ||
 			  (srv_credcount != EXPECTED_SRV_CREDCOUNT) ) ) {
-		fprintf (stderr, "DEBUG: Not all credential types could be setup (cli %d/%d, srv %d/%d, gtls_errno %d)\n", cli_credcount, EXPECTED_CLI_CREDCOUNT, srv_credcount, EXPECTED_SRV_CREDCOUNT, gtls_errno);
+		tlog (TLOG_CRYPTO, LOG_ERR, "Not all credential types could be setup (cli %d/%d, srv %d/%d, gtls_errno %d)", cli_credcount, EXPECTED_CLI_CREDCOUNT, srv_credcount, EXPECTED_SRV_CREDCOUNT, gtls_errno);
 		E_g2e ("Not all credentials could be setup",
 			GNUTLS_E_INSUFFICIENT_CREDENTIALS);
 	}
@@ -1344,7 +1343,7 @@ static void *starttls_thread (void *cmd_void) {
 		gnutls_handshake_set_timeout (session, GNUTLS_DEFAULT_HANDSHAKE_TIMEOUT);
 	}
 	if (gtls_errno != GNUTLS_E_SUCCESS) {
-		fprintf (stderr, "Failed to prepare for TLS: %s\n", gnutls_strerror (gtls_errno));
+		tlog (TLOG_TLS, LOG_ERR, "Failed to prepare for TLS: %s", gnutls_strerror (gtls_errno));
 		send_error (cmd, EIO, "Failed to prepare for TLS");
 		close (soxx [0]);
 		close (soxx [1]);
@@ -1386,7 +1385,7 @@ static void *starttls_thread (void *cmd_void) {
 	// Respond to positive or negative outcome of the handshake
 	if (gtls_errno != GNUTLS_E_SUCCESS) {
 		gnutls_deinit (session);
-		fprintf (stderr, "TLS handshake failed: %s\n", gnutls_strerror (gtls_errno));
+		tlog (TLOG_TLS, LOG_ERR, "TLS handshake failed: %s", gnutls_strerror (gtls_errno));
 		send_error (cmd, EPERM, "TLS handshake failed");
 		manage_txn_rollback (&cmd->txn);
 		close (soxx [0]);
@@ -1394,7 +1393,7 @@ static void *starttls_thread (void *cmd_void) {
 		close (passfd);
 		return;
         } else {
-		printf ("DEBUG: TLS handshake succeeded over %d\n", passfd);
+		tlog (TLOG_UNIXSOCK | TLOG_TLS, LOG_INFO, "TLS handshake succeeded over %d", passfd);
 		manage_txn_commit (&cmd->txn);
 		//TODO// extract_authenticated_remote_identity (cmd);
 	}

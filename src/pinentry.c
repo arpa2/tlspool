@@ -7,6 +7,7 @@
 #include <pthread.h>
 
 #include <unistd.h>
+#include <syslog.h>
 #include <errno.h>
 #include <time.h>
 #include <sys/socket.h>
@@ -47,7 +48,7 @@ void enter_pins (char *pinsocket) {
 	 * Connect to the UNIX domain socket for PIN entry
 	 */
 	if (strlen (pinsocket) + 1 > sizeof (sun.sun_path)) {
-		fprintf (stderr, "Socket path too long: %s\n", pinsocket);
+		tlog (TLOG_UNIXSOCK | TLOG_USER, LOG_CRIT, "Socket path too long: %s", pinsocket);
 		exit (1);
 	}
 	strcpy (sun.sun_path, pinsocket);
@@ -76,13 +77,13 @@ void enter_pins (char *pinsocket) {
 		bzero (pe->pin, sizeof (pe->pin));
 		if (pwd) {
 			if (strlen (pwd) + 1 > sizeof (pe->pin)) {
-				fprintf (stderr, "No support for PIN lenghts over 128\n");
+				tlog (TLOG_USER | TLOG_PKCS11, LOG_ERR, "No support for PIN lenghts over 128");
 			} else {
 				strcpy (pe->pin, pwd);
 			}
 			bzero (pwd, strlen (pwd));
 		}
-		fprintf (stderr, "DEBUG: Offering PIN service to TLS pool with PIN length %d\n", strlen (pe->pin));
+		tlog (TLOG_PKCS11 | TLOG_USER, LOG_DEBUG, "Offering PIN service to TLS pool with PIN length %d", strlen (pe->pin));
 		if (send (sox, &pio, sizeof (pio), 0) != sizeof (pio)) {
 			pio.pio_cmd = PIOC_ERROR_V1;
 			pio.pio_data.pioc_error.tlserrno = errno;
@@ -94,7 +95,7 @@ void enter_pins (char *pinsocket) {
 				strcpy (pio.pio_data.pioc_error.message, "Failed to read full message from TLS pool");
 			} else {
 				if ((pio.pio_cmd != PIOC_PINENTRY_V1) && (pio.pio_cmd != PIOC_ERROR_V1)) {
-					printf ("DEBUG: Received funny command 0x%08x instead of 0x%08x\n", pio.pio_cmd, PIOC_PINENTRY_V1);
+					tlog (TLOG_UNIXSOCK, LOG_ERR, "Received funny command 0x%08x instead of 0x%08x", pio.pio_cmd, PIOC_PINENTRY_V1);
 					pio.pio_cmd = PIOC_ERROR_V1;
 					pio.pio_data.pioc_error.tlserrno = EPROTO;
 					strcpy (pio.pio_data.pioc_error.message, "Unexpected command response from TLS pool");
@@ -106,8 +107,8 @@ void enter_pins (char *pinsocket) {
 			perror (pio.pio_data.pioc_error.message);
 			break;
 		}
-		fprintf (stderr, "DEBUG: Received PIN inquiry from TLS pool\n");
-		fprintf (stdout, "Token Manuf: %s\n      Model: %s\n     Serial: %s\n      Label: %s\n    Attempt: %d\n", pe->token_manuf, pe->token_model, pe->token_serial, pe->token_label, pe->attempt);
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received PIN inquiry from TLS pool");
+		tlog (TLOG_PKCS11, LOG_INFO, "Token Manuf: %s\n      Model: %s\n     Serial: %s\n      Label: %s\n    Attempt: %d", pe->token_manuf, pe->token_model, pe->token_serial, pe->token_label, pe->attempt);
 		pwd = getpass (pe->prompt);
 	}
 	bzero (&pio.pio_data, sizeof (pio.pio_data));
@@ -161,7 +162,7 @@ void register_pinentry_command (struct command *cmd) {
 		if (pinentry_client == cmd->clientfd) {
 			// This command came from the same client as last time
 			pinentry_cmd = cmd;
-			printf ("DEBUG: Registered privileged command for PIN entry\n");
+			tlog (TLOG_PKCS11 | TLOG_USER | TLOG_UNIXSOCK, LOG_NOTICE, "Registered privileged command for PIN entry");
 		} else {
 			// New PIN entry clients await the last one's timeout
 			time_t now = time (NULL);
@@ -169,17 +170,17 @@ void register_pinentry_command (struct command *cmd) {
 				// The wait for new client access has passed
 				pinentry_cmd = cmd;
 				pinentry_client = cmd->clientfd;
-				printf ("DEBUG: Registered new client's command for PIN entry\n");
+				tlog (TLOG_PKCS11 | TLOG_USER | TLOG_UNIXSOCK, LOG_NOTICE, "Registered new client's command for PIN entry");
 			} else {
 				// The previous client still is privileged
 				error = 1;
-				printf ("DEBUG: Refused PIN entry command from other client\n");
+				tlog (TLOG_PKCS11 | TLOG_USER | TLOG_UNIXSOCK, LOG_NOTICE, "Refused PIN entry command from other client");
 			}
 		}
 	} else {
 		// There already is a PINENTRY registration
 		error = 1;
-		printf ("DEBUG: Refused extra PIN entry command\n");
+		tlog (TLOG_PKCS11 | TLOG_USER | TLOG_UNIXSOCK, LOG_NOTICE, "Refused extra PIN entry command");
 	}
 	pthread_mutex_unlock (&pinentry_lock);
 	if (error) {
@@ -257,7 +258,7 @@ int gnutls_pin_callback (void *userdata,
 	cfgpin = cfg_p11pin ();
 	if ((cfgpin != NULL) && (*cfgpin) && (strlen (cfgpin) < pin_max)) {
 		strcpy (pin, cfgpin);
-		printf ("DEBUG: Returning configured PIN and OK from PIN entry\n");
+		tlog (TLOG_PKCS11, LOG_DEBUG, "Returning configured PIN and OK from PIN entry");
 		return 0;
 	}
 	//
@@ -265,7 +266,7 @@ int gnutls_pin_callback (void *userdata,
 	pthread_mutex_lock (&pinentry_lock);
 	cmd = pinentry_cmd;
 	if (cmd != NULL) {
-		printf ("DEBUG: Using registered PIN entry command\n");
+		tlog (TLOG_PKCS11 | TLOG_USER, LOG_DEBUG, "Using registered PIN entry command");
 		// A PINENTRY command was registered
 		pinentry_cmd = NULL;
 		pinentry_timeout = time (NULL) + cmd->cmd.pio_data.pioc_pinentry.timeout_us / 1000000;
@@ -276,25 +277,25 @@ int gnutls_pin_callback (void *userdata,
 	}
 	pthread_mutex_unlock (&pinentry_lock);
 	if (retval) {
-		printf ("DEBUG: Returning retval from PIN entry\n");
+		tlog (TLOG_PKCS11 | TLOG_USER, LOG_DEBUG, "Returning retval from PIN entry");
 		return retval;
 	}
 	//
 	// Construct PIN ENTRY response, claim responses and send to the origin
 	p11kituri = p11_kit_uri_new ();
 	if (!p11kituri) {
-		printf ("DEBUG: Failed to allocate URI for PIN entry\n");
+		tlog (TLOG_PKCS11, LOG_CRIT, "Failed to allocate URI for PIN entry");
 		return GNUTLS_A_INTERNAL_ERROR;
 	}
 	if (p11_kit_uri_parse (token_url, P11_KIT_URI_FOR_TOKEN, p11kituri) != P11_KIT_URI_OK) {
 		p11_kit_uri_free (p11kituri);
-		printf ("DEBUG: Failed to parse URI for PIN entry\n");
+		tlog (TLOG_PKCS11 | TLOG_USER, LOG_ERR, "Failed to parse URI for PIN entry");
 		return GNUTLS_A_DECODE_ERROR;
 	}
 	toktok = p11_kit_uri_get_token_info (p11kituri);
 	p11_kit_uri_free (p11kituri);
 	if (!toktok) {
-		printf ("DEBUG: Failed to find URI token info for PIN entry\n");
+		tlog (TLOG_PKCS11 | TLOG_USER, LOG_ERR, "Failed to find URI token info for PIN entry");
 		return GNUTLS_A_DECODE_ERROR;
 	}
 	p11cpy (cmd->cmd.pio_data.pioc_pinentry.token_manuf, toktok->manufacturerID, 32);
@@ -305,21 +306,21 @@ int gnutls_pin_callback (void *userdata,
 	strcpy (cmd->cmd.pio_data.pioc_pinentry.prompt, "Enter PIN: ");
 	//
 	// Await response or timeout
-	printf ("DEBUG: Calling send_callback_and_await_response()\n");
+	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response()");
 	cmd = send_callback_and_await_response (cmd);
 	register_pinentry_command (cmd);
-	printf ("DEBUG: Returnd send_callback_and_await_response()\n");
+	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Returnd send_callback_and_await_response()");
 	if ((cmd->cmd.pio_cmd != PIOC_PINENTRY_V1) || !*cmd->cmd.pio_data.pioc_pinentry.pin) {
-		printf ("DEBUG: Funny command or empty PIN code for PIN entry\n");
+		tlog (TLOG_PKCS11 | TLOG_USER, LOG_ERR, "Funny command or empty PIN code for PIN entry");
 		return GNUTLS_A_USER_CANCELED;
 	}
 	if (1 + strlen (cmd->cmd.pio_data.pioc_pinentry.pin) > pin_max) {
-		printf ("DEBUG: PIN too long for PIN entry\n");
+		tlog (TLOG_PKCS11 | TLOG_USER, LOG_ERR, "PIN too long for PIN entry");
 		return GNUTLS_A_RECORD_OVERFLOW;
 	}
 	strcpy (pin, cmd->cmd.pio_data.pioc_pinentry.pin);
 	bzero (cmd->cmd.pio_data.pioc_pinentry.pin, sizeof (cmd->cmd.pio_data.pioc_pinentry.pin));
-	printf ("DEBUG: Returning entered PIN and OK from PIN entry\n");
+	tlog (TLOG_PKCS11, LOG_DEBUG, "Returning entered PIN and OK from PIN entry");
 	return 0;
 }
 

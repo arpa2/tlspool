@@ -12,6 +12,7 @@
 #include <sys/file.h>
 #include <sys/un.h>
 
+#include <syslog.h>
 #include <fcntl.h>
 #include <pwd.h>
 #include <grp.h>
@@ -20,7 +21,10 @@
 #include <ldap.h>
 
 #include <gnutls/gnutls.h>
+#include <gnutls/abstract.h>
 #include <gnutls/pkcs11.h>
+
+#include <tlspool/internal.h>
 
 #include <libmemcached/memcached.h>
 
@@ -52,6 +56,9 @@ enum VARS {
 	CFGVAR_RADIUS_AUTHN,
 	CFGVAR_RADIUS_AUTHZ,
 	CFGVAR_RADIUS_ACCT,
+	CFGVAR_LOG_LEVEL,
+	CFGVAR_LOG_FILTER,
+	CFGVAR_LOG_STDERR,
 	//
 	CFGVAR_LENGTH,
 	CFGVAR_NONE = -1
@@ -88,11 +95,97 @@ struct cfgopt config_options [] = {
 	"radius_authn",		cfg_setvar,	CFGVAR_RADIUS_AUTHN,
 	"radius_authz",		cfg_setvar,	CFGVAR_RADIUS_AUTHZ,
 	"radius_acct",		cfg_setvar,	CFGVAR_RADIUS_ACCT,
+	"log_level",		cfg_setvar,	CFGVAR_LOG_LEVEL,
+	"log_filter",		cfg_setvar,	CFGVAR_LOG_FILTER,
+	"log_stderr",		cfg_setvar,	CFGVAR_LOG_STDERR,
 	//
 	NULL,			NULL,		CFGVAR_NONE
 };
 
+struct var2val {
+	char *name;
+	unsigned int optval;
+};
 
+struct var2val v2v_log_level [] = {
+	{ "EMERG", LOG_EMERG },
+	{ "EMERGENCY", LOG_EMERG },
+	{ "ALERT", LOG_ALERT },
+	{ "CRIT", LOG_CRIT },
+	{ "CRITICAL", LOG_CRIT },
+	{ "ERR", LOG_ERR },
+	{ "ERROR", LOG_ERR },
+	{ "WARNING", LOG_WARNING },
+	{ "WARN", LOG_WARNING },
+	{ "NOTICE", LOG_NOTICE },
+	{ "NOTE", LOG_NOTICE },
+	{ "INFO", LOG_INFO },
+	{ "DEBUG", LOG_DEBUG },
+	{ "*", LOG_DEBUG },
+	{ NULL, 0 }
+};
+
+struct var2val v2v_log_filter [] = {
+	{ "*", ~0 },
+	{ "TLS", TLOG_TLS },
+	{ "PKCS11", TLOG_PKCS11 },
+	{ "DB", TLOG_DB },
+	{ "FILES", TLOG_FILES },
+	{ "CRYPTO", TLOG_CRYPTO },
+	{ "CERT", TLOG_CERT },
+	{ "USER", TLOG_USER },
+	// AUTHN/AUTHZ/CREDS/SESSION are not yet generated
+	{ "COPYCAT", TLOG_COPYCAT },
+	{ "UNIXSOCK", TLOG_UNIXSOCK },
+	{ "DAEMON", TLOG_DAEMON },
+	{ NULL, 0 }
+};
+
+struct var2val v2v_log_perror [] = {
+	{ "YES", LOG_PERROR },
+	{ "1", LOG_PERROR },
+	{ "*", LOG_PERROR },
+	{ "NO", 0 },
+	{ "0", 0 },
+	{ NULL, 0 }
+};
+
+
+
+static unsigned int parse_var2val (char *word, int wlen, struct var2val *patterns, unsigned int defaultvalue) {
+	if (word == NULL) {
+		return defaultvalue;
+	}
+	if (wlen < 0) {
+		wlen = strlen (word);
+	}
+	while (patterns->name) {
+		if (strlen (patterns->name) == wlen) {
+			if (strncasecmp (patterns->name, word, wlen) == 0) {
+				return patterns->optval;
+			}
+		}
+		patterns++;
+	}
+	return defaultvalue;
+}
+
+static unsigned int parse_var2val_list (char *wordlist, struct var2val *patterns, unsigned int defaultvalue) {
+	int comma;
+	unsigned int retval = 0;
+	if ((wordlist == NULL) || (*wordlist == '\0')) {
+		return defaultvalue;
+	}
+	while (*wordlist) {
+		comma = strcspn (wordlist, ",");
+		retval |= parse_var2val (wordlist, comma, patterns, 0);
+		wordlist += comma + 1;
+	}
+	return retval;
+}
+
+
+/* General configfile parser */
 
 void parse_cfgfile (char *filename, int kill_competition) {
 	FILE *cf = fopen (filename, "r");
@@ -185,7 +278,9 @@ void cfg_setvar (char *item, int itemno, char *value) {
 		fprintf (stderr, "Out of memory duplicating configuration string\n");
 		exit (1);
 	}
+#ifdef DEBUG
 	fprintf (stdout, "DEBUG: SETUP   %s AS %s\n", item, value);
+#endif
 }
 
 void unlink_pidfile (void) {
@@ -307,7 +402,9 @@ void cfg_socketname (char *item, int itemno, char *value) {
 }
 
 void cfg_user (char *item, int itemno, char *value) {
+#ifdef DEBUG
 	fprintf (stdout, "DEBUG: DECLARE %s AS %s\n", item, value);
+#endif
 	struct passwd *pwd = getpwnam (value);
 	if (!pwd) {
 		fprintf (stderr, "Failed to find username %s\n", value);
@@ -317,7 +414,9 @@ void cfg_user (char *item, int itemno, char *value) {
 }
 
 void cfg_group (char *item, int itemno, char *value) {
+#ifdef DEBUG
 	fprintf (stdout, "DEBUG: DECLARE %s AS %s\n", item, value);
+#endif
 	struct group *grp = getgrnam (value);
 	if (!grp) {
 		fprintf (stderr, "Failed to find group name %s\n", value);
@@ -333,6 +432,18 @@ void cfg_chroot (char *item, int itemno, char *value) {
 	}
 }
 
+unsigned int cfg_log_perror (void) {
+	return parse_var2val (configvars [CFGVAR_LOG_STDERR], -1, v2v_log_perror, 0);
+}
+
+unsigned int cfg_log_level (void) {
+	return parse_var2val (configvars [CFGVAR_LOG_LEVEL], -1, v2v_log_level, LOG_ERR);
+}
+
+unsigned int cfg_log_filter (void) {
+	return parse_var2val_list (configvars [CFGVAR_LOG_FILTER], v2v_log_filter, ~0);
+}
+
 static void free_p11pin (void) {
 	char *pin = configvars [CFGVAR_PKCS11_PIN];
 	if (pin) {
@@ -343,7 +454,9 @@ static void free_p11pin (void) {
 }
 
 void cfg_p11path (char *item, int itemno, char *value) {
+#ifdef DEBUG
 	fprintf (stdout, "DEBUG: DECLARE %s AS %s\n", item, value);
+#endif
 	cfg_setvar (item, itemno, value);
 	//TODO:WHY?// free_p11pin ();
 }
@@ -351,7 +464,9 @@ void cfg_p11path (char *item, int itemno, char *value) {
 void cfg_p11token (char *item, int itemno, char *value) {
 	unsigned int token_seq = 0;
 	char *p11uri;
+#ifdef DEBUG
 	fprintf (stdout, "DEBUG: DECLARE %s AS %s\n", item, value);
+#endif
 	if (!configvars [CFGVAR_PKCS11_PATH]) {
 		fprintf (stderr, "You must specify pkcs11_path before any number of pkcs11_token\n");
 		exit (1);
@@ -361,7 +476,9 @@ void cfg_p11token (char *item, int itemno, char *value) {
 		exit (1);
 	}
 	while (gnutls_pkcs11_token_get_url (token_seq, 0, &p11uri) == 0) {
+#ifdef DEBUG
 		printf ("DEBUG: Found token URI %s\n", p11uri);
+#endif
 		//TODO// if (gnutls_pkcs11_token_get_info (p11uri, GNUTLS_PKCS11_TOKEN_LABEL-of-SERIAL-of-MANUFACTURER-of-MODEL, output, utput_size) == 0) { ... }
 		gnutls_free (p11uri);
 		token_seq++;

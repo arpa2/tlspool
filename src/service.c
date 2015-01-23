@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <pthread.h>
 
+#include <syslog.h>
 #include <fcntl.h>
 #include <poll.h>
 
@@ -87,7 +88,7 @@ static struct command *allocate_command_for_clientfd (int fd) {
 	if (!cmdpool) {
 		cmdpool = (struct command *) calloc (1000, sizeof (struct command));
 		if (!cmdpool) {
-			fprintf (stderr, "Failed to allocate command pool\n");
+			tlog (TLOG_UNIXSOCK, LOG_CRIT, "Failed to allocate command pool");
 			exit (1);
 		}
 		bzero (cmdpool, 1000 * sizeof (struct command));
@@ -140,7 +141,7 @@ void register_socket (int sox, uint32_t soxinfo_flags) {
 	//TODO// 	soxinfo = calloc ()
 	//TODO// }
 	if (num_sox == 1024) {
-		fprintf (stderr, "Cannot allocate more than 1024 server sockets\n");
+		tlog (TLOG_UNIXSOCK, LOG_CRIT, "Cannot allocate more than 1024 server sockets");
 		exit (1);
 	}
 	soxpoll [num_sox].fd = sox;
@@ -200,14 +201,14 @@ int send_command (struct command *cmd, int passfd) {
 		* (int *) CMSG_DATA (cmsg) = passfd;
 	}
 
-	printf ("DEBUG: Sending command 0x%08x and fd %d to socket %d\n", cmd->cmd.pio_cmd, passfd, cmd->clientfd);
+	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Sending command 0x%08x and fd %d to socket %d", cmd->cmd.pio_cmd, passfd, cmd->clientfd);
 	if (sendmsg (cmd->clientfd, &mh, 0) == -1) {
 		//TODO// Differentiate behaviour based on errno?
 		perror ("Failed to send command");
 		cmd->claimed = 0;
 		return 0;
 	} else {
-		printf ("DEBUG: Sent command code 0x%08x\n", cmd->cmd.pio_cmd);
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Sent command code 0x%08x", cmd->cmd.pio_cmd);
 		cmd->claimed = 0;
 		return 1;
 	}
@@ -250,13 +251,13 @@ int receive_command (int sox, struct command *cmd) {
 		perror ("Failed to receive command");
 		return 0;
 	}
-	printf ("DEBUG: Received command request code 0x%08x with cbid=%d over fd=%d\n", cmd->cmd.pio_cmd, cmd->cmd.pio_cbid, sox);
+	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received command request code 0x%08x with cbid=%d over fd=%d", cmd->cmd.pio_cmd, cmd->cmd.pio_cbid, sox);
 
 	cmsg = CMSG_FIRSTHDR (&mh);
 	if (cmsg && (cmsg->cmsg_len == CMSG_LEN (sizeof (int)))) {
 		if ((cmsg->cmsg_level == SOL_SOCKET) && (cmsg->cmsg_type == SCM_RIGHTS)) {
 			cmd->passfd = * (int *) CMSG_DATA (cmsg);
-			printf ("DEBUG: Received file descriptor as %d\n", cmd->passfd);
+			tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d", cmd->passfd);
 		}
 	}
 
@@ -305,7 +306,7 @@ struct command *send_callback_and_await_response (struct command *cmdresp) {
 	cb = cbfree;
 	if (!cb) {
 		//TODO// Allocate more...
-		fprintf (stderr, "Ran out of callback structures.  Crashing as a coward\n");
+		tlog (TLOG_UNIXSOCK, LOG_CRIT, "Ran out of callback structures.  Crashing as a coward");
 		exit (1);
 	}
 	//TODO// It's simpler to administer index numbers and not pointers
@@ -317,7 +318,7 @@ struct command *send_callback_and_await_response (struct command *cmdresp) {
 	send_command (cmdresp, -1);
 	do {
 		//TODO// pthread_cond_timedwait?
-		printf ("DEBUG: Waiting with fd=%d and cbid=%d on semaphone 0x%08x\n", cb->fd, cmdresp->cmd.pio_cbid, cb);
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Waiting with fd=%d and cbid=%d on semaphone 0x%08x", cb->fd, cmdresp->cmd.pio_cbid, cb);
 		pthread_cond_wait (&cb->semaphore, &cbfree_mutex);
 		followup = cb->followup;
 	} while (!followup);
@@ -338,7 +339,7 @@ static void post_callback (struct command *cmd) {
 	cblist [cbid].fd = -1;
 	cblist [cbid].followup = cmd;
 	pthread_mutex_lock (&cbfree_mutex);
-	printf ("DEBUG: Signaling on the semaphore of callback 0x%08x\n", &cblist [cbid]);
+	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Signaling on the semaphore of callback 0x%08x", &cblist [cbid]);
 	pthread_cond_signal (&cblist [cbid].semaphore);
 	pthread_mutex_unlock (&cbfree_mutex);
 }
@@ -347,7 +348,7 @@ static void post_callback (struct command *cmd) {
 /* Process a command packet that entered on a TLS pool socket
  */
 static void process_command (struct command *cmd) {
-	printf ("DEBUG: Processing command 0x%08x\n", cmd->cmd.pio_cmd);
+	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing command 0x%08x", cmd->cmd.pio_cmd);
 	union pio_data *d = &cmd->cmd.pio_data;
 	if (is_callback (cmd)) {
 		post_callback (cmd);
@@ -382,7 +383,7 @@ static void process_command (struct command *cmd) {
 void process_activity (int sox, int soxidx, struct soxinfo *soxi, short int revents) {
 	if (revents & POLLOUT) {
 		//TODO// signal waiting thread that it may continue
-		printf ("DEBUG: Eekk!!  Could send a packet?!?  Unregistering client\n");
+		tlog (TLOG_UNIXSOCK, LOG_CRIT, "Eekk!!  Could send a packet?!?  Unregistering client");
 		unregister_client_socket_byindex (soxidx);
 		close (sox);
 	}
@@ -392,7 +393,7 @@ void process_activity (int sox, int soxidx, struct soxinfo *soxi, short int reve
 			socklen_t salen = sizeof (sa);
 			int newsox = accept (sox, &sa, &salen);
 			if (newsox != -1) {
-				printf ("DEBUG: Received incoming connection.  Registering it.\n");
+				tlog (TLOG_UNIXSOCK, LOG_NOTICE, "Received incoming connection.  Registering it");
 				register_client_socket (newsox);
 			}
 		}
@@ -401,7 +402,7 @@ void process_activity (int sox, int soxidx, struct soxinfo *soxi, short int reve
 			if (receive_command (sox, cmd)) {
 				process_command (cmd);
 			} else {
-				printf ("DEBUG: Failed to receive command request\n");
+				tlog (TLOG_UNIXSOCK, LOG_ERR, "Failed to receive command request");
 			}
 		}
 	}
@@ -411,7 +412,7 @@ void process_activity (int sox, int soxidx, struct soxinfo *soxi, short int reve
  */
 void hangup_service (void) {
 	stop_service = 1;
-	fprintf (stderr, "DEBUG: Requested service to hangup soon\n");
+	tlog (TLOG_UNIXSOCK, LOG_NOTICE, "Requested service to hangup soon");
 }
 
 /* The main service loop.  It uses poll() to find things to act upon. */
@@ -421,7 +422,7 @@ void run_service (void) {
 	cbfree = NULL;
 	errno = pthread_setcancelstate (PTHREAD_CANCEL_DISABLE, NULL);
 	if (errno) {
-		fprintf (stderr, "Service routine thread cancellability refused\n");
+		tlog (TLOG_UNIXSOCK | TLOG_DAEMON, LOG_ERR, "Service routine thread cancellability refused");
 		exit (1);
 	}
 	for (i=0; i<1024; i++) {
@@ -431,27 +432,27 @@ void run_service (void) {
 		cblist [i].followup = NULL;
 		cbfree = &cblist [i];
 	}
-	printf ("DEBUG: Polling %d sockets numbered %d, %d, %d, ...\n", num_sox, soxpoll [0].fd, soxpoll [1].fd, soxpoll [2].fd);
+	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Polling %d sockets numbered %d, %d, %d, ...", num_sox, soxpoll [0].fd, soxpoll [1].fd, soxpoll [2].fd);
 	while (polled = poll (soxpoll, num_sox, -1), polled > 0) {
-		printf ("DEBUG: Polled %d sockets, returned %d\n", num_sox, polled);
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Polled %d sockets, returned %d", num_sox, polled);
 		for (i=0; i<num_sox; i++) {
 			if (soxpoll [i].revents & (POLLHUP|POLLERR|POLLNVAL)) {
 				int sox = soxpoll [i].fd;
-				printf ("DEBUG: Unregistering socket %d\n", sox);
+				tlog (TLOG_UNIXSOCK, LOG_NOTICE, "Unregistering socket %d", sox);
 				unregister_client_socket_byindex (i);
 				close (sox);
 				continue;
 			} else if (soxpoll [i].revents) {
-				printf ("DEBUG: Socket %d has revents=%d\n", soxpoll [i].fd, soxpoll [i].revents);
+				tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Socket %d has revents=%d", soxpoll [i].fd, soxpoll [i].revents);
 				process_activity (soxpoll [i].fd, i, &soxinfo [i], soxpoll [i].revents);
 			}
 		}
-		fprintf (stderr, "DEBUG: Polling %d sockets numbered %d, %d, %d, ...\n", num_sox, soxpoll [0].fd, soxpoll [1].fd, soxpoll [2].fd);
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Polling %d sockets numbered %d, %d, %d, ...", num_sox, soxpoll [0].fd, soxpoll [1].fd, soxpoll [2].fd);
 	}
 	if (stop_service) {
-		fprintf (stderr, "DEBUG: Service hangup in response to request\n");
+		tlog (TLOG_UNIXSOCK, LOG_NOTICE, "Service hangup in response to request");
 	} else {
-		fprintf (stderr, "DEBUG: Polled %d sockets, returned %d\n", num_sox, polled);
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Polled %d sockets, returned %d", num_sox, polled);
 		perror ("Failed to poll for activity");
 	}
 }

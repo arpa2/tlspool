@@ -1,6 +1,7 @@
 /* tlspool/manage.c -- Management setup in local databases */
 
 
+#include <syslog.h>
 #include <errno.h>
 
 #include <sys/stat.h>
@@ -88,9 +89,17 @@ gtls_error setup_management (void) {
 	DB_TXN *tract = NULL;
 	if (errno == 0) {
 		mkdir ("../testdata/tlspool.env", S_IRWXU);
-		errno = 0;
+		if (errno == 0) {
+			tlog (TLOG_DB | TLOG_USER, LOG_NOTICE, "Created DB environment directory");
+		} else {
+			// Failure usually indicates the directory exists.
+			// Whatever it was is ignored silently -- as this
+			// friendly mkdir() does not constitute guaranteed
+			// (or even documented) behaviour.
+			errno = 0;
+		}
 	}
-	E_d2ge ("Failed to create DB environment",
+	E_d2ge ("Failed to create DB environment handle",
 		db_env_create (&dbenv, 0));
 	E_d2ge ("Failed to open DB environment",
 		dbenv->open (dbenv, "../testdata/tlspool.env", DB_CREATE | DB_RECOVER | DB_INIT_TXN | DB_INIT_LOG | DB_INIT_LOCK | DB_THREAD | DB_INIT_MPOOL, S_IRUSR | S_IWUSR));

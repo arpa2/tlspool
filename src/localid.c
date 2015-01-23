@@ -3,6 +3,8 @@
 
 #include <stdlib.h>
 #include <string.h>
+
+#include <syslog.h>
 #include <errno.h>
 
 #include <gnutls/gnutls.h>
@@ -132,7 +134,7 @@ gtls_error dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_lo
 	while (more) {
 		int fnd;
 		discpatn->size = donai_iterate_memput (discpatn->data, remotesel);
-fprintf (stderr, "DEBUG: Looking up remote selector %.*s\n", discpatn->size, (char *) discpatn->data);
+		tlog (TLOG_DB, LOG_DEBUG, "Looking up remote selector %.*s", discpatn->size, (char *) discpatn->data);
 		fnd = crs_disclose->get (crs_disclose, discpatn, keydata, DB_SET);
 		if (fnd == 0) {
 			// Got the selector pattern!
