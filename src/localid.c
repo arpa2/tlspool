@@ -46,8 +46,8 @@ int dbcred_flags (DBT *creddata, uint32_t *flags) {
 /* Interpret the credentials structure found in dbh_localid.
  * This comes down to splitting the (data,size) structure into fields:
  *  - a 32-bit flags field
- *  - a char * sharing the PKCS #11 private key location
- *  - a (data,size) structure for the public credential
+ *  - a char * sharing the PKCS #11 private key location, NULL on LID_NO_PKCS11
+ *  - a (data,size) structure for the public credential, also when LID_CHAINED
  * The function returns non-zero on success (zero indicates syntax error).
  */
 int dbcred_interpret (gnutls_datum_t *creddata, uint32_t *flags, char **p11priv, uint8_t **pubdata, int *pubdatalen) {
@@ -56,16 +56,20 @@ int dbcred_interpret (gnutls_datum_t *creddata, uint32_t *flags, char **p11priv,
 		return 0;
 	}
 	*flags = ntohl (* (uint32_t *) creddata->data);
-	*p11priv = ((char *) creddata->data) + 4;
-	p11privlen = strnlen (*p11priv, creddata->size - 4);
-	if (p11privlen == creddata->size - 4) {
-		return 0;
-	}
+	if ((*flags) & LID_NO_PKCS11) {
+		*p11priv = NULL;
+	} else {
+		*p11priv = ((char *) creddata->data) + 4;
+		p11privlen = strnlen (*p11priv, creddata->size - 4);
+		if (p11privlen == creddata->size - 4) {
+			return 0;
+		}
 #ifdef TODO_PKCS11_ADDED
-	if (strncmp (*p11priv, "pkcs11:", 7) != 0) {
-		return 0;
-	}
+		if (strncmp (*p11priv, "pkcs11:", 7) != 0) {
+			return 0;
+		}
 #endif
+	}
 	*pubdata    = ((uint8_t *) creddata->data) + 4 + p11privlen + 1;
 	*pubdatalen =              creddata->size  - 4 - p11privlen - 1;
 	if (*pubdatalen < 20) {

@@ -27,6 +27,8 @@ typemap = {
 	2: 'OpenPGP',
 	256: 'client',
 	512: 'server',
+	4096: 'nop11',
+	8192: 'chained',
 }
 
 
@@ -75,7 +77,10 @@ while obj:
 			print 'UNKNOWN_%d' % (objtp & mask),
 	print
 	if objtp & 0xff in [ 1, 2]:
-		(p11priv,pubdata) = obj [1][4:].split ('\x00', 1)
+		if objtp & 4096:
+			(p11priv,pubdata) = ('(Not available)', obj [1])
+		else:
+			(p11priv,pubdata) = obj [1][4:].split ('\x00', 1)
 		print 'Private:', p11priv
 		print 'Public:', pubdata [0:1].encode ('hex'), pubdata [1:2].encode ('hex'), pubdata [2:3].encode ('hex'), '...', pubdata [-2:-1].encode ('hex'), pubdata [-1:].encode ('hex'), '(length %d)' % len (pubdata)
 	obj = crs.next_dup ()

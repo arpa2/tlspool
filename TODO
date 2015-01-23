@@ -14,3 +14,7 @@ There are many ways in which the current TLS Pool can be improved:
 + Free memory as assumed by GnuTLS and BerkeleyDB API's
 + Setup server credentials for searching databases as is done in the client
 - Regularly refresh DH parameters ; find out how to apply refcnt and/or locks
+- Introduce (at least a basic form of) certificate validation
++ Support X.509 certificate chains
+- Derive GnuTLS priority string automatically from credentials for localid
+- Migrate from fprintf (stderr, ...) to syslog()

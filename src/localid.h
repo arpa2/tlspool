@@ -37,6 +37,11 @@
 #define LID_ROLE_BOTH	0x00000300	/* This may be used for both roles */
 #define LID_ROLE_NONE	0x00000000	/* This may be used for neither role */
 
+#define LID_NO_PKCS11	0x00001000	/* No prefixed PKCS #11 URI + NUL */
+#define LID_CHAINED	0x00002000	/* Credential isa type-specific chain */
+//TODO// Encode LID_NEEDS_CHAIN support
+#define LID_NEEDS_CHAIN	0x00004000	/* Chain certs are in central storage */
+
 
 /* Impose a practial upper bound to the lenght of a DoNAI, a domain-or-NAI.
  * This is important to avoid overzealous allocations and subsequent buffer

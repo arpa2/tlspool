@@ -376,6 +376,8 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 	char *p11priv;
 	uint8_t *pubdata;
 	int pubdatalen;
+	gtls_error fetch_local_credentials (struct command *cmd);
+	gnutls_pcert_st *load_certificate_chain (uint32_t flags, unsigned int *chainlen, gnutls_datum_t *certdatum);
 
 	//
 	// Setup a number of common references and structures
@@ -482,17 +484,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 	}
 
 	//
-	// Allocate response structures
-	// TODO: Add support for certificate chains (root cert is not needed)
-	*pcert_length = 1;
-	*pcert = (gnutls_pcert_st *) malloc (sizeof (gnutls_pcert_st));
-	if (*pcert == NULL) {
-		E_g2e ("Failed to allocate certificate chain",
-			GNUTLS_E_MEMORY_ERROR);
-		return gtls_errno;
-	}
-	cmd->session_pcert = *pcert;	//TODO// Used for session cleanup
-
+	// Split the credential into its various aspects
 	ok = dbcred_interpret (
 		&cmd->lids [lidtype - LID_TYPE_MIN],
 		&flags,
@@ -506,6 +498,17 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 	}
 
 	//
+	// Allocate response structures
+	*pcert_length = 0;
+	*pcert = load_certificate_chain (flags, pcert_length, &certdatum);
+	if (*pcert == NULL) {
+		E_g2e ("Failed to load certificate chain",
+			GNUTLS_E_CERTIFICATE_ERROR);
+		return gtls_errno;
+	}
+	cmd->session_pcert = *pcert;	//TODO// Used for session cleanup
+
+	//
 	// Setup private key
 	E_g2e ("Failed to initialise private key",
 		gnutls_privkey_init (
@@ -517,6 +520,8 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 		gnutls_privkey_import_pkcs11_url (
 			*pkey,
 			p11priv));
+
+//TODO// Moved out (start)
 
 	//
 	// Setup public key certificate
@@ -543,10 +548,166 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 		break;
 	}
 
+//TODO// Moved out (end)
+
 	//
 	// Return the overral error code, hopefully GNUTLS_E_SUCCESS
 fprintf (stderr, "DEBUG: Returning %d / %s from clisrv_cert_retrieve()\n", gtls_errno, gnutls_strerror (gtls_errno));
 	return gtls_errno;
+}
+
+/* Load a single certificate in the given gnutls_pcert_st from the given
+ * gnutls_datum_t.  Use the lidtype to determine how to do this.
+ */
+gtls_error load_certificate (int lidtype, gnutls_pcert_st *pcert, gnutls_datum_t *certdatum) {
+	int gtls_errno = GNUTLS_E_SUCCESS;
+	//
+	// Setup public key certificate
+	switch (lidtype) {
+	case LID_TYPE_X509:
+		E_g2e ("Failed to import X.509 certificate into chain",
+			gnutls_pcert_import_x509_raw (
+				pcert,
+				certdatum,
+				GNUTLS_X509_FMT_DER,
+				0));
+		break;
+	case LID_TYPE_PGP:
+		E_g2e ("Failed to import OpenPGP certificate",
+			gnutls_pcert_import_openpgp_raw (
+				pcert,
+				certdatum,
+				GNUTLS_OPENPGP_FMT_RAW,
+				NULL,	/* use master key */
+				0));
+		break;
+	default:
+		/* Should not happen */
+		break;
+	}
+	return gtls_errno;
+}
+
+
+/* Load a certificate chain.  This returns a value for a retrieval function's
+ * pcert, and also modifies the chainlen.  The latter starts at 0, and is
+ * incremented in a nested procedure that unrolls until all certificates are
+ * loaded.
+ */
+gnutls_pcert_st *load_certificate_chain (uint32_t flags, unsigned int *chainlen, gnutls_datum_t *certdatum) {
+	gnutls_pcert_st *chain;
+	unsigned int mypos = *chainlen;
+	int gtls_errno = GNUTLS_E_SUCCESS;
+
+	//
+	// Quick and easy: No chaining required, just add the literal data.
+	// Note however, this may be the end of a chain, so allocate all
+	// structures and load the single one at the end.
+	if ((flags & (LID_CHAINED | LID_NEEDS_CHAIN)) == 0) {
+		(*chainlen)++;
+		chain = (gnutls_pcert_st *) calloc (*chainlen, sizeof (gnutls_pcert_st));
+		if (chain != NULL) {
+			bzero (chain, (*chainlen) * sizeof (gnutls_pcert_st));
+		} else {
+			gtls_errno = GNUTLS_E_MEMORY_ERROR;
+		}
+		E_g2e ("Failed to load certificate into chain",
+			load_certificate (
+				flags & LID_TYPE_MASK,
+				&chain [mypos],
+				certdatum));
+		if (gtls_errno != GNUTLS_E_SUCCESS) {
+			if (chain) {
+				free (chain);
+			}
+			*chainlen = 0;
+			chain = NULL;
+		}
+		return chain;
+	}
+
+	//
+	// First extended case.  Chain certs in response to LID_CHAINED.
+	// Recursive calls are depth-first, so we only add our first cert
+	// after a recursive call succeeds.  Any LID_NEEDS_CHAIN work is
+	// added after LID_CHAINED, so is higher up in the hierarchy, but
+	// it is loaded as part of the recursion.  To support that, a
+	// recursive call with certdatum.size==0 is possible when the
+	// LID_NEEDS_CHAIN flag is set, and this section then skips.
+	// Note that this code is also used to load the certificate chain
+	// provided by LID_NEEDS_CHAIN, but by then the flag in a recursive
+	// call is replaced with LID_CHAINED and no more LID_NEEDS_CHAIN.
+	if (((flags & LID_CHAINED) != 0) && (certdatum->size > 0)) {
+		long certlen;
+		int lenlen;
+		gnutls_datum_t nextdatum;
+		long nextlen;
+		// Note: Accept BER because the outside SEQUENCE is not signed
+		certlen = asn1_get_length_ber (
+			((char *) certdatum->data) + 1,
+			certdatum->size,
+			&lenlen);
+		certlen += 1 + lenlen;
+		fprintf (stderr, "DEBUG: Found LID_CHAINED certificate size %d\n", certlen);
+		if (certlen > certdatum->size) {
+			fprintf (stderr, "ERROR: Refusing LID_CHAINED certificate beyond data size %d\n", certdatum->size);
+			*chainlen = 0;
+			return NULL;
+		} else if (certlen <= 0) {
+			fprintf (stderr, "ERROR: Refusing LID_CHAINED certificate of too-modest data size %d\n", certlen);
+			*chainlen = 0;
+			return NULL;
+		}
+		nextdatum.data = ((char *) certdatum->data) + certlen;
+		nextdatum.size =           certdatum->size  - certlen;
+		certdatum->size = certlen;
+		nextlen = asn1_get_length_ber (
+			((char *) nextdatum.data) + 1,
+			nextdatum.size,
+			&lenlen);
+		nextlen += 1 + lenlen;
+		if (nextlen == nextdatum.size) {
+			// The last cert is loaded thinking it is not CHAINED,
+			// but NEEDS_CHAIN can still be present for expansion.
+			flags &= ~LID_CHAINED;
+		}
+		(*chainlen)++;
+		chain = load_certificate_chain (flags, chainlen, &nextdatum);
+		if (chain != NULL) {
+			E_g2e ("Failed to add chained certificate",
+				load_certificate (
+					flags & LID_TYPE_MASK,
+					&chain [mypos],
+					certdatum));
+			if (gtls_errno != GNUTLS_E_SUCCESS) {
+				free (chain);
+				chain = NULL;
+				*chainlen = 0;
+			}
+		}
+		return chain;
+	}
+
+	//
+	// Second extended case.  Chain certs in response to LID_NEEDS_CHAIN.
+	// These are the highest-up in the hierarchy, above any LID_CHAINED
+	// certificates.  The procedure for adding them is looking them up
+	// in a central database by their authority key identifier.  What is
+	// found is assumed to be a chain, and will be unrolled by replacing
+	// the LID_NEEDS_CHAIN flag with LID_CHAINED and calling recursively.
+	if (((flags & LID_NEEDS_CHAIN) != 0) && (certdatum->size == 0)) {
+		//TODO//CODE// lookup new certdatum
+		flags &= ~LID_NEEDS_CHAIN;
+		flags |=  LID_CHAINED;
+		//TODO//CODE// recursive call
+		//TODO//CODE// no structures to fill here
+		//TODO//CODE// cleanup new certdatum
+	}
+
+	//
+	// Final judgement.  Nothing worked.  Return failure.
+	*chainlen = 0;
+	return NULL;
 }
 
 
@@ -659,6 +820,7 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 			&flags);
 		lidtype = flags & LID_TYPE_MASK;
 		ok = ok && ((flags & lidrole) != 0);
+		ok = ok && ((flags & LID_NO_PKCS11) == 0);
 		ok = ok && (lidtype >= LID_TYPE_MIN);
 		ok = ok && (lidtype <= LID_TYPE_MAX);
 		fprintf (stderr, "DEBUG: BDB entry has flags=0x%08x, so we (%04x/%04x) %s it\n", flags, lidrole, LID_ROLE_MASK, ok? "store": "skip ");
@@ -1168,8 +1330,8 @@ static void *starttls_thread (void *cmd_void) {
 			gnutls_priority_set_direct (
 			session,
 			// "NORMAL:-KX-ALL:+SRP:+SRP-RSA:+SRP-DSS",
-			// "NORMAL:+CTYPE-X.509:-CTYPE-OPENPGP:+CTYPE-X.509",
-			"NORMAL:-CTYPE-X.509:+CTYPE-OPENPGP:-CTYPE-X.509",
+			"NORMAL:+CTYPE-X.509:-CTYPE-OPENPGP:+CTYPE-X.509",
+			// "NORMAL:-CTYPE-X.509:+CTYPE-OPENPGP:-CTYPE-X.509",
 			// "NORMAL:+ANON-ECDH:+ANON-DH",
 			NULL));
 	}

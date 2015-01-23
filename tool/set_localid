@@ -22,7 +22,7 @@ from bsddb import db
 usage = """Usage: %s localid.db [user@]fqdn type [p11priv pubdata...]
  - localid.db        is the database with local identities
  - user@fqdn or fqdn is a network access identifier
- - type              comma-sep: X.509 or OpenPGP, and client or server
+ - type              comma-sep: X.509|OpenPGP, client|server, nop11?, chained?
  - p11priv           is a PKCS #11 URI string for the private key
  - pubdata           is a file name    string for the public key package
 The pairs of p11priv and pubdata replace the old content.  An empty list of
@@ -38,6 +38,8 @@ typemap = {
 	'srv': 512,
 	'client': 256,
 	'server': 512,
+	'nop11': 4096,
+	'chained': 8192,
 }
 
 
@@ -82,10 +84,13 @@ except:
 pairs = []
 idx = 4
 while len (sys.argv) > idx:
-	p11priv = sys.argv [idx+0]
-	if p11priv [:7] != 'pkcs11:':
-		sys.stderr.write ('%s: PKCS #11 URIs start with "pkcs11:"\n' % sys.argv [0])
-		print '(Ignored)' #TODO:ADD:PKCS11# sys.exit (1)
+	if reqtp & 4096:
+		p11priv = None
+	else:
+		p11priv = sys.argv [idx+0]
+		if p11priv [:7] != 'pkcs11:':
+			sys.stderr.write ('%s: PKCS #11 URIs start with "pkcs11:"\n' % sys.argv [0])
+			print '(Ignored)' #TODO:ADD:PKCS11# sys.exit (1)
 	pubdata = open (sys.argv [idx+1], 'r').read ()
 	pairs.append ( (p11priv,pubdata) )
 	idx = idx + 2
@@ -98,7 +103,10 @@ obj = crs.get (localid, db.DB_SET)
 while obj:
 	(objtp,) = struct.unpack (">I", obj [1][:4])
 	print 'Object type is', objtp
-	(p11priv,pubdata) = obj [1][4:].split ('\x00', 1)
+	if objtp & 4096:
+		(p11priv,pubdata) = (None, obj [1])
+	else:
+		(p11priv,pubdata) = obj [1][4:].split ('\x00', 1)
 	if (objtp & 0xff) == (reqtp & 0xff):
 		print 'Deleting old entry', objtp, p11priv, '#' + str (len (pubdata))
 		crs.delete ()
@@ -112,7 +120,11 @@ crs.close ()
 #
 for (p11priv,pubdata) in pairs:
 	print 'Packing request type', reqtp
-	data = struct.pack (">I", reqtp) + p11priv + '\x00' + pubdata
+	if p11priv:
+		p11data = p11priv + '\x00'
+	else:
+		p11data = ''
+	data = struct.pack (">I", reqtp) + p11data + pubdata
 	print 'Adding new entry', reqtp, p11priv, '#' + str (len (pubdata))
 	dbh.put (localid, data, txn=txn)
 
