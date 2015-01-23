@@ -105,6 +105,12 @@ char *cfg_p11pin (void);
 unsigned int cfg_log_perror (void);
 unsigned int cfg_log_level (void);
 unsigned int cfg_log_filter (void);
+char *cfg_dbenv_dir (void);
+char *cfg_db_localid (void);
+char *cfg_db_disclose (void);
+char *cfg_tls_dhparamfile (void);
+
+
 
 
 /* error.c -- Mapping various error code systems to others.

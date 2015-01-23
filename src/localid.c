@@ -93,7 +93,7 @@ int dbcred_interpret (gnutls_datum_t *creddata, uint32_t *flags, char **p11priv,
  */
 gtls_error dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata) {
 	int gtls_errno = GNUTLS_E_SUCCESS;
-	E_d2ge ("Key not found in localid.db",
+	E_d2ge ("Key not found in db_localid",
 		cursor->get (cursor, keydata, creddata, DB_SET));
 	return gtls_errno;
 }
@@ -139,7 +139,7 @@ gtls_error dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_lo
 		if (fnd == 0) {
 			// Got the selector pattern!
 			// Now continue, even when no localids will work.
-			E_d2ge ("Key not found in localid.db",
+			E_d2ge ("Key not found in db_localid",
 				crs_localid->get (
 					crs_localid,
 					keydata,
@@ -153,7 +153,7 @@ gtls_error dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_lo
 		more = selector_iterate_next (remotesel);
 	}
 	// Ended here with nothing more to find
-	E_d2ge ("No selector matches remote ID in disclose.db",
+	E_d2ge ("No selector matches remote ID in db_disclose",
 		DB_NOTFOUND);
 	return gtls_errno;
 }

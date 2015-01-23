@@ -115,22 +115,24 @@ static gtls_error generate_dh_params (void) {
 static gtls_error load_dh_params (void) {
 	gnutls_dh_params_t dhp;
 	gnutls_datum_t pkcs3;
-	char *filename = "../testdata/tlspool-dh-params.pkcs3";
+	char *filename = cfg_tls_dhparamfile ();
 	int gtls_errno = GNUTLS_E_SUCCESS;
 	bzero (&pkcs3, sizeof (pkcs3));
-	E_g2e ("No PKCS #3 PEM file with DH params",
-		gnutls_load_file (
-			filename,
-			&pkcs3));
-	E_gnutls_clear_errno ();
-	E_g2e ("Failed to initialise DH params",
-		gnutls_dh_params_init (
-			&dhp));
-	E_g2e ("Failed to import DH params from PKCS #3 PEM",
-		gnutls_dh_params_import_pkcs3 (
-			dhp,
-			&pkcs3,
-			GNUTLS_X509_FMT_PEM));
+	if (filename) {
+		E_g2e ("No PKCS #3 PEM file with DH params",
+			gnutls_load_file (
+				filename,
+				&pkcs3));
+		E_gnutls_clear_errno ();
+		E_g2e ("Failed to initialise DH params",
+			gnutls_dh_params_init (
+				&dhp));
+		E_g2e ("Failed to import DH params from PKCS #3 PEM",
+			gnutls_dh_params_import_pkcs3 (
+				dhp,
+				&pkcs3,
+				GNUTLS_X509_FMT_PEM));
+	}
 	if (pkcs3.data != NULL) {
 		free (pkcs3.data);
 	}
@@ -150,7 +152,7 @@ static gtls_error load_dh_params (void) {
 				GNUTLS_X509_FMT_PEM,
 				&pkcs3));
 		//TODO// Release DH-params lock
-		if (gtls_errno == GNUTLS_E_SUCCESS) {
+		if ((gtls_errno == GNUTLS_E_SUCCESS) && (filename != NULL)) {
 			FILE *pemf;
 			//
 			// Best effor file save -- readback will parse
@@ -467,13 +469,13 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 			}
 		}
 		//
-		// Add (rid,lid) to disclose.db for acceptance.
+		// Add (rid,lid) to db_disclose for acceptance.
 		// Note that this is done within the STARTTLS transaction.
 		// Upon secure setup failure this change will roll back.
-		//TODO// Client => add (rid,lid) to disclose.db within cmd->txn
+		//TODO// Client => add (rid,lid) to db_disclose within cmd->txn
 		//TODO// Decide how to deal with lower-level overrides
 		//
-		// Now reiterate to lookup lid credentials in localid.db
+		// Now reiterate to lookup lid credentials in db_localid
 		E_g2e ("Missing local credentials",
 			fetch_local_credentials (cmd));
 	}
@@ -756,14 +758,14 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 	//
 	// Setup database iterators to map identities to credentials
 	if (lidrole == LID_ROLE_CLIENT) {
-		E_d2ge ("Failed to create disclse.db cursor",
+		E_d2ge ("Failed to create db_disclse cursor",
 			dbh_disclose->cursor (
 				dbh_disclose,
 				cmd->txn,
 				&crs_disclose,
 				0));
 	}
-	E_d2ge ("Failed to create localid.db cursor",
+	E_d2ge ("Failed to create db_localid cursor",
 		dbh_localid->cursor (
 			dbh_localid,
 			cmd->txn,

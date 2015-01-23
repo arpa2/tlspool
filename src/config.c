@@ -59,6 +59,10 @@ enum VARS {
 	CFGVAR_LOG_LEVEL,
 	CFGVAR_LOG_FILTER,
 	CFGVAR_LOG_STDERR,
+	CFGVAR_DBENV_DIR,
+	CFGVAR_DB_LOCALID,
+	CFGVAR_DB_DISCLOSE,
+	CFGVAR_TLS_DHPARAMFILE,
 	//
 	CFGVAR_LENGTH,
 	CFGVAR_NONE = -1
@@ -98,6 +102,10 @@ struct cfgopt config_options [] = {
 	"log_level",		cfg_setvar,	CFGVAR_LOG_LEVEL,
 	"log_filter",		cfg_setvar,	CFGVAR_LOG_FILTER,
 	"log_stderr",		cfg_setvar,	CFGVAR_LOG_STDERR,
+	"dbenv_dir",		cfg_setvar,	CFGVAR_DBENV_DIR,
+	"db_localid",		cfg_setvar,	CFGVAR_DB_LOCALID,
+	"db_disclose",		cfg_setvar,	CFGVAR_DB_DISCLOSE,
+	"tls_dhparamfile",	cfg_setvar,	CFGVAR_TLS_DHPARAMFILE,
 	//
 	NULL,			NULL,		CFGVAR_NONE
 };
@@ -525,6 +533,30 @@ void cfg_cachehost (char *item, int itemno, char *value) {
 		fprintf (stderr, "Failed to add memcached server %s\n");
 		exit (1);
 	//TODO// }
+}
+
+char *cfg_dbenv_dir (void) {
+	return configvars [CFGVAR_DBENV_DIR];
+}
+
+char *cfg_db_localid (void) {
+	char *dbname = configvars [CFGVAR_DB_LOCALID];
+	if (dbname == NULL) {
+		dbname = "localid.db";
+	}
+	return dbname;
+}
+
+char *cfg_db_disclose (void) {
+	char *dbname = configvars [CFGVAR_DB_DISCLOSE];
+	if (dbname == NULL) {
+		dbname = "disclose.db";
+	}
+	return dbname;
+}
+
+char *cfg_tls_dhparamfile (void) {
+	return configvars [CFGVAR_TLS_DHPARAMFILE];
 }
 
 

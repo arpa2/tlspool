@@ -18,3 +18,7 @@ There are many ways in which the current TLS Pool can be improved:
 + Support X.509 certificate chains
 - Derive GnuTLS priority string automatically from credentials for localid
 + Migrate from fprintf (stderr, ...) to syslog()
+- Migrate from file-based SRP to SRP #11 when GnuTLS offers it
+- Add support for TLS-KDH when GnuTLS offers it
++ Move database environment and names into configuration parameters
++ Move DH params file to a configuration parameter

@@ -44,7 +44,7 @@ DB *dbh_disclose = NULL;
 
 
 static int manage_secondary_disclose (DB *secondary, const DBT *key, const DBT *data, DBT *result) {
-	// Do not add anything to the disclose.db automatically; these
+	// Do not add anything to the db_disclose automatically; these
 	// insertions are manually made, in response to end users who
 	// decide to setup access control for a site (or DoNAI).
 	return 0;
@@ -87,36 +87,41 @@ gtls_error setup_management (void) {
 	int gtls_errno = GNUTLS_E_SUCCESS;
 	u_int32_t flags = 0;
 	DB_TXN *tract = NULL;
-	if (errno == 0) {
-		mkdir ("../testdata/tlspool.env", S_IRWXU);
+	char *dbenv_dir;
+
+	dbenv_dir = cfg_dbenv_dir ();
+	if (dbenv_dir != NULL) {
 		if (errno == 0) {
-			tlog (TLOG_DB | TLOG_USER, LOG_NOTICE, "Created DB environment directory");
-		} else {
-			// Failure usually indicates the directory exists.
-			// Whatever it was is ignored silently -- as this
-			// friendly mkdir() does not constitute guaranteed
-			// (or even documented) behaviour.
-			errno = 0;
+			mkdir (dbenv_dir, S_IRWXU);
+			if (errno == 0) {
+				tlog (TLOG_DB | TLOG_USER, LOG_NOTICE, "Created DB environment directory");
+			} else {
+				// Failure usually indicates the directory exists.
+				// Whatever it was is ignored silently -- as this
+				// friendly mkdir() does not constitute guaranteed
+				// (or even documented) behaviour.
+				errno = 0;
+			}
 		}
+		E_d2ge ("Failed to create DB environment handle",
+			db_env_create (&dbenv, 0));
+		E_d2ge ("Failed to open dbenv_dir environment",
+			dbenv->open (dbenv, dbenv_dir, DB_CREATE | DB_RECOVER | DB_INIT_TXN | DB_INIT_LOG | DB_INIT_LOCK | DB_THREAD | DB_INIT_MPOOL, S_IRUSR | S_IWUSR));
 	}
-	E_d2ge ("Failed to create DB environment handle",
-		db_env_create (&dbenv, 0));
-	E_d2ge ("Failed to open DB environment",
-		dbenv->open (dbenv, "../testdata/tlspool.env", DB_CREATE | DB_RECOVER | DB_INIT_TXN | DB_INIT_LOG | DB_INIT_LOCK | DB_THREAD | DB_INIT_MPOOL, S_IRUSR | S_IWUSR));
-	E_d2ge ("Failed to create localid.db handle",
+	E_d2ge ("Failed to create db_localid handle",
 		db_create (&dbh_localid,  dbenv, 0));
-	E_d2ge ("Failed to create disclose.db handle",
+	E_d2ge ("Failed to create db_disclose handle",
 		db_create (&dbh_disclose, dbenv, 0));
 	flags = DB_DUP;
-	E_d2ge ("Failed to set localid.db flags",
+	E_d2ge ("Failed to set db_localid flags",
 		dbh_localid->set_flags (dbh_localid,  flags));
-	E_d2ge ("Failed to set disclose.db flags",
+	E_d2ge ("Failed to set db_disclose flags",
 		dbh_disclose->set_flags (dbh_disclose, flags));
 	flags = DB_RDONLY | DB_THREAD | DB_AUTO_COMMIT;
-	E_d2ge ("Failed to open localid.db",
-		dbh_localid->open (dbh_localid,  tract, "../localid.db",  NULL, DB_HASH, flags, 0));
-	E_d2ge ("Failed to open disclose.db",
-		dbh_disclose->open (dbh_disclose, tract, "../disclose.db", NULL, DB_HASH, flags, 0));
+	E_d2ge ("Failed to open db_localid",
+		dbh_localid->open (dbh_localid,  tract, cfg_db_localid (),  NULL, DB_HASH, flags, 0));
+	E_d2ge ("Failed to open db_disclose",
+		dbh_disclose->open (dbh_disclose, tract, cfg_db_disclose (), NULL, DB_HASH, flags, 0));
 	if (gtls_errno != 0) {
 		cleanup_management ();
 	}
