@@ -24,7 +24,7 @@
 
 
 #include "manage.h"
-#include "localid.h"
+#include "donai.h"
 
 
 #if EXPECTED_LID_TYPE_COUNT != LID_TYPE_CNT
@@ -1161,6 +1161,14 @@ void cleanup_handler_credentials (void) {
 
 
 /*
+ * Check if a given cmd has the given LID_TYPE setup.
+ * Return 1 for yes or 0 for no; this is used in priority strings.
+ */
+static inline int lidtpsup (struct command *cmd, int lidtp) {
+	return cmd->lids [lidtp - LID_TYPE_MIN].data != NULL;
+}
+
+/*
  * The starttls_thread is a main program for the setup of a TLS connection,
  * either in client mode or server mode.  Note that the distinction between
  * client and server mode is only a TLS concern, but not of interest to the
@@ -1320,20 +1328,40 @@ static void *starttls_thread (void *cmd_void) {
 		fetch_local_credentials (cmd));
 
 	//
-	// Setup the priority string for this session
-	// TODO: Derive the sting from available local identities
+	// Setup the priority string for this session; this avoids future
+	// credential callbacks that ask for something impossible or
+	// undesired.
+	//
 	// Variation factors:
 	//  - starting configuration (can it be empty?)
 	//  - Configured security parameters (database? variable?)
 	//  - CTYPEs, SRP, ANON-or-not --> fill in as + or - characters
+	//TODO// Support for ANON-DH where appropriate
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
+		char priostr [256];
+		snprintf (priostr, sizeof (priostr)-1,
+			"NORMAL:"
+			"%cCTYPE-X.509:"
+			"%cCTYPE-OPENPGP:"
+			"%cSRP:%cSRP-RSA:%cSRP-DSS:"
+			"%cANON-ECDH:%cANON-DH",
+			lidtpsup (cmd, LID_TYPE_X509)		?'+':'-',
+			lidtpsup (cmd, LID_TYPE_PGP)		?'+':'-',
+			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
+			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
+			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
+			0 /* TODO: ANON-DH */			?'+':'-',
+			0 /* TODO: ANON-DH */			?'+':'-');
+		tlog (TLOG_TLS, LOG_DEBUG, "Constructed priority string %s for local ID %s",
+			priostr, cmd->cmd.pio_data.pioc_starttls.localid);
 		E_g2e ("Failed to set GnuTLS priority string",
 			gnutls_priority_set_direct (
 			session,
 			// "NORMAL:-KX-ALL:+SRP:+SRP-RSA:+SRP-DSS",
-			"NORMAL:+CTYPE-X.509:-CTYPE-OPENPGP:+CTYPE-X.509",
+			// "NORMAL:+CTYPE-X.509:-CTYPE-OPENPGP:+CTYPE-X.509",
 			// "NORMAL:-CTYPE-X.509:+CTYPE-OPENPGP:-CTYPE-X.509",
 			// "NORMAL:+ANON-ECDH:+ANON-DH",
+			priostr,
 			NULL));
 	}
 

@@ -6,8 +6,9 @@ There are many ways in which the current TLS Pool can be improved:
 + Support for all of X.509, OpenPGP and SRP schemes (undecided on PSK)
 + Extension of GnuTLS' PKCS #11 support to OpenPGP, PSK and SRP
 - TOFU callbacks and storage of (signed?) acceptance
-- Incorporate session resumption (on both ends) (store creds in database?)
+- Incorporate session resumption (on both ends) (store creds in memcache?)
 - Key derivation API with the PRF functionality of TLS 1.2 (RFC 5705)
+- RFC 5705: repeated seeding labels? overlap proto-fixed ones? session revival?
 + Error translation from GnuTLS and BerkeleyDB to errno (with detail report)
 + Transactions for an entire thread
 - Thread cleanup with pthread_setcanceltype(), pthread_cleanup_push()
@@ -16,9 +17,12 @@ There are many ways in which the current TLS Pool can be improved:
 - Regularly refresh DH parameters ; find out how to apply refcnt and/or locks
 - Introduce (at least a basic form of) certificate validation
 + Support X.509 certificate chains
-- Derive GnuTLS priority string automatically from credentials for localid
++ Derive GnuTLS priority string automatically from credentials for localid
 + Migrate from fprintf (stderr, ...) to syslog()
 - Migrate from file-based SRP to SRP #11 when GnuTLS offers it
 - Add support for TLS-KDH when GnuTLS offers it
 + Move database environment and names into configuration parameters
 + Move DH params file to a configuration parameter
+- Explain how to generate X.509 and GnuPG certificates with PKCS #11
+- Recognise callbacks with a "same" file handle as session access requests
+- Move PID file handling to daemon.c; make -k switch after new initialisation
