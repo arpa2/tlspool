@@ -1,6 +1,8 @@
 /* tlspool/handler.c -- Setup and validation handler for TLS session */
 
 
+#include <config.h>
+
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>

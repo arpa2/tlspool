@@ -1,5 +1,7 @@
 /* tlspool/service.c -- TLS pool service, socket handling, command dispatcher */
 
+#include <config.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -10,10 +12,6 @@
 #include <syslog.h>
 #include <fcntl.h>
 #include <poll.h>
-
-#ifdef __GNUC__
-#include <mcheck.h>
-#endif
 
 #include <sys/types.h>
 #include <sys/socket.h>

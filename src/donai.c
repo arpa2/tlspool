@@ -1,5 +1,6 @@
 /* tlspool/localid.c -- Map the keys of local identities to credentials */
 
+#include <config.h>
 
 #include <stdlib.h>
 #include <string.h>

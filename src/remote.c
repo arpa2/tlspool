@@ -1,6 +1,8 @@
 /* tlspool/remote.c -- Contact remote information sources like DNS and LDAP */
 
 
+#include <config.h>
+
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
