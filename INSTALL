@@ -72,6 +72,9 @@ As this is basically developer's test infra, again, your mileage may vary.
 The following test demonstrates proper working of the TLS Pool based on
 the testdata and under the warnings above:
 
+	useradd tlspool
+	chown -R tlspool:tlspool testdata
+
 	cd src
 	./tlspool -kc ../etc/tlspool.conf
 	../tool/tlstunnel -s -L testsrv@tlspool.arpa2.lab ::1 22335 2001:db8::1234 80
