@@ -8,7 +8,6 @@
 #include <stdio.h>
 #include <memory.h>
 #include <pthread.h>
-#include <alloca.h>
 
 #include <unistd.h>
 #include <syslog.h>

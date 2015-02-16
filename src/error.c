@@ -21,6 +21,23 @@
 #include <tlspool/internal.h>
 
 
+#ifndef ENOKEY
+#define ENOKEY ENOENT
+#endif
+
+#ifndef EREMOTEIO
+#define EREMOTEIO EIO
+#endif
+
+#ifndef ENODATA
+#define ENODATA ENOENT
+#endif
+
+#ifndef ENOTRECOVERABLE
+#define ENOTRECOVERABLE EIO
+#endif
+
+
 /* Data structures for logging configuration */
 
 static unsigned int log_filter;
