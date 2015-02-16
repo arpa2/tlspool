@@ -1,0 +1,10 @@
+prefix=/home/vanrein/tlspool
+exec_prefix=${prefix}/bin
+includedir=${prefix}/include
+libdir=${exec_prefix}/lib
+
+Name: tlspool
+Description: TLS Pool -- transport security external of application processes
+Version: 0.0.0
+Cflags: -I${includedir}
+# Libs: -L${libdir} -lfoo
