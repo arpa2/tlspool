@@ -133,6 +133,7 @@ static gtls_error load_dh_params (void) {
 				dhp,
 				&pkcs3,
 				GNUTLS_X509_FMT_PEM));
+		E_gnutls_clear_errno ();
 	}
 	if (pkcs3.data != NULL) {
 		free (pkcs3.data);
