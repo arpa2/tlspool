@@ -2,7 +2,10 @@
 # Autoconfiguration for the TLS Pool
 #
 AC_INIT([tlspool], [0.1], [rick@openfortress.nl])
+AC_USE_SYSTEM_EXTENSIONS
+AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE([foreign -Wall -Werror dist-bzip2])
+LT_INIT
 
 #
 # Package configuration
@@ -34,10 +37,9 @@ PKG_CHECK_MODULES(
 #
 # Compiler environment
 #
-AC_USE_SYSTEM_EXTENSIONS
 AC_PROG_CC
-AC_PROG_RANLIB
-#FreeBSD# AM_PROG_AR
+#obsoleted by libtool# AC_PROG_RANLIB
+#starting automake-1.12# AM_PROG_AR
 
 AC_C_INLINE
 if test "$ac_cv_c_inline" == no ; then
@@ -105,7 +107,7 @@ AC_CHECK_LIB([db-5.1], [db_env_create], [AC_SUBST([BDB_LIBS], [-ldb-5.1])])
 AC_CHECK_LIB([db-5.2], [db_env_create], [AC_SUBST([BDB_LIBS], [-ldb-5.2])])
 AC_CHECK_LIB([db]    , [db_env_create], [AC_SUBST([BDB_LIBS], [-ldb]    )])
 
-if [[ "x${BDB_LIBS}" == "x" ]]
+if [test "x${BDB_LIBS}" == "x" ]
 then
 	AC_MSG_ERROR([Failed to find a suitable BerkeleyDB library])
 fi

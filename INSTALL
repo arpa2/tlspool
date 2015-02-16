@@ -10,15 +10,17 @@ Dependencies
 
 Runtime dependencies are:
 
- * libgnutls for TLS handling
- * libldns for DNS lookups
- * libldap for LDAP lookups
- * libmemcached for caching of intermediate results
- * libp11 for PKCS #11 URI handling
- * TODO: libradius to do additional authn / authz [/acct]
- * the PKCS #11 implementation of your choice
+ * libgnutls >= 3.2.21 for TLS handling (that implies libnettle-2.7)
+ * p11-kit >= 0.22.1 for PKCS #11 URI handling
+ * libdb >= 4.0 for key->value lookup with BerkeleyDB transactions/replication
+ * libtasn1 for parsing of BER and DER data structures
+ * NOT-YET: libldns for DNS lookups
+ * NOT-YET: libldap for LDAP lookups
+ * NOT-YETlibmemcached for caching of intermediate results
+ * NOT-YET: libradius to do additional authn / authz [/acct]
+ * the PKCS #11 implementation of your choice (for easy entrance: softhsm)
 
-Include the development variants if your aim is to build it yourself.
+Include the development variants if your aim is to build your own TLS Pool.
 
 TODO: We should probably consider build variations to avoid requiring all
 these dependencies when only a bit is kwown to be required.  That's the
@@ -31,22 +33,94 @@ First-time setup
 Create a user and group "tlspool" if you wish to drop privileges to a
 separate account.
 
+Run the script bootstrap.sh to initiate the autotools environment::
+
+	sh bootstrap.sh
+
+Then, continue as always::
+
+	./configure
+	make
+	make install
 
 Building
 --------
 
-There is no ./configure, because automake and such tend to clutter
-development and Makefile readability.  If you'd care to donate one
-of these confusing structures, talk to me and I'll probably let you.
-
-There are two sub-targets with their own Makefiles:
+There are three sub-targets with their own Makefiles:
 
  * src/* hosts the daemon, which is an executable named "tlspool"
  * lib/* hosts the stub library for applications, and provides:
     - "libstarttls.a" and "libstarttls.so" to append to applications
+ * tool/* hosts a few demonstration applications, and provides:
     - "testcli" and "testsrv" test/demo apps, for line-based chat
+    - "tlstunnel" as a plaintext-to-TLS or TLS-to-plaintext passthrough
 
-You should simpy "make" in each of the directories.
+The main directory "make" will also make all these subdirectory projects.
+
+
+Testing
+-------
+
+The source package includes a "testdata" directory which holds prepared
+databases that you can use for a quick and dirty test.  Your mileage may
+vary though; it was made with BerkeleyDB 4.8 on amd64 hardware, and the
+database files may contain assumptions about that platform.
+
+The databases may also be rebuilt using the Makefile in the directory.
+As this is basically developer's test infra, again, your mileage may vary.
+
+The following test demonstrates proper working of the TLS Pool based on
+the testdata and under the warnings above:
+
+	cd src
+	./tlspool -kc ../etc/tlspool.conf
+	../tool/tlstunnel -s -L testsrv@tlspool.arpa2.lab ::1 22335 2001:db8::1234 80
+	../tool/tlstunnel -c -L testcli@tlspool.arpa2.lab -R testsrv@tlspool.arpa2.lab ::1 22334 ::1 22335
+	nc ::1 22334
+
+The `tlspool` binary is the TLS Pool itself.
+
+The `tlstunnel -s` is a server-side TLS unwrapper.  It receives TLS traffic
+on `::1 22335`, uses the TLS Pool to unwrap it, and forwards the traffic
+to `2001:db8::1234 80`, usually a web server.  You should provide your own
+IPv6 server address of choice.  Note that it is possible to enter an IPv4
+address as if it were an IPv6 address by prefixing it with two colons, as in
+`::123.45.67.89`.  The identity of the server is `testsrv@tlspool.arpa2.lab`
+and that is all that the tunnel needs to know; it will ask the TLS Pool to
+fill in the credentials belonging to this identity.
+
+The `tlstunnel -c` is a client-side TLS wrapper.  It receives plaintext
+traffic on `::1 22334`, uses the TLS Pool to wrap it in TLS, and forwards
+the traffic to `::1 22335`, which was not quite coincidentally configured
+before as a TLS-unwrapping server.  The client needs to know both its local
+identity, `testcli@tlspool.arpa2.lab`, as the server's.  The local identity
+is used to access the client credentials, as was done on the server, and the
+remote identity is used to determine if the client identity may be disclosed
+to this server; furthermore, the identity is used for TLS' Server Name
+Indication, which helps with virtual hosting of TLS-secured websites.  (And
+only websites, really, as all other protocols have embraced a `STARTTLS`
+method -- it is mostly everyone's popular protocol in the World that has become
+unable to evolve.)
+
+It is admittedly silly to run the client and server on the same machine, but
+it serves as a quick test, and isolates any networking trouble that might
+creep up in a distributed test.
+
+The identities shown here are in fact a bit silly for a website, which does
+not normally use a `user@` part --another thing in which the web is lagging
+behind other protocols-- but the applications don't mind that because they
+are not aware if the application used is a web server.  It is assumed that
+the application would not supply silly identifiers in a real setup.
+
+Finally, and perhaps smashingly, this simple demonstration already shows a
+power of the TLS Pool: both client and server are capable of using credentials
+in the X.509 and OpenPGP formats.  WireShark should show you that the client
+offers both `cert_type` values in an extension, and the server selects one
+that it likes.  If the server prefers to use OpenPGP then your luck with
+WireShark may change; at the time of this writing, even the newest versions
+are unable to decode the OpenPGP certificate type.  As a result, a perfectly
+good exchange will cry for attention in WireShark, assuming packet formatting
+errors.
 
 
 Running
