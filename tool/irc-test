@@ -1,0 +1,22 @@
+#!/usr/bin/expect -f
+
+set timeout 5
+stty echo
+
+spawn /bin/nc ::1 6667
+
+sleep 5
+send "user somename - - - \r\n"
+sleep 1
+send "nick testcli-tlspool-arpa2-lab\r\n"
+
+sleep 2
+send "join #tlspool\r\n"
+
+sleep 1
+send "privmsg #tlspool :Hello darlings!\r\n"
+
+sleep 1
+send "privmsg testloner :Hi dear\r\n"
+
+sleep 60

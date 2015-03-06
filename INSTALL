@@ -69,6 +69,13 @@ database files may contain assumptions about that platform.
 The databases may also be rebuilt using the Makefile in the directory.
 As this is basically developer's test infra, again, your mileage may vary.
 
+The same applies to a softhsm database; it is present, and your mileage
+may vary.  To use it, make sure that `tlspool.conf` points to the library
+for softhsm v1, and setup the softhsm configuration to point to the
+database in the `testdata` directory.  This setup tells the TLS Pool how
+to access the PKCS #11 library, which in turn accesses the test data
+used in the examples below.
+
 The following test demonstrates proper working of the TLS Pool based on
 the testdata and under the warnings above:
 

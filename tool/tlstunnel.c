@@ -100,6 +100,38 @@ int str2port (char *portstr) {
 }
 
 
+#ifdef INVOKE_EXTERNAL_PROCESS_THROUGH_FORK_EXECVE
+int chat (int plainfd, int skipc, int argc, char *argv []) {
+	int pppexit = 0;
+	//
+	// Fork off a STARTTLS chat session
+	switch (fork ()) {
+	case -1:
+		perror ("Failed to fork ppp-style chat script");
+		return 1;
+	case 0:
+		close (0);
+		close (1);
+		if ((dup2 (plainfd, 0) == -1) || (dup2 (plainfd, 1) == -1)) {
+			fprintf (stderr, "Failed to connect plaintext to the %s interaction\n", argv [0]);
+			exit (2);
+		}
+		fprintf (stderr, "Starting script + args: %s, %s, %s...\n", argv [0], argv [1], argv [2]);
+		execve (argv [0], argv, NULL /*TODO:envp*/);
+		perror ("Failed to start ppp-style chat script");
+		exit (2);		// See chat(8)
+	default:
+		wait (&pppexit);
+		if (!WIFEXITED (pppexit)) {
+			return 2;	// See chat(8)
+		}
+		return WEXITSTATUS (pppexit);
+	}
+}
+#else
+int chat (int plainfd, int skipc, int argc, char *argv []);
+#endif /* INVOKE_EXTERNAL_PROCESS_THROUGH_FORK_EXECVE */
+
 int main (int argc, char *argv []) {
 	int parsing = 1;
 	int carrier = -1;
@@ -112,11 +144,12 @@ int main (int argc, char *argv []) {
 	char *remotid = NULL;
 	char *cmdsoxpath = NULL;
 	int sox = -1;
+	int argc_skip;
 	//
 	// Parse the command line arguments
 	while (parsing) {
 		//TODO// getlongopt
-		int opt = getopt (argc, argv, "csutx:y:L:R:S:");
+		int opt = getopt (argc, argv, "csutx:y:p:L:R:S:");
 		switch (opt) {
 		case 'c':
 		case 's':
@@ -191,8 +224,8 @@ int main (int argc, char *argv []) {
 		fprintf (stderr, "You need to specify -L\n");
 		exit (1);
 	}
-	if (argc != optind + 4) {
-		fprintf (stderr, "After options, specify: inaddr inport fwaddr fwport\n");
+	if (argc < optind + 4) {
+		fprintf (stderr, "After options, specify: inaddr inport fwaddr fwport [[--] pppscriptargs]\n");
 		exit (1);
 	}
 	if (carrier == -1) {
@@ -224,6 +257,14 @@ int main (int argc, char *argv []) {
 	}
 	insa.sin6_port = htons (str2port (argv [optind + 1]));
 	fwsa.sin6_port = htons (str2port (argv [optind + 3]));
+	optind += 4;
+	//
+	// Collect the chatscript arguments
+	if (optind >= argc) {
+		fprintf (stderr, "Warning: Not running chat script in lieu of arguments\n");
+	}
+	argc_skip = optind;	/* First is an argument, not program name! */
+	printf ("argv_chat = %s, %s, %s... (skipped %d)\n", argv [argc_skip], argv [argc_skip+1], argv [argc_skip+1], argc_skip);
 	//
 	// Listen to the incoming address
 	switch (carrier) {
@@ -253,6 +294,7 @@ int main (int argc, char *argv []) {
 		perror ("Failed to listen to socket");
 		exit (1);
 	}
+
 	//
 	// Fork off a daemon process
 	switch (fork ()) {
@@ -274,6 +316,7 @@ int main (int argc, char *argv []) {
 	while (1) {
 		int cnx;
 		int fwd;
+		int setup;
 		struct copydata *sub;
 		starttls_t curtlsdata;
 		memcpy (&curtlsdata, &tlsdata, sizeof (curtlsdata));
@@ -283,6 +326,12 @@ int main (int argc, char *argv []) {
 			continue;
 		}
 		if (role == 's') {
+			setup = chat (cnx, argc_skip, argc, argv);
+			if (setup != 0) {
+				fprintf (stderr, "Failed while chatting to the forwarded client, error code %d\n", setup);
+				close (cnx);
+				continue;
+			}
 			cnx = starttls_server (cnx, &curtlsdata, NULL);
 			if (cnx == -1) {
 				perror ("Failed to setup TLS server");
@@ -311,6 +360,13 @@ int main (int argc, char *argv []) {
 			continue;
 		}
 		if (role == 'c') {
+			setup = chat (fwd, argc_skip, argc, argv);
+			if (setup != 0) {
+				fprintf (stderr, "Failed while chatting to the forwarding server, error code %d\n", setup);
+				close (fwd);
+				close (cnx);
+				continue;
+			}
 			fwd = starttls_client (fwd, &curtlsdata);
 			if (fwd == -1) {
 				perror ("Failed to setup TLS client");

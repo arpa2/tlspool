@@ -1,0 +1,7 @@
+ECHO ON
+TIMEOUT 10
+"220 " "EHLO example.org\r\n\c"
+"250-STARTTLS" "\c"
+"250 " "STARTTLS\r\n\c"
+"220 " "\c"
+"\n"
