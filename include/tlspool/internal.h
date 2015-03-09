@@ -161,19 +161,6 @@ void error_setstring (char *);
 	} \
 }
 
-/* Map a GnuTLS call (usually a function call) to a POSIX errno,
- * optionally reporting an errstr to avoid loosing information.
- * Retain errno if it already exists.
- * Continue if errno differs from 0, GnuTLS may "damage" it even when OK. */
-#define E_g2e(errstr,gtlscall) { \
-	if (gtls_errno == GNUTLS_E_SUCCESS) { \
-		int gtls_errno = (gtlscall); \
-		if (gtls_errno != GNUTLS_E_SUCCESS) { \
-			error_gnutls2posix (gtls_errno, errstr); \
-		} \
-	} \
-}
-
 /* Make the successcall only made when errno == 0; the return value from
  * the call should be of type success_t for detection of error and further
  * mapping of errno to errstr.  This is the POSIX counterpart of the GnuTLS
@@ -191,13 +178,6 @@ void error_setstring (char *);
 	} \
 }
 
-/* Cleanup when GnuTLS leaves errno damaged but returns no gtls_errno */
-#define E_gnutls_clear_errno() { \
-	if (gtls_errno == GNUTLS_E_SUCCESS) { \
-		errno = 0; \
-	} \
-}
-
 /* Cleanup when DBM leaves errno damaged but returns no db_errno */
 #define E_db_clear_errno() { \
 	if (db_errno == 0) { \
@@ -209,7 +189,6 @@ void error_setstring (char *);
  * defined below.
  */
 void error_db2posix (int db_errno, char *errstr);
-void error_gnutls2posix (int gtls_errno, char *errstr);
 void error_posix2strings (char *errstr);
 
 

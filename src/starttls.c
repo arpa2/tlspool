@@ -87,6 +87,262 @@ static int srv_credcount = 0;
 static int cli_credcount = 0;
 
 
+/* Map a GnuTLS call (usually a function call) to a POSIX errno,
+ * optionally reporting an errstr to avoid loosing information.
+ * Retain errno if it already exists.
+ * Continue if errno differs from 0, GnuTLS may "damage" it even when OK. */
+#define E_g2e(errstr,gtlscall) { \
+	if (gtls_errno == GNUTLS_E_SUCCESS) { \
+		int gtls_errno = (gtlscall); \
+		if (gtls_errno != GNUTLS_E_SUCCESS) { \
+			error_gnutls2posix (gtls_errno, errstr); \
+		} \
+	} \
+}
+
+/* Cleanup when GnuTLS leaves errno damaged but returns no gtls_errno */
+#define E_gnutls_clear_errno() { \
+	if (gtls_errno == GNUTLS_E_SUCCESS) { \
+		errno = 0; \
+	} \
+}
+
+/* Error number translation, including error string setup.  See E_g2e(). */
+void error_gnutls2posix (int gtls_errno, char *new_errstr) {
+	char *errstr;
+	register int newerrno;
+	//
+	// Sanity checks
+	if (gtls_errno == GNUTLS_E_SUCCESS) {
+		return;
+	}
+	errstr =  error_getstring ();
+	if (errstr != NULL) {
+		return;
+	}
+	//
+	// Report the textual error
+	if (new_errstr == NULL) {
+		new_errstr = "GnuTLS error";
+	}
+	tlog (TLOG_TLS, LOG_ERR, "%s: %s",
+		new_errstr,
+		gnutls_strerror (gtls_errno));
+	error_setstring (new_errstr);
+	//
+	// Translate error to a POSIX errno value
+	switch (gtls_errno) {
+	case GNUTLS_E_SUCCESS:
+		return;
+	case GNUTLS_E_UNKNOWN_COMPRESSION_ALGORITHM:
+	case GNUTLS_E_UNKNOWN_CIPHER_TYPE:
+	case GNUTLS_E_UNSUPPORTED_VERSION_PACKET:
+	case GNUTLS_E_UNWANTED_ALGORITHM:
+	case GNUTLS_E_UNKNOWN_CIPHER_SUITE:
+	case GNUTLS_E_UNSUPPORTED_CERTIFICATE_TYPE:
+	case GNUTLS_E_X509_UNKNOWN_SAN:
+	case GNUTLS_E_DH_PRIME_UNACCEPTABLE:
+	case GNUTLS_E_UNKNOWN_PK_ALGORITHM:
+	case GNUTLS_E_NO_TEMPORARY_RSA_PARAMS:
+	case GNUTLS_E_NO_COMPRESSION_ALGORITHMS:
+	case GNUTLS_E_NO_CIPHER_SUITES:
+	case GNUTLS_E_OPENPGP_FINGERPRINT_UNSUPPORTED:
+	case GNUTLS_E_X509_UNSUPPORTED_ATTRIBUTE:
+	case GNUTLS_E_UNKNOWN_HASH_ALGORITHM:
+	case GNUTLS_E_UNKNOWN_PKCS_CONTENT_TYPE:
+	case GNUTLS_E_UNKNOWN_PKCS_BAG_TYPE:
+	case GNUTLS_E_NO_TEMPORARY_DH_PARAMS:
+	case GNUTLS_E_UNKNOWN_ALGORITHM:
+	case GNUTLS_E_UNSUPPORTED_SIGNATURE_ALGORITHM:
+	case GNUTLS_E_UNSAFE_RENEGOTIATION_DENIED:
+	case GNUTLS_E_X509_UNSUPPORTED_OID:
+	case GNUTLS_E_CHANNEL_BINDING_NOT_AVAILABLE:
+	case GNUTLS_E_INCOMPAT_DSA_KEY_WITH_TLS_PROTOCOL:
+	case GNUTLS_E_ECC_NO_SUPPORTED_CURVES:
+	case GNUTLS_E_ECC_UNSUPPORTED_CURVE:
+	case GNUTLS_E_X509_UNSUPPORTED_EXTENSION:
+	case GNUTLS_E_NO_CERTIFICATE_STATUS:
+	case GNUTLS_E_NO_APPLICATION_PROTOCOL:
+#ifdef GNUTLS_E_NO_SELF_TEST
+	case GNUTLS_E_NO_SELF_TEST:
+#endif
+		newerrno = EOPNOTSUPP;
+		break;
+	case GNUTLS_E_UNEXPECTED_PACKET_LENGTH:
+	case GNUTLS_E_INVALID_REQUEST:
+		newerrno = EINVAL;
+		break;
+	case GNUTLS_E_INVALID_SESSION:
+	case GNUTLS_E_REHANDSHAKE:
+	case GNUTLS_E_CERTIFICATE_KEY_MISMATCH:
+		newerrno = ENOTCONN;
+		break;
+	case GNUTLS_E_PUSH_ERROR:
+	case GNUTLS_E_PULL_ERROR:
+	case GNUTLS_E_PREMATURE_TERMINATION:
+	case GNUTLS_E_SESSION_EOF:
+		newerrno = ECONNRESET;
+		break;
+	case GNUTLS_E_UNEXPECTED_PACKET:
+	case GNUTLS_E_WARNING_ALERT_RECEIVED:
+	case GNUTLS_E_FATAL_ALERT_RECEIVED:
+	case GNUTLS_E_LARGE_PACKET:
+	case GNUTLS_E_ERROR_IN_FINISHED_PACKET:
+	case GNUTLS_E_UNEXPECTED_HANDSHAKE_PACKET:
+	case GNUTLS_E_MPI_SCAN_FAILED:
+	case GNUTLS_E_DECRYPTION_FAILED:
+	case GNUTLS_E_DECOMPRESSION_FAILED:
+	case GNUTLS_E_COMPRESSION_FAILED:
+	case GNUTLS_E_BASE64_DECODING_ERROR:
+	case GNUTLS_E_MPI_PRINT_FAILED:
+	case GNUTLS_E_GOT_APPLICATION_DATA:
+	case GNUTLS_E_RECORD_LIMIT_REACHED:
+	case GNUTLS_E_ENCRYPTION_FAILED:
+	case GNUTLS_E_PK_ENCRYPTION_FAILED:
+	case GNUTLS_E_PK_DECRYPTION_FAILED:
+	case GNUTLS_E_RECEIVED_ILLEGAL_PARAMETER:
+	case GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE:
+	case GNUTLS_E_PKCS1_WRONG_PAD:
+	case GNUTLS_E_RECEIVED_ILLEGAL_EXTENSION:
+	case GNUTLS_E_FILE_ERROR:
+	case GNUTLS_E_ASN1_ELEMENT_NOT_FOUND:
+	case GNUTLS_E_ASN1_IDENTIFIER_NOT_FOUND:
+	case GNUTLS_E_ASN1_DER_ERROR:
+	case GNUTLS_E_ASN1_VALUE_NOT_FOUND:
+	case GNUTLS_E_ASN1_GENERIC_ERROR:
+	case GNUTLS_E_ASN1_VALUE_NOT_VALID:
+	case GNUTLS_E_ASN1_TAG_ERROR:
+	case GNUTLS_E_ASN1_TAG_IMPLICIT:
+	case GNUTLS_E_ASN1_TYPE_ANY_ERROR:
+	case GNUTLS_E_ASN1_SYNTAX_ERROR:
+	case GNUTLS_E_ASN1_DER_OVERFLOW:
+	case GNUTLS_E_TOO_MANY_EMPTY_PACKETS:
+	case GNUTLS_E_TOO_MANY_HANDSHAKE_PACKETS:
+	case GNUTLS_E_SRP_PWD_PARSING_ERROR:
+	case GNUTLS_E_BASE64_ENCODING_ERROR:
+	case GNUTLS_E_OPENPGP_KEYRING_ERROR:
+	case GNUTLS_E_BASE64_UNEXPECTED_HEADER_ERROR:
+	case GNUTLS_E_OPENPGP_SUBKEY_ERROR:
+	case GNUTLS_E_CRYPTO_ALREADY_REGISTERED:
+	case GNUTLS_E_HANDSHAKE_TOO_LARGE:
+	case GNUTLS_E_BAD_COOKIE:
+	case GNUTLS_E_PARSING_ERROR:
+	case GNUTLS_E_CERTIFICATE_LIST_UNSORTED:
+	case GNUTLS_E_NO_PRIORITIES_WERE_SET:
+#ifdef GNUTLS_E_PK_GENERATION_ERROR
+	case GNUTLS_E_PK_GENERATION_ERROR:
+#endif
+#ifdef GNUTLS_E_SELF_TEST_ERROR
+	case GNUTLS_E_SELF_TEST_ERROR:
+#endif
+#ifdef GNUTLS_E_SOCKETS_INIT_ERROR
+	case GNUTLS_E_SOCKETS_INIT_ERROR:
+#endif
+		newerrno = EIO;
+		break;
+	case GNUTLS_E_MEMORY_ERROR:
+	case GNUTLS_E_SHORT_MEMORY_BUFFER:
+		newerrno = ENOMEM;
+		break;
+	case GNUTLS_E_AGAIN:
+		newerrno = EAGAIN;
+		break;
+	case GNUTLS_E_EXPIRED:
+	case GNUTLS_E_TIMEDOUT:
+		newerrno = ETIMEDOUT;
+		break;
+	case GNUTLS_E_DB_ERROR:
+#ifdef ENODATA
+		newerrno = ENODATA;
+#else
+		newerrno = ENOENT;
+#endif
+		break;
+	case GNUTLS_E_SRP_PWD_ERROR:
+	case GNUTLS_E_INSUFFICIENT_CREDENTIALS:
+	case GNUTLS_E_HASH_FAILED:
+	case GNUTLS_E_PK_SIGN_FAILED:
+	case GNUTLS_E_CERTIFICATE_ERROR:
+	case GNUTLS_E_X509_UNSUPPORTED_CRITICAL_EXTENSION:
+	case GNUTLS_E_KEY_USAGE_VIOLATION:
+	case GNUTLS_E_NO_CERTIFICATE_FOUND:
+	case GNUTLS_E_OPENPGP_UID_REVOKED:
+	case GNUTLS_E_OPENPGP_GETKEY_FAILED:
+	case GNUTLS_E_PK_SIG_VERIFY_FAILED:
+	case GNUTLS_E_ILLEGAL_SRP_USERNAME:
+	case GNUTLS_E_INVALID_PASSWORD:
+	case GNUTLS_E_MAC_VERIFY_FAILED:
+	case GNUTLS_E_IA_VERIFY_FAILED:
+	case GNUTLS_E_UNKNOWN_SRP_USERNAME:
+	case GNUTLS_E_OPENPGP_PREFERRED_KEY_ERROR:
+	case GNUTLS_E_USER_ERROR:
+	case GNUTLS_E_AUTH_ERROR:
+		newerrno = EACCES;
+		break;
+	case GNUTLS_E_INTERRUPTED:
+		newerrno = EINTR;
+		break;
+	case GNUTLS_E_INTERNAL_ERROR:
+	case GNUTLS_E_CONSTRAINT_ERROR:
+	case GNUTLS_E_ILLEGAL_PARAMETER:
+		newerrno = EINVAL;
+		break;
+	case GNUTLS_E_SAFE_RENEGOTIATION_FAILED:
+		newerrno = ECONNREFUSED;
+		break;
+	case GNUTLS_E_INCOMPATIBLE_GCRYPT_LIBRARY:
+	case GNUTLS_E_INCOMPATIBLE_LIBTASN1_LIBRARY:
+#ifdef GNUTLS_E_LIB_IN_ERROR_STATE
+	case GNUTLS_E_LIB_IN_ERROR_STATE:
+#endif
+		newerrno = ENOEXEC;
+		break;
+	case GNUTLS_E_RANDOM_FAILED:
+		newerrno = EBADF;
+		break;
+	case GNUTLS_E_CRYPTODEV_IOCTL_ERROR:
+	case GNUTLS_E_CRYPTODEV_DEVICE_ERROR:
+	case GNUTLS_E_HEARTBEAT_PONG_RECEIVED:
+	case GNUTLS_E_HEARTBEAT_PING_RECEIVED:
+	case GNUTLS_E_PKCS11_ERROR:
+	case GNUTLS_E_PKCS11_LOAD_ERROR:
+	case GNUTLS_E_PKCS11_PIN_ERROR:
+	case GNUTLS_E_PKCS11_SLOT_ERROR:
+	case GNUTLS_E_LOCKING_ERROR:
+	case GNUTLS_E_PKCS11_ATTRIBUTE_ERROR:
+	case GNUTLS_E_PKCS11_DEVICE_ERROR:
+	case GNUTLS_E_PKCS11_DATA_ERROR:
+	case GNUTLS_E_PKCS11_UNSUPPORTED_FEATURE_ERROR:
+	case GNUTLS_E_PKCS11_KEY_ERROR:
+	case GNUTLS_E_PKCS11_PIN_EXPIRED:
+	case GNUTLS_E_PKCS11_PIN_LOCKED:
+	case GNUTLS_E_PKCS11_SESSION_ERROR:
+	case GNUTLS_E_PKCS11_SIGNATURE_ERROR:
+	case GNUTLS_E_PKCS11_TOKEN_ERROR:
+	case GNUTLS_E_PKCS11_USER_ERROR:
+	case GNUTLS_E_CRYPTO_INIT_FAILED:
+	case GNUTLS_E_PKCS11_REQUESTED_OBJECT_NOT_AVAILBLE:
+	case GNUTLS_E_TPM_ERROR:
+	case GNUTLS_E_TPM_KEY_PASSWORD_ERROR:
+	case GNUTLS_E_TPM_SRK_PASSWORD_ERROR:
+	case GNUTLS_E_TPM_SESSION_ERROR:
+	case GNUTLS_E_TPM_KEY_NOT_FOUND:
+	case GNUTLS_E_TPM_UNINITIALIZED:
+	case GNUTLS_E_OCSP_RESPONSE_ERROR:
+	case GNUTLS_E_RANDOM_DEVICE_ERROR:
+#ifdef EREMOTEIO
+		newerrno = EREMOTEIO;
+#else
+		newerrno = EIO;
+#endif
+		break;
+	default:
+		newerrno = EIO;
+		break;
+	}
+	errno = newerrno;
+	return;
+}
 
 /* Generate Diffie-Hellman parameters - for use with DHE
  * kx algorithms. TODO: These should be discarded and regenerated
@@ -1446,6 +1702,12 @@ static void *starttls_thread (void *cmd_void) {
 	}
 
 	//
+	// Check if past code stored an error code through POSIX
+	if (cmd->session_errno) {
+		gtls_errno = GNUTLS_E_USER_ERROR;
+	}
+
+	//
 	// Now setup for the GnuTLS handshake
 	//
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
@@ -1454,7 +1716,11 @@ static void *starttls_thread (void *cmd_void) {
 	}
 	if (gtls_errno != GNUTLS_E_SUCCESS) {
 		tlog (TLOG_TLS, LOG_ERR, "Failed to prepare for TLS: %s", gnutls_strerror (gtls_errno));
-		send_error (cmd, EIO, "Failed to prepare for TLS");
+		if (cmd->session_errno) {
+			send_error (cmd, cmd->session_errno, error_getstring ());
+		} else {
+			send_error (cmd, EIO, "Failed to prepare for TLS");
+		}
 		close (soxx [0]);
 		close (soxx [1]);
 		close (passfd);
@@ -1463,6 +1729,9 @@ static void *starttls_thread (void *cmd_void) {
 	do {
 		gtls_errno = gnutls_handshake (session);
         } while ((gtls_errno < 0) && (gnutls_error_is_fatal (gtls_errno) == 0));
+	if ((gtls_errno == GNUTLS_E_SUCCESS) && cmd->session_errno) {
+		gtls_errno = GNUTLS_E_USER_ERROR;
+	}
 
 	//
 	// Cleanup any prefetched identities
@@ -1496,7 +1765,12 @@ static void *starttls_thread (void *cmd_void) {
 	if (gtls_errno != GNUTLS_E_SUCCESS) {
 		gnutls_deinit (session);
 		tlog (TLOG_TLS, LOG_ERR, "TLS handshake failed: %s", gnutls_strerror (gtls_errno));
-		send_error (cmd, EPERM, "TLS handshake failed");
+		if (cmd->session_errno) {
+			tlog (TLOG_TLS, LOG_ERR, "Underlying cause may be: %s", strerror (cmd->session_errno));
+			send_error (cmd, cmd->session_errno, error_getstring ());
+		} else {
+			send_error (cmd, EPERM, "TLS handshake failed");
+		}
 		manage_txn_rollback (&cmd->txn);
 		close (soxx [0]);
 		close (soxx [1]);
