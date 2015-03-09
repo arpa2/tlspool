@@ -1,5 +1,6 @@
 /* tlspool/remote.c -- Contact remote information sources like DNS and LDAP */
 
+#ifdef UNCONSIDERED_OLD_CODE_WITHOUT_DB_CONFIGURATION
 
 #include <config.h>
 
@@ -104,3 +105,4 @@ int ldap_fetch_openpgp_cert (gnutls_openpgp_crt_t *pgpcrtdata, char *localid) {
 	//	For domain name, start from the baseDN
 }
 
+#endif /* UNCONSIDERED_OLD_CODE_WITHOUT_DB_CONFIGURATION */

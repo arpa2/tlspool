@@ -15,9 +15,6 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-#include <gnutls/gnutls.h>
-#include <gnutls/abstract.h>
-
 #include <tlspool/internal.h>
 
 #include <pkcs11.h>
@@ -210,15 +207,12 @@ void pinentry_forget_clientfd (int fd) {
 }
 
 
-
-/* Implement the GnuTLS function for token insertion callback.  This function
- * will not contact the user, but it might do that in future versions, using
+/* Implement a callback function for token insertion.  For now, this function
+ * does not contact the user, but it might do that in future versions, using
  * a to-be-defined callback through the socket API.  Talk to me if you think
  * this is useful!
  */
-int gnutls_token_callback (void *const userdata,
-				const char *const label,
-				unsigned retry) {
+success_t token_callback (const char *const label, unsigned retry) {
 	int sleepsecs [4] = { 1, 2, 5, 5 };
 	fprintf (stderr, "Please insert PKCS #11 token \"%s\"\n", label);
 	sleep ((retry >= 4)? 10: sleepsecs [retry]);
@@ -239,19 +233,17 @@ void p11cpy (char *cstr, CK_UTF8CHAR *p11str, int p11len) {
 }
 
 /*
- * Implement the GnuTLS function for PIN callback.  This function will
+ * Implement the generic function for PIN callback.  This function will
  * address the currently set PIN handler connection.
  */
-int gnutls_pin_callback (void *userdata,
-				int attempt,
+success_t pin_callback (	int attempt,
 				const char *token_url,
 				const char *token_label,
-				unsigned int flags,
 				char *pin,
 				size_t pin_max) {
 	struct command *cmd;
 	int appsox;
-	int retval = 0;
+	int retval = 1;
 	P11KitUri *p11kituri;
 	CK_TOKEN_INFO_PTR toktok;
 	char *cfgpin;
@@ -261,7 +253,7 @@ int gnutls_pin_callback (void *userdata,
 	if ((cfgpin != NULL) && (*cfgpin) && (strlen (cfgpin) < pin_max)) {
 		strcpy (pin, cfgpin);
 		tlog (TLOG_PKCS11, LOG_DEBUG, "Returning configured PIN and OK from PIN entry");
-		return 0;
+		return 1;
 	}
 	//
 	// Grab the current PINENTRY registration or report failure
@@ -275,11 +267,11 @@ int gnutls_pin_callback (void *userdata,
 	} else {
 		// There was no PINENTRY command registration
 		//TODO// Wait (some time) for PINENTRY command to show up
-		retval = GNUTLS_A_USER_CANCELED;
+		retval = 0;
 	}
 	pthread_mutex_unlock (&pinentry_lock);
-	if (retval) {
-		tlog (TLOG_PKCS11 | TLOG_USER, LOG_DEBUG, "Returning retval from PIN entry");
+	if (!retval) {
+		tlog (TLOG_PKCS11 | TLOG_USER, LOG_DEBUG, "Returning failure from PIN entry");
 		return retval;
 	}
 	//
@@ -287,18 +279,18 @@ int gnutls_pin_callback (void *userdata,
 	p11kituri = p11_kit_uri_new ();
 	if (!p11kituri) {
 		tlog (TLOG_PKCS11, LOG_CRIT, "Failed to allocate URI for PIN entry");
-		return GNUTLS_A_INTERNAL_ERROR;
+		return 0;
 	}
 	if (p11_kit_uri_parse (token_url, P11_KIT_URI_FOR_TOKEN, p11kituri) != P11_KIT_URI_OK) {
 		p11_kit_uri_free (p11kituri);
 		tlog (TLOG_PKCS11 | TLOG_USER, LOG_ERR, "Failed to parse URI for PIN entry");
-		return GNUTLS_A_DECODE_ERROR;
+		return 0;
 	}
 	toktok = p11_kit_uri_get_token_info (p11kituri);
 	p11_kit_uri_free (p11kituri);
 	if (!toktok) {
 		tlog (TLOG_PKCS11 | TLOG_USER, LOG_ERR, "Failed to find URI token info for PIN entry");
-		return GNUTLS_A_DECODE_ERROR;
+		return 0;
 	}
 	p11cpy (cmd->cmd.pio_data.pioc_pinentry.token_manuf, toktok->manufacturerID, 32);
 	p11cpy (cmd->cmd.pio_data.pioc_pinentry.token_model, toktok->model, 16);
@@ -314,26 +306,24 @@ int gnutls_pin_callback (void *userdata,
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Returnd send_callback_and_await_response()");
 	if ((cmd->cmd.pio_cmd != PIOC_PINENTRY_V1) || !*cmd->cmd.pio_data.pioc_pinentry.pin) {
 		tlog (TLOG_PKCS11 | TLOG_USER, LOG_ERR, "Funny command or empty PIN code for PIN entry");
-		return GNUTLS_A_USER_CANCELED;
+		return 0;
 	}
 	if (1 + strlen (cmd->cmd.pio_data.pioc_pinentry.pin) > pin_max) {
 		tlog (TLOG_PKCS11 | TLOG_USER, LOG_ERR, "PIN too long for PIN entry");
-		return GNUTLS_A_RECORD_OVERFLOW;
+		return 0;
 	}
 	strcpy (pin, cmd->cmd.pio_data.pioc_pinentry.pin);
 	bzero (cmd->cmd.pio_data.pioc_pinentry.pin, sizeof (cmd->cmd.pio_data.pioc_pinentry.pin));
 	tlog (TLOG_PKCS11, LOG_DEBUG, "Returning entered PIN and OK from PIN entry");
-	return 0;
+	return 1;
 }
 
 
 void setup_pinentry (void) {
-	gnutls_pkcs11_set_token_function (gnutls_token_callback, NULL);
-	gnutls_pkcs11_set_pin_function (gnutls_pin_callback, NULL);
+	;	/* Nothing to do */
 }
 
 void cleanup_pinentry (void) {
-	gnutls_pkcs11_set_pin_function (NULL, NULL);
-	gnutls_pkcs11_set_token_function (NULL, NULL);
+	;	/* Nothing to do */
 }
 

@@ -8,9 +8,6 @@
 #include <syslog.h>
 #include <errno.h>
 
-#include <gnutls/gnutls.h>
-#include <gnutls/abstract.h>
-
 #include <tlspool/internal.h>
 
 #include "manage.h"
@@ -53,7 +50,7 @@ int dbcred_flags (DBT *creddata, uint32_t *flags) {
  *  - a (data,size) structure for the public credential, also when LID_CHAINED
  * The function returns non-zero on success (zero indicates syntax error).
  */
-int dbcred_interpret (gnutls_datum_t *creddata, uint32_t *flags, char **p11priv, uint8_t **pubdata, int *pubdatalen) {
+int dbcred_interpret (pool_datum_t *creddata, uint32_t *flags, char **p11priv, uint8_t **pubdata, int *pubdatalen) {
 	int p11privlen;
 	if (creddata->size <= 4) {
 		return 0;
@@ -92,11 +89,11 @@ int dbcred_interpret (gnutls_datum_t *creddata, uint32_t *flags, char **p11priv,
  * The value returned is only non-zero if a value was setup.
  * The DB_NOTFOUND value indicates that the key was not found.
  */
-gtls_error dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata) {
-	int gtls_errno = GNUTLS_E_SUCCESS;
-	E_d2ge ("Key not found in db_localid",
+success_t dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata) {
+	int db_errno = 0;
+	E_d2e ("Key not found in db_localid",
 		cursor->get (cursor, keydata, creddata, DB_SET));
-	return gtls_errno;
+	return !errno;
 }
 
 
@@ -129,8 +126,8 @@ gtls_error dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata
  * The DB_NOTFOUND value indicates that no selector matching the remoteid
  * was found in dbh_disclose.
  */
-gtls_error dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_localid, selector_t *remotesel, DBT *discpatn, DBT *keydata, DBT *creddata) {
-	int gtls_errno = GNUTLS_E_SUCCESS;
+success_t dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_localid, selector_t *remotesel, DBT *discpatn, DBT *keydata, DBT *creddata) {
+	int db_errno = 0;
 	int more = 1;
 	while (more) {
 		int fnd;
@@ -140,23 +137,23 @@ gtls_error dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_lo
 		if (fnd == 0) {
 			// Got the selector pattern!
 			// Now continue, even when no localids will work.
-			E_d2ge ("Key not found in db_localid",
+			E_d2e ("Key not found in db_localid",
 				crs_localid->get (
 					crs_localid,
 					keydata,
 					creddata,
 					DB_SET));
-			return gtls_errno;
+			return !errno;
 		} else if (fnd != DB_NOTFOUND) {
-			E_d2ge ("Failed while searching with remote ID selector", fnd);
+			E_d2e ("Failed while searching with remote ID selector", fnd);
 			break;
 		}
 		more = selector_iterate_next (remotesel);
 	}
 	// Ended here with nothing more to find
-	E_d2ge ("No selector matches remote ID in db_disclose",
+	E_d2e ("No selector matches remote ID in db_disclose",
 		DB_NOTFOUND);
-	return gtls_errno;
+	return !errno;
 }
 
 

@@ -36,7 +36,7 @@ extern DB *dbh_disclose;
 
 
 /* Setup the management databases.  Returns 0 on success, errno otherwise. */
-int setup_management (void);
+success_t setup_management (void);
 
 /* Cleanup management database state, if any.  Note that cursors are assumed
  * to have been closed by application code already.  BerkeleyDB is quite

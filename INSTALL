@@ -92,7 +92,8 @@ The `tlspool` binary is the TLS Pool itself.
 
 The `tlstunnel -s` is a server-side TLS unwrapper.  It receives TLS traffic
 on `::1 22335`, uses the TLS Pool to unwrap it, and forwards the traffic
-to `2001:db8::1234 80`, usually a web server.  You should provide your own
+to `2001:db8::1234 80`, which is a non-existent address but could be replaced
+by something like a web server.  You should provide your own
 IPv6 server address of choice.  Note that it is possible to enter an IPv4
 address as if it were an IPv6 address by prefixing it with two colons, as in
 `::123.45.67.89`.  The identity of the server is `testsrv@tlspool.arpa2.lab`

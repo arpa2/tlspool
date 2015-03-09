@@ -42,6 +42,19 @@
 
 static unsigned int log_filter;
 
+static pthread_key_t varkey_errstr;
+
+
+/* Fetch the thread-specific string variable paired to errno */
+char *error_getstring (void) {
+	char *errstr;
+	return (char *) pthread_getspecific (varkey_errstr);
+}
+
+/* Set the thread-specific string variable paired to errno */
+void error_setstring (char *errstr) {
+	pthread_setspecific (varkey_errstr, (void *) errstr);
+}
 
 /* Setup logging structures for error reporting.
  */
@@ -52,6 +65,11 @@ void setup_error (void) {
 	log_level = cfg_log_level ();
 	log_filter = cfg_log_filter ();
 	openlog ("TLS Pool", LOG_CONS | LOG_PID | log_perror, log_level);
+	if (pthread_key_create (&varkey_errstr, NULL) != 0) {
+		errno = EBADSLT;
+		error_setstring ("Unable to allocate pthread key resource");
+		exit (1);
+	}
 }
 
 void cleanup_error (void) {
@@ -74,83 +92,122 @@ void tlog (unsigned int logmask, int priority, char *format, ...) {
 
 /* Mapping for error codes between the various subsystems in use. */
 
-void error_db2gnutls2posix (int *gtls_errno, int db_errno, char *opt_errstr) {
+void error_posix2strings (char *new_errstr) {
+	char *errstr;
+	//
+	// Sanity checks
+	if (errno == 0) {
+		return;
+	}
+	errstr = error_getstring ();
+	if (errstr != NULL) {
+		return;
+	}
+	//
+	// Report strings
+	if (new_errstr == NULL) {
+		new_errstr = "Unspecified POSIX error";
+	}
+	error_setstring (new_errstr);
+}
+
+void error_db2posix (int db_errno, char *new_errstr) {
+	char *errstr;
+	//
+	// Sanity checks
 	if (db_errno == 0) {
 		return;
 	}
-	if (opt_errstr) {
-		tlog (TLOG_DB, LOG_ERR, "DB error: %s", opt_errstr);
+	errstr = error_getstring ();
+	if (errstr != NULL) {
+		return;
 	}
-	if (errno == 0) {
-		switch (db_errno) {
-		case DB_BUFFER_SMALL:
-		case DB_LOG_BUFFER_FULL:
-			errno = ENOBUFS;
-			break;
-		case DB_DONOTINDEX:
-		case DB_KEYEMPTY:
-		case DB_FOREIGN_CONFLICT:
-		case DB_PAGE_NOTFOUND:
-		case DB_SECONDARY_BAD:
-			errno = ENOKEY;
-			break;
-		case DB_KEYEXIST:
-			errno = EACCES;
-			break;
-		case DB_LOCK_DEADLOCK:
-			errno = EDEADLK;
-			break;
-		case DB_LOCK_NOTGRANTED:
-			errno = ENOLCK;
-			break;
-		case DB_NOSERVER:
-		case DB_NOSERVER_HOME:
-		case DB_NOSERVER_ID:
-		case DB_REP_DUPMASTER:
-		case DB_REP_HANDLE_DEAD:
-		case DB_REP_HOLDELECTION:
-		case DB_REP_IGNORE:
-		case DB_REP_ISPERM:
-		case DB_REP_JOIN_FAILURE:
-		case DB_REP_LEASE_EXPIRED:
-		case DB_REP_LOCKOUT:
-		case DB_REP_NEWSITE:
-		case DB_REP_NOTPERM:
-		case DB_REP_UNAVAIL:
-			errno = EREMOTEIO;
-			break;
-		case DB_NOTFOUND:
-			errno = ENODATA;
-			break;
-		case DB_OLD_VERSION:
-		case DB_VERSION_MISMATCH:
-			errno = ENOEXEC;
-			break;
-		case DB_RUNRECOVERY:
-		case DB_VERIFY_BAD:
-			errno = ENOTRECOVERABLE;
-			break;
-		default:
-			errno = ENOSYS;
-			break;
-		}
+	//
+	// Report the descriptive error
+	if (new_errstr == NULL) {
+		new_errstr = "Undescribed database failure";
 	}
-	if (*gtls_errno == GNUTLS_E_SUCCESS) {
-		*gtls_errno = GNUTLS_E_DB_ERROR;
+	tlog (TLOG_DB, LOG_ERR, "DB error: %s", new_errstr);
+	error_setstring (new_errstr);
+	//
+	// Translate error to a POSIX errno value
+	switch (db_errno) {
+	case DB_BUFFER_SMALL:
+	case DB_LOG_BUFFER_FULL:
+		errno = ENOBUFS;
+		break;
+	case DB_DONOTINDEX:
+	case DB_KEYEMPTY:
+	case DB_FOREIGN_CONFLICT:
+	case DB_PAGE_NOTFOUND:
+	case DB_SECONDARY_BAD:
+		errno = ENOKEY;
+		break;
+	case DB_KEYEXIST:
+		errno = EACCES;
+		break;
+	case DB_LOCK_DEADLOCK:
+		errno = EDEADLK;
+		break;
+	case DB_LOCK_NOTGRANTED:
+		errno = ENOLCK;
+		break;
+	case DB_NOSERVER:
+	case DB_NOSERVER_HOME:
+	case DB_NOSERVER_ID:
+	case DB_REP_DUPMASTER:
+	case DB_REP_HANDLE_DEAD:
+	case DB_REP_HOLDELECTION:
+	case DB_REP_IGNORE:
+	case DB_REP_ISPERM:
+	case DB_REP_JOIN_FAILURE:
+	case DB_REP_LEASE_EXPIRED:
+	case DB_REP_LOCKOUT:
+	case DB_REP_NEWSITE:
+	case DB_REP_NOTPERM:
+	case DB_REP_UNAVAIL:
+		errno = EREMOTEIO;
+		break;
+	case DB_NOTFOUND:
+		errno = ENODATA;
+		break;
+	case DB_OLD_VERSION:
+	case DB_VERSION_MISMATCH:
+		errno = ENOEXEC;
+		break;
+	case DB_RUNRECOVERY:
+	case DB_VERIFY_BAD:
+		errno = ENOTRECOVERABLE;
+		break;
+	default:
+		errno = ENOSYS;
+		break;
 	}
 }
 
-void error_gnutls2posix (int gtls_errno, char *opt_errstr) {
+void error_gnutls2posix (int gtls_errno, char *new_errstr) {
+	char *errstr;
 	register int newerrno;
+	//
+	// Sanity checks
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
 		return;
 	}
-	if (errno != 0) {
+	errstr =  error_getstring ();
+	if (errstr != NULL) {
 		return;
 	}
+	//
+	// Report the textual error
+	if (new_errstr == NULL) {
+		new_errstr = "GnuTLS error";
+	}
 	tlog (TLOG_TLS, LOG_ERR, "%s: %s",
-		opt_errstr? opt_errstr: "GnuTLS error",
+		new_errstr,
 		gnutls_strerror (gtls_errno));
+	error_setstring (new_errstr);
+	//
+	// Translate error to a POSIX errno value
 	switch (gtls_errno) {
 	case GNUTLS_E_SUCCESS:
 		return;
@@ -355,3 +412,4 @@ void error_gnutls2posix (int gtls_errno, char *opt_errstr) {
 	errno = newerrno;
 	return;
 }
+

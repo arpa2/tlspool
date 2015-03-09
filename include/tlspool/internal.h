@@ -4,14 +4,22 @@
 #ifndef TLSPOOL_INTERNAL_H
 #define TLSPOOL_INTERNAL_H
 
-#include <tlspool/commands.h>
+#include <stdint.h>
 
-#include <gnutls/gnutls.h>
+#include <tlspool/commands.h>
 
 #include <db.h>
 
 
 #define EXPECTED_LID_TYPE_COUNT 4
+
+
+/* A simple (data*,size) construct named pool_datum_t
+ */
+typedef struct pool_datum {
+	void *data;
+	size_t size;
+} pool_datum_t;
 
 
 /* The command structure contains the literal packet and additional
@@ -21,13 +29,14 @@ struct command {
 	int clientfd;
 	int passfd;
 	int claimed;
+	int session_errno;
 	pthread_t handler;
 	struct tlspool_command cmd;
 	struct pioc_starttls *orig_piocdata;
 	DB_TXN *txn;
-	gnutls_datum_t lids [EXPECTED_LID_TYPE_COUNT];
-	gnutls_pcert_st *session_pcert;
-	gnutls_privkey_t session_pkey;
+	pool_datum_t lids [EXPECTED_LID_TYPE_COUNT];
+	intptr_t session_certificate;
+	intptr_t session_privatekey;
 };
 
 
@@ -68,6 +77,13 @@ struct callback {
 
 
 
+/* An errno/errstr related return value; it is non-zero on success, and
+ * zero on failure.  It is defined as a type to simplify API documentation
+ * through this standardised response.
+ */
+typedef int success_t;
+
+
 /* config.c */
 void parse_cfgfile (char *filename, int kill_competition);
 
@@ -82,23 +98,14 @@ struct command *send_callback_and_await_response (struct command *cmdresp);
 void setup_pinentry (void);
 void cleanup_pinentry (void);
 void register_pinentry_command (struct command *cmd);
-int gnutls_pin_callback (void *userdata,
-                                int attempt,
-                                const char *token_url,
-                                const char *token_label,
-                                unsigned int flags,
-                                char *pin,
-                                size_t pin_max);
+success_t token_callback (const char *const label, unsigned retry);
+success_t pin_callback (int attempt, const char *token_url, const char *token_label, char *pin, size_t pin_max);
 
-/* handler.c */
-void setup_handler (void);
-void cleanup_handler (void);
+/* starttls.c */
+void setup_starttls (void);
+void cleanup_starttls (void);
 void starttls_client (struct command *cmd);
 void starttls_server (struct command *cmd);
-
-/* remote.c */
-int ldap_fetch_openpgp_cert (gnutls_openpgp_crt_t *pgpcrtdata, char *localid);
-
 
 /* config.c */
 char *cfg_p11pin (void);
@@ -119,13 +126,13 @@ char *cfg_tls_dhparamfile (void);
  * provide a shorthand to continue execution dependent on this variable.
  * The classical errno variable is used too, because it is thread-safe.
  *
- * GnuTLS errors are stored in gtls_errno and also mapped to errno values.
- * If either is set, the GnuTLS call is not made.  Note that all errors are
- * treated as fatal; use gnutls_error_is_fatal to recover in case of coubt.
+ * GnuTLS errors are mapped to errno/errstr values.  If either is set, the
+ * GnuTLS call is not made.  Note that all errors are treated as fatal;
+ * use gnutls_error_is_fatal to recover in case of coubt.
  *
- * DB errors are mapped to both gtls_errno and errno.  If either is set,
- * the DB call is not made.  Note that all errors are treated as fatal;
- * check for known values (like DB_NOT_FOUND) to recover in case of doubt.
+ * DB errors are mapped to errno.  If either is set, the DB call is not
+ * made.  Note that all errors are treated as fatal; check for known values
+ * (like DB_NOT_FOUND) to recover in case of doubt.
  *
  * The macro have_error_codes() can be used to check if either errno or
  * gtls_errno is set; this can be used to run a test before executing a
@@ -136,18 +143,19 @@ void setup_error (void);
 void cleanup_error (void);
 typedef int gtls_error;
 typedef int db_error;
+char *error_getstring (void);
+void error_setstring (char *);
 
 #define have_error_codes() ((gtls_errno != GNUTLS_E_SUCCESS) || (errno != 0))
 
-/* Map a DB call (usually a function call) to errno and GnuTLS errvar
- * gtls_errno, optionally printing an errstr to avoid loosing information.
- * Define gtls_errno globally; process errno too, as an additional error system.
- * Skip if gtls_errno is not GNUTLS_E_SUCCESS but continue if errno is not 0. */
-#define E_d2ge(errstr,dbcall) { \
-	if (gtls_errno == 0) { \
-		int _db_errno = (dbcall); \
-		if (_db_errno != 0) { \
-			error_db2gnutls2posix (&gtls_errno, _db_errno, (errstr)); \
+/* Map a DB call (usually a function call) to errno + errstr, optionally
+ * printing an errstr to avoid loosing information.  The error number from
+ * DB is stored in db_errno, which is assumed an available int. */
+#define E_d2e(errstr,dbcall) { \
+	if (db_errno == 0) { \
+		db_errno = (dbcall); \
+		if (db_errno != 0) { \
+			error_db2posix (db_errno, (errstr)); \
 		} \
 	} \
 }
@@ -165,6 +173,23 @@ typedef int db_error;
 	} \
 }
 
+/* Make the successcall only made when errno == 0; the return value from
+ * the call should be of type success_t for detection of error and further
+ * mapping of errno to errstr.  This is the POSIX counterpart of the GnuTLS
+ * and DB macros above.
+ * Set successcall to NULL to lap up any set values in errno that have not
+ * explicitly been cleared.  In other words, the switch to errstr to determine
+ * what to do has no implications (other than delay and ordering) on errno;
+ * its errors will not be forgotten, lest they are explicitly cleared.
+ */
+#define E_e2e(errstr,successcall) { \
+	if (errno == 0) { \
+		if (! (successcall)) { \
+			error_posix2strings (errstr); \
+		} \
+	} \
+}
+
 /* Cleanup when GnuTLS leaves errno damaged but returns no gtls_errno */
 #define E_gnutls_clear_errno() { \
 	if (gtls_errno == GNUTLS_E_SUCCESS) { \
@@ -172,11 +197,19 @@ typedef int db_error;
 	} \
 }
 
+/* Cleanup when DBM leaves errno damaged but returns no db_errno */
+#define E_db_clear_errno() { \
+	if (db_errno == 0) { \
+		errno = 0; \
+	} \
+}
+
 /* Workhorse functions to map error systems, concealed by shorthand macros
  * defined below.
  */
-void error_db2gnutls2posix (int *gtls_errno, int db_errno, char *opt_errstr);
-void error_gnutls2posix (int gtls_errno, char *opt_errstr);
+void error_db2posix (int db_errno, char *errstr);
+void error_gnutls2posix (int gtls_errno, char *errstr);
+void error_posix2strings (char *errstr);
 
 
 /* Log a message to syslog (assuming that the configuration wants it) */

@@ -1,4 +1,4 @@
-/* tlspool/handler.c -- Setup and validation handler for TLS session */
+/* tlspool/starttls.c -- Setup and validation handler for TLS session */
 
 
 #include <config.h>
@@ -196,10 +196,46 @@ void log_gnutls (int level, const char *msg) {
 }
 
 
-/* The global and static setup function for the handler functions.
+/* Implement the GnuTLS function for token insertion callback.  This function
+ * refers back to the generic callback for token insertion.
  */
-void setup_handler (void) {
-	int setup_handler_credentials (void);	/* Defined below */
+int gnutls_token_callback (void *const userdata,
+				const char *const label,
+				unsigned retry) {
+	if (token_callback (label, retry)) {
+		return GNUTLS_E_SUCCESS;
+	} else {
+		return GNUTLS_E_PKCS11_TOKEN_ERROR;
+	}
+}
+ 
+
+/*
+ * Implement the GnuTLS function for PIN callback.  This function calls
+ * the generic PIN callback operation.
+ */
+int gnutls_pin_callback (void *userdata,
+				int attempt,
+				const char *token_url,
+				const char *token_label,
+				unsigned int flags,
+				char *pin,
+				size_t pin_max) {
+	if (flags & GNUTLS_PIN_SO) {
+		return GNUTLS_E_USER_ERROR;
+	}
+	if (pin_callback (attempt, token_url, token_label, pin, pin_max)) {
+		return 0;
+	} else {
+		return GNUTLS_E_PKCS11_PIN_ERROR;
+	}
+}
+
+
+/* The global and static setup function for the starttls functions.
+ */
+void setup_starttls (void) {
+	int setup_starttls_credentials (void);	/* Defined below */
 	const char *curver;
 	int gtls_errno = GNUTLS_E_SUCCESS;
 	//
@@ -220,35 +256,41 @@ void setup_handler (void) {
 		gnutls_global_set_log_level (2);
 	}
 	//
+	// Setup callbacks for user communication
+	gnutls_pkcs11_set_token_function (gnutls_token_callback, NULL);
+	gnutls_pkcs11_set_pin_function (gnutls_pin_callback, NULL);
+	//
 	// Setup DH parameters
 	E_g2e ("Loading DH params failed",
 		load_dh_params ());
 	//
 	// Setup shared credentials for all client server processes
 	E_g2e ("Failed to setup GnuTLS callback credentials",
-		setup_handler_credentials ());
+		setup_starttls_credentials ());
 	if (gtls_errno != GNUTLS_E_SUCCESS) {
 		tlog (TLOG_TLS, LOG_CRIT, "FATAL: GnuTLS setup failed: %s", gnutls_strerror (gtls_errno));
 		exit (1);
 	}
-	//
-	// Setup the management databases
-	tlog (TLOG_DB, LOG_DEBUG, "Setting up management databases");
-	E_g2e ("Failed to setup management databases",
-		setup_management ());
-	if (errno != 0) {
-		tlog (TLOG_DB, LOG_CRIT, "FATAL: Management databases setup failed: %s", strerror (errno));
-		exit (1);
-	}
+	//MOVED// //
+	//MOVED// // Setup the management databases
+	//MOVED// tlog (TLOG_DB, LOG_DEBUG, "Setting up management databases");
+	//MOVED// E_e2e ("Failed to setup management databases",
+	//MOVED// 	setup_management ());
+	//MOVED// if (errno != 0) {
+	//MOVED// 	tlog (TLOG_DB, LOG_CRIT, "FATAL: Management databases setup failed: %s", strerror (errno));
+	//MOVED// 	exit (1);
+	//MOVED// }
 }
 
 /* Cleanup the structures and resources that were setup for handling TLS.
  */
-void cleanup_handler (void) {
-	void cleanup_handler_credentials (void);	/* Defined below */
-	cleanup_management ();
-	cleanup_handler_credentials ();
+void cleanup_starttls (void) {
+	void cleanup_starttls_credentials (void);	/* Defined below */
+	//MOVED// cleanup_management ();
+	cleanup_starttls_credentials ();
 	remove_dh_params ();
+	gnutls_pkcs11_set_pin_function (NULL, NULL);
+	gnutls_pkcs11_set_token_function (NULL, NULL);
 	gnutls_pkcs11_deinit ();
 	gnutls_global_deinit ();
 }
@@ -510,7 +552,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 			GNUTLS_E_CERTIFICATE_ERROR);
 		return gtls_errno;
 	}
-	cmd->session_pcert = *pcert;	//TODO// Used for session cleanup
+	cmd->session_certificate = (intptr_t) (void *) *pcert;	//TODO// Used for session cleanup
 
 	//
 	// Setup private key
@@ -518,12 +560,13 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 		gnutls_privkey_init (
 			pkey));
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
-		cmd->session_pkey = *pkey;	//TODO// Used for session cleanup
+		cmd->session_privatekey = (intptr_t) (void *) *pkey;	//TODO// Used for session cleanup
 	}
 	E_g2e ("Failed to import PKCS #11 private key URL",
 		gnutls_privkey_import_pkcs11_url (
 			*pkey,
 			p11priv));
+	E_gnutls_clear_errno ();
 
 //TODO// Moved out (start)
 
@@ -553,6 +596,14 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 	}
 
 //TODO// Moved out (end)
+
+	//
+	// Lap up any overseen POSIX error codes in errno
+	if (errno) {
+		tlog (TLOG_TLS, LOG_DEBUG, "Failing TLS on errno=%d / %s", errno, strerror (errno));
+		cmd->session_errno = errno;
+		gtls_errno = GNUTLS_E_NO_CIPHER_SUITES;	/* Vaguely matching */
+	}
 
 	//
 	// Return the overral error code, hopefully GNUTLS_E_SUCCESS
@@ -760,14 +811,14 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 	//
 	// Setup database iterators to map identities to credentials
 	if (lidrole == LID_ROLE_CLIENT) {
-		E_d2ge ("Failed to create db_disclse cursor",
+		E_d2e ("Failed to create db_disclse cursor",
 			dbh_disclose->cursor (
 				dbh_disclose,
 				cmd->txn,
 				&crs_disclose,
 				0));
 	}
-	E_d2ge ("Failed to create db_localid cursor",
+	E_d2e ("Failed to create db_localid cursor",
 		dbh_localid->cursor (
 			dbh_localid,
 			cmd->txn,
@@ -790,7 +841,7 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 			E_g2e ("Syntax of remote ID unsuitable for selector",
 				GNUTLS_E_INVALID_REQUEST);
 		} else {
-			E_g2e ("Failed to start iterator on remote ID selector",
+			E_e2e ("Failed to start iterator on remote ID selector",
 				dbcred_iterate_from_remoteid_selector (
 					crs_disclose,
 					crs_localid,
@@ -803,7 +854,7 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 		dbt_init_fixbuf (&discpatn, "", 0);	// Unused but good style
 		dbt_init_fixbuf (&keydata,  lid, strlen (lid));
 		dbt_init_malloc (&creddata);
-		E_g2e ("Failed to start iterator on local ID",
+		E_e2e ("Failed to start iterator on local ID",
 			dbcred_iterate_from_localid (
 			crs_localid,
 			&keydata,
@@ -912,7 +963,11 @@ int srv_clienthello (gnutls_session_t session) {
 	}
 
 	//
-	// TODO: Setup specialised priorities string?
+	// Lap up any unnoticed POSIX error messages
+	if (errno != 0) {
+		cmd->session_errno = errno;
+		gtls_errno = GNUTLS_E_NO_CIPHER_SUITES;	/* Vaguely matching */
+	}
 
 	//
 	// Round off with an overal judgement
@@ -935,7 +990,7 @@ int cli_srpcreds_retrieve (gnutls_session_t session,
  * Credentials are generally implemented through callback functions.
  * This should be called after setting up DH parameters.
  */
-int setup_handler_credentials (void) {
+int setup_starttls_credentials (void) {
 	gnutls_anon_server_credentials_t srv_anoncred = NULL;
 	gnutls_anon_client_credentials_t cli_anoncred = NULL;
 	gnutls_certificate_credentials_t clisrv_certcred = NULL;
@@ -1122,7 +1177,7 @@ int setup_handler_credentials (void) {
 
 /* Cleanup all credentials created, just before exiting the daemon.
  */
-void cleanup_handler_credentials (void) {
+void cleanup_starttls_credentials (void) {
 	while (srv_credcount-- > 0) {
 		struct credinfo *crd = &srv_creds [srv_credcount];
 		switch (crd->credtp) {
@@ -1201,13 +1256,14 @@ static void *starttls_thread (void *cmd_void) {
 		send_error (cmd, EINVAL, "Command structure not received");
 		return;
 	}
+	cmd->session_errno = 0;
 	orig_cmd = cmd->cmd.pio_cmd;
 	memcpy (&orig_piocdata, &cmd->cmd.pio_data.pioc_starttls, sizeof (orig_piocdata));
 	cmd->orig_piocdata = &orig_piocdata;
 	passfd = cmd->passfd;
 	clientfd = cmd->clientfd;
-	cmd->session_pcert = NULL;
-	cmd->session_pkey = NULL;
+	cmd->session_certificate = (intptr_t) (void *) NULL;
+	cmd->session_privatekey = (intptr_t) (void *) NULL;
 
 	//
 	// Setup BDB transactions and reset credential datum fields
@@ -1394,14 +1450,14 @@ static void *starttls_thread (void *cmd_void) {
 		}
 	}
 	bzero (cmd->lids, sizeof (cmd->lids));
-	if (cmd->session_pkey) {
-		gnutls_privkey_deinit (cmd->session_pkey);
-		cmd->session_pkey = NULL;
+	if (NULL != (void *) cmd->session_privatekey) {
+		gnutls_privkey_deinit ((void *) cmd->session_privatekey);
+		cmd->session_privatekey = (intptr_t) (void *) NULL;
 	}
-	if (cmd->session_pcert) {
-		gnutls_pcert_deinit (cmd->session_pcert);
-		free (cmd->session_pcert);
-		cmd->session_pcert = NULL;
+	if (NULL != (void *) cmd->session_certificate) {
+		gnutls_pcert_deinit ((void *) cmd->session_certificate);
+		free ((void *) cmd->session_certificate);
+		cmd->session_certificate = (intptr_t) (void *) NULL;
 	}
 
 	//

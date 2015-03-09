@@ -10,9 +10,6 @@
 
 #include <db.h>
 
-#include <gnutls/gnutls.h>
-#include <gnutls/abstract.h>
-
 #include <tlspool/internal.h>
 
 #include "manage.h"
@@ -85,11 +82,11 @@ int manage_txn_rollback (DB_TXN **txn) {
 }
 
 /* Setup the management databases; for the reverse, see cleanup_management() */
-gtls_error setup_management (void) {
-	int gtls_errno = GNUTLS_E_SUCCESS;
+success_t setup_management (void) {
 	u_int32_t flags = 0;
 	DB_TXN *tract = NULL;
 	char *dbenv_dir;
+	int db_errno;
 
 	dbenv_dir = cfg_dbenv_dir ();
 	if (dbenv_dir != NULL) {
@@ -105,30 +102,30 @@ gtls_error setup_management (void) {
 				errno = 0;
 			}
 		}
-		E_d2ge ("Failed to create DB environment handle",
+		E_d2e ("Failed to create DB environment handle",
 			db_env_create (&dbenv, 0));
-		E_d2ge ("Failed to open dbenv_dir environment",
+		E_d2e ("Failed to open dbenv_dir environment",
 			dbenv->open (dbenv, dbenv_dir, DB_CREATE | DB_RECOVER | DB_INIT_TXN | DB_INIT_LOG | DB_INIT_LOCK | DB_THREAD | DB_INIT_MPOOL, S_IRUSR | S_IWUSR));
 	}
-	E_d2ge ("Failed to create db_localid handle",
+	E_d2e ("Failed to create db_localid handle",
 		db_create (&dbh_localid,  dbenv, 0));
-	E_d2ge ("Failed to create db_disclose handle",
+	E_d2e ("Failed to create db_disclose handle",
 		db_create (&dbh_disclose, dbenv, 0));
 	flags = DB_DUP;
-	E_d2ge ("Failed to set db_localid flags",
+	E_d2e ("Failed to set db_localid flags",
 		dbh_localid->set_flags (dbh_localid,  flags));
-	E_d2ge ("Failed to set db_disclose flags",
+	E_d2e ("Failed to set db_disclose flags",
 		dbh_disclose->set_flags (dbh_disclose, flags));
 	flags = DB_RDONLY | DB_THREAD | DB_AUTO_COMMIT;
-	E_d2ge ("Failed to open db_localid",
+	E_d2e ("Failed to open db_localid",
 		dbh_localid->open (dbh_localid,  tract, cfg_db_localid (),  NULL, DB_HASH, flags, 0));
-	E_d2ge ("Failed to open db_disclose",
+	E_d2e ("Failed to open db_disclose",
 		dbh_disclose->open (dbh_disclose, tract, cfg_db_disclose (), NULL, DB_HASH, flags, 0));
-	if (gtls_errno != 0) {
+	if (db_errno != 0) {
 		cleanup_management ();
 	}
-	E_gnutls_clear_errno ();
-	return gtls_errno;
+	E_db_clear_errno ();
+	return !errno;
 }
 
 /* Cleanup the management databases, undoing any effects of manage_setup() */

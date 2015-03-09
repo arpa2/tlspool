@@ -10,10 +10,9 @@
 
 #include <syslog.h>
 
-#include <gnutls/gnutls.h>
-#include <gnutls/abstract.h>
-
 #include <tlspool/internal.h>
+
+#include "manage.h"
 
 
 void process_hangup (int hangupsignal) {
@@ -100,12 +99,14 @@ int main (int argc, char *argv []) {
 			parse_cfgfile (cfgfile, kill_competition);
 			setup_error ();
 			tlog (TLOG_DAEMON, LOG_INFO, "TLS Pool started");
-			setup_handler ();
+			setup_management ();
+			setup_starttls ();
 			setup_pinentry ();
 			run_service ();
 			tlog (TLOG_DAEMON, LOG_DEBUG, "Preparing to stop -- Cleanup started");
 			cleanup_pinentry ();
-			cleanup_handler ();
+			cleanup_starttls ();
+			cleanup_management ();
 			cleanup_error ();
 			tlog (TLOG_DAEMON, LOG_DEBUG, "Orderly shutdown seems to have worked");
 			tlog (TLOG_DAEMON, LOG_INFO, "TLS Pool stopped");

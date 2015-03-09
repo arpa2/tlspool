@@ -110,7 +110,7 @@ static inline void dbt_free (DBT *dbt) {
  * dbt_init_malloc().  Afterwards, clear the data handle for use in
  * another iteration.
  */
-static inline void dbt_store (DBT *dbt, gnutls_datum_t *output) {
+static inline void dbt_store (DBT *dbt, pool_datum_t *output) {
 	/* assert (dbt->flags & DB_DBT_MALLOC); */
 	output->data = dbt->data;
 	output->size = dbt->size;
@@ -127,7 +127,7 @@ static inline void dbt_store (DBT *dbt, gnutls_datum_t *output) {
  * The value returned is only non-zero if a value was setup.
  * The DB_NOTFOUND value indicates that the key was not found.
  */
-int dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata);
+success_t dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata);
 
 /* Construct an iterator for a given remoteid selector.  Apply stepwise
  * generalisation to find the most concrete match.  The first value found
@@ -158,7 +158,7 @@ int dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata);
  * The DB_NOTFOUND value indicates that no selector matching the remoteid
  * was found in dbh_disclose.
  */
-int dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_localid, selector_t *remotesel, DBT *discpatn, DBT *keydata, DBT *creddata);
+success_t dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_localid, selector_t *remotesel, DBT *discpatn, DBT *keydata, DBT *creddata);
 
 /* Move an iterator to the next credential data value.  When done, the value
  * returned should be DB_NOTFOUND.
@@ -186,7 +186,7 @@ int dbcred_iterate_next (DBC *opt_crs_disclose, DBC *crs_localid, DBT *opt_discp
  *  - a (data,size) structure for the public credential
  * The function returns non-zero on success (zero indicates syntax error).
  */
-int dbcred_interpret (gnutls_datum_t *creddata, uint32_t *flags, char **p11priv, uint8_t **pubdata, int *pubdatalen);
+int dbcred_interpret (pool_datum_t *creddata, uint32_t *flags, char **p11priv, uint8_t **pubdata, int *pubdatalen);
 
 
 /* Iterate over selector values that would generalise the donai.  The
