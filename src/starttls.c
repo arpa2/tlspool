@@ -232,6 +232,28 @@ int gnutls_pin_callback (void *userdata,
 }
 
 
+/* Register a PKCS #11 provider with the GnuTLS environment. */
+void starttls_pkcs11_provider (char *p11path) {
+	unsigned int token_seq = 0;
+	char *p11uri;
+	if (gnutls_pkcs11_add_provider (p11path, NULL) != 0) {
+		fprintf (stderr, "Failed to register PKCS #11 library %s with GnuTLS\n", p11path);
+		exit (1);
+	}
+	while (gnutls_pkcs11_token_get_url (token_seq, 0, &p11uri) == 0) {
+#ifdef DEBUG
+		printf ("DEBUG: Found token URI %s\n", p11uri);
+#endif
+		//TODO// if (gnutls_pkcs11_token_get_info (p11uri, GNUTLS_PKCS11_TOKEN_LABEL-of-SERIAL-of-MANUFACTURER-of-MODEL, output, utput_size) == 0) { ... }
+		gnutls_free (p11uri);
+		token_seq++;
+	}
+	//TODO// Select token by name (value)
+	//TODO// if PIN available then set it up
+	//TODO:WHY?// free_p11pin ();
+}
+
+
 /* The global and static setup function for the starttls functions.
  */
 void setup_starttls (void) {

@@ -21,10 +21,6 @@
 
 #include <ldap.h>
 
-#include <gnutls/gnutls.h>
-#include <gnutls/abstract.h>
-#include <gnutls/pkcs11.h>
-
 #include <tlspool/internal.h>
 
 #include <libmemcached/memcached.h>
@@ -471,31 +467,13 @@ void cfg_p11path (char *item, int itemno, char *value) {
 }
 
 void cfg_p11token (char *item, int itemno, char *value) {
-	unsigned int token_seq = 0;
-	char *p11uri;
-#ifdef DEBUG
-	fprintf (stdout, "DEBUG: DECLARE %s AS %s\n", item, value);
-#endif
 	if (!configvars [CFGVAR_PKCS11_PATH]) {
 		fprintf (stderr, "You must specify pkcs11_path before any number of pkcs11_token\n");
 		exit (1);
 	}
-	if (gnutls_pkcs11_add_provider (configvars [CFGVAR_PKCS11_PATH], NULL) != 0) {
-		fprintf (stderr, "Failed to register PKCS #11 library %s with GnuTLS\n", configvars [CFGVAR_PKCS11_PATH]);
-		exit (1);
-	}
-	while (gnutls_pkcs11_token_get_url (token_seq, 0, &p11uri) == 0) {
-#ifdef DEBUG
-		printf ("DEBUG: Found token URI %s\n", p11uri);
-#endif
-		//TODO// if (gnutls_pkcs11_token_get_info (p11uri, GNUTLS_PKCS11_TOKEN_LABEL-of-SERIAL-of-MANUFACTURER-of-MODEL, output, utput_size) == 0) { ... }
-		gnutls_free (p11uri);
-		token_seq++;
-	}
-	//TODO// Select token by name (value)
-	//TODO// if PIN available then set it up
-	//TODO:WHY?// free_p11pin ();
+	starttls_pkcs11_provider (configvars [CFGVAR_PKCS11_PATH]);
 }
+
 
 char *cfg_p11pin (void) {
 	return configvars [CFGVAR_PKCS11_PIN];

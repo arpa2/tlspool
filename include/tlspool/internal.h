@@ -104,6 +104,7 @@ success_t pin_callback (int attempt, const char *token_url, const char *token_la
 /* starttls.c */
 void setup_starttls (void);
 void cleanup_starttls (void);
+void starttls_pkcs11_provider (char *p11path);
 void starttls_client (struct command *cmd);
 void starttls_server (struct command *cmd);
 
