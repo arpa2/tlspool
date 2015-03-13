@@ -14,10 +14,11 @@
 
 
 static starttls_t tlsdata_cli = {
-	.flags = 0,
+	.flags = 0x00000200,
 	.local = 0,
 	.ipproto = IPPROTO_TCP,
-	.localid = "testcli@localhost",
+	.localid = "testcli@tlspool.arpa2.lab",
+	.remoteid = "testsrv@tlspool.arpa2.lab",
 };
 
 
@@ -37,6 +38,7 @@ void runterminal (int chanio) {
 		}
 		if (inout [0].revents & POLLIN) {
 			sz = read (0, buf, sizeof (buf), MSG_DONTWAIT);
+			printf ("Read %d bytes\n", sz);
 			if (sz == -1) {
 				break;
 			} else if (sz == 0) {
@@ -44,10 +46,13 @@ void runterminal (int chanio) {
 				break;
 			} else if (write (chanio, buf, sz, MSG_DONTWAIT) != sz) {
 				break;
+			} else {
+				printf ("Sent %d bytes\n", sz);
 			}
 		}
 		if (inout [1].revents & POLLIN) {
 			sz = read (chanio, buf, sizeof (buf), MSG_DONTWAIT);
+			printf ("Received %d bytes\n", sz);
 			if (sz == -1) {
 				break;
 			} else if (sz == 0) {
@@ -55,6 +60,8 @@ void runterminal (int chanio) {
 				break;
 			} else if (write (1, buf, sz, MSG_DONTWAIT) != sz) {
 				break;
+			} else {
+				printf ("Printed %d bytes\n", sz);
 			}
 		}
 	}
@@ -78,12 +85,16 @@ int main (int argc, char *argv) {
 		perror ("Socket failed to connect on testcli");
 		exit (1);
 	}
-	plainfd = starttls_client (sox, &tlsdata_cli);
-	if (plainfd == -1) {
+	plainfd = -1;
+	if (-1 == starttls_client (sox, &tlsdata_cli, &plainfd, NULL)) {
 		perror ("Failed to STARTTLS on testcli");
+		if (plainfd >= 0) {
+			close (plainfd);
+		}
 		exit (1);
 	}
 	printf ("DEBUG: STARTTLS succeeded on testcli\n");
+	printf ("DEBUG: Local plainfd = %d\n", plainfd);
 	runterminal (plainfd);
 	close (plainfd);
 	printf ("DEBUG: Closed connection.  Waiting 2s to improve testing.\n");

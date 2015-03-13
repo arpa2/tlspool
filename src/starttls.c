@@ -664,6 +664,9 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 		}
 	}
 	tlog (TLOG_COPYCAT, LOG_DEBUG, "Ending copycat cycle for local=%d, remote=%d", local, remote);
+	close (local);
+	close (remote);
+	gnutls_deinit (wrapped);
 }
 
 
@@ -712,10 +715,10 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 			GNUTLS_E_INVALID_SESSION);
 		return gtls_errno;
 	}
-	if (cmd->cmd.pio_cmd == PIOC_STARTTLS_SERVER_V1) {
+	if (cmd->cmd.pio_cmd == PIOC_STARTTLS_SERVER_V2) {
 		lidrole = LID_ROLE_SERVER;
 		rolestr = "server";
-	} else if (cmd->cmd.pio_cmd == PIOC_STARTTLS_CLIENT_V1) {
+	} else if (cmd->cmd.pio_cmd == PIOC_STARTTLS_CLIENT_V2) {
 		lidrole = LID_ROLE_CLIENT;
 		rolestr = "client";
 	} else {
@@ -768,12 +771,14 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 	//
 	// Find the prefetched local identity to use towards this remote
 	// Send a callback to the user if none is available and accessible
+	//TODO// This callback will be redirected to the identity watchdog
+	//TODO// Define a flag to enforce this callback (to set plainfd)
 	if (cmd->lids [lidtype - LID_TYPE_MIN].data == NULL) {
 		uint32_t oldcmd = cmd->cmd.pio_cmd;
 		cmd->cmd.pio_cmd = PIOC_STARTTLS_LOCALID_V1;
 		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response with PIOC_STARTTLS_LOCALID_V1");
 		cmd = send_callback_and_await_response (cmd);
-		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that sets lid:=\"%s\" for rid==\"%s\"", lid, rid);
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that sets plainfd:=%d and lid:=\"%s\" for rid==\"%s\"", cmd->passfd, lid, rid);
 		if (cmd->cmd.pio_cmd != PIOC_STARTTLS_LOCALID_V1) {
 			tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has bad command code");
 			cmd->cmd.pio_cmd = oldcmd;
@@ -783,7 +788,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 		//
 		// Check that new rid is a generalisation of original rid
 		// Note: This is only of interest for client operation
-		if (oldcmd == PIOC_STARTTLS_CLIENT_V1) {
+		if (oldcmd == PIOC_STARTTLS_CLIENT_V2) {
 			selector_t newrid = donai_from_stable_string (rid, strlen (rid));
 			donai_t oldrid = donai_from_stable_string (cmd->orig_piocdata->remoteid, strlen (cmd->orig_piocdata->remoteid));
 			if (!donai_matches_selector (&oldrid, &newrid)) {
@@ -1065,9 +1070,9 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 
 	//
 	// Setup a number of common references and structures
-	if (cmd->cmd.pio_cmd == PIOC_STARTTLS_SERVER_V1) {
+	if (cmd->cmd.pio_cmd == PIOC_STARTTLS_SERVER_V2) {
 		lidrole = LID_ROLE_SERVER;
-	} else if (cmd->cmd.pio_cmd == PIOC_STARTTLS_CLIENT_V1) {
+	} else if (cmd->cmd.pio_cmd == PIOC_STARTTLS_CLIENT_V2) {
 		lidrole = LID_ROLE_CLIENT;
 	} else {
 		E_g2e ("TLS Pool command is not _STARTTLS_",
@@ -1119,7 +1124,7 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 			E_g2e ("Syntax of remote ID unsuitable for selector",
 				GNUTLS_E_INVALID_REQUEST);
 		} else {
-			E_e2e ("Failed to start iterator on remote ID selector",
+			E_d2e ("Failed to start iterator on remote ID selector",
 				dbcred_iterate_from_remoteid_selector (
 					crs_disclose,
 					crs_localid,
@@ -1132,11 +1137,14 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 		dbt_init_fixbuf (&discpatn, "", 0);	// Unused but good style
 		dbt_init_fixbuf (&keydata,  lid, strlen (lid));
 		dbt_init_malloc (&creddata);
-		E_e2e ("Failed to start iterator on local ID",
+		E_d2e ("Failed to start iterator on local ID",
 			dbcred_iterate_from_localid (
 			crs_localid,
 			&keydata,
 			&creddata));
+	}
+	if (db_errno != 0) {
+		gtls_errno = GNUTLS_E_DB_ERROR;
 	}
 
 	//
@@ -1518,8 +1526,8 @@ static void *starttls_thread (void *cmd_void) {
 	struct command *cmd;
 	struct pioc_starttls orig_piocdata;
 	uint32_t orig_cmd;
-	int soxx [2];	// Plaintext stream between TLS pool and application
-	int passfd;
+	int plainfd = -1;
+	int cryptfd = -1;
 	int clientfd;
 	gnutls_session_t session;
 	int gtls_errno = GNUTLS_E_SUCCESS;
@@ -1538,7 +1546,13 @@ static void *starttls_thread (void *cmd_void) {
 	orig_cmd = cmd->cmd.pio_cmd;
 	memcpy (&orig_piocdata, &cmd->cmd.pio_data.pioc_starttls, sizeof (orig_piocdata));
 	cmd->orig_piocdata = &orig_piocdata;
-	passfd = cmd->passfd;
+	cryptfd = cmd->passfd;
+	cmd->passfd = -1;
+	if (cryptfd < 0) {
+		tlog (TLOG_UNIXSOCK, LOG_ERR, "No ciphertext file descriptor supplied to TLS Pool");
+		send_error (cmd, EINVAL, "No ciphertext file descriptor supplied to TLS Pool");
+		return;
+	}
 	clientfd = cmd->clientfd;
 	cmd->session_certificate = (intptr_t) (void *) NULL;
 	cmd->session_privatekey = (intptr_t) (void *) NULL;
@@ -1556,19 +1570,15 @@ static void *starttls_thread (void *cmd_void) {
 		return;
 	}
 	//
-	// Check and setup file handles
-	if (passfd == -1) {
-		send_error (cmd, EPROTO, "You must supply a socket");
-		return;
-	}
-	if (socketpair (SOCK_STREAM, AF_UNIX, 0, soxx) < 0) {
-		send_error (cmd, errno, "Failed to create 2ary sockets");
+	// Check and setup the plaintext file handle
+	if (cryptfd == -1) {
+		send_error (cmd, EPROTO, "You must supply a TLS-protected socket");
 		return;
 	}
 
 	//
 	// Negotiate TLS; split client/server mode setup
-	if (orig_cmd == PIOC_STARTTLS_SERVER_V1) {
+	if (orig_cmd == PIOC_STARTTLS_SERVER_V2) {
 		//
 		// Setup as a TLS server
 		//
@@ -1587,7 +1597,7 @@ static void *starttls_thread (void *cmd_void) {
 		clisrv_creds     = srv_creds;
 		clisrv_credcount = srv_credcount;
 
-	} else if (orig_cmd == PIOC_STARTTLS_CLIENT_V1) {
+	} else if (orig_cmd == PIOC_STARTTLS_CLIENT_V2) {
 		//
 		// Setup as a TLS client
 		//
@@ -1619,9 +1629,7 @@ static void *starttls_thread (void *cmd_void) {
 			}
 			if (len == 128) {
 				send_error (cmd, EINVAL, "Remote ID is not set");
-				close (soxx [0]);
-				close (soxx [1]);
-				close (passfd);
+				close (cryptfd);
 				return;
 			}
 			cmd->cmd.pio_data.pioc_starttls.remoteid [sizeof (cmd->cmd.pio_data.pioc_starttls.remoteid)-1] = '\0';
@@ -1642,9 +1650,7 @@ static void *starttls_thread (void *cmd_void) {
 		// Neither a TLS client nor a TLS server
 		//
 		send_error (cmd, ENOTSUP, "Command not supported");
-		close (soxx [0]);
-		close (soxx [1]);
-		close (passfd);
+		close (cryptfd);
 		return;
 	}
 
@@ -1711,7 +1717,7 @@ static void *starttls_thread (void *cmd_void) {
 	// Now setup for the GnuTLS handshake
 	//
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
-		gnutls_transport_set_int (session, passfd);
+		gnutls_transport_set_int (session, cryptfd);
 		gnutls_handshake_set_timeout (session, GNUTLS_DEFAULT_HANDSHAKE_TIMEOUT);
 	}
 	if (gtls_errno != GNUTLS_E_SUCCESS) {
@@ -1721,9 +1727,7 @@ static void *starttls_thread (void *cmd_void) {
 		} else {
 			send_error (cmd, EIO, "Failed to prepare for TLS");
 		}
-		close (soxx [0]);
-		close (soxx [1]);
-		close (passfd);
+		close (cryptfd);
 		return;
 	}
 	do {
@@ -1772,27 +1776,44 @@ static void *starttls_thread (void *cmd_void) {
 			send_error (cmd, EPERM, "TLS handshake failed");
 		}
 		manage_txn_rollback (&cmd->txn);
-		close (soxx [0]);
-		close (soxx [1]);
-		close (passfd);
+		close (cryptfd);
 		return;
         } else {
-		tlog (TLOG_UNIXSOCK | TLOG_TLS, LOG_INFO, "TLS handshake succeeded over %d", passfd);
-		manage_txn_commit (&cmd->txn);
+		tlog (TLOG_UNIXSOCK | TLOG_TLS, LOG_INFO, "TLS handshake succeeded over %d", cryptfd);
 		//TODO// extract_authenticated_remote_identity (cmd);
 	}
 
 	//
-	// Communicate outcome
-	send_command (cmd, soxx [0]);	// soxx [0] is app-received
-	close (soxx [0]);		// assuming cross-pid dup() is finished
+	// Request the plaintext file descriptor with a callback
+	uint32_t oldcmd = cmd->cmd.pio_cmd;
+	cmd->cmd.pio_cmd = PIOC_PLAINTEXT_CONNECT_V2;
+	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response with PIOC_PLAINTEXT_CONNECT_V2");
+	cmd = send_callback_and_await_response (cmd);
+	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that set plainfd:=%d for lid==\"%s\" and rid==\"%s\"", cmd->passfd, cmd->cmd.pio_data.pioc_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid);
+	plainfd = cmd->passfd;
+	cmd->passfd = -1;
+	if (plainfd < 0) {
+		tlog (TLOG_UNIXSOCK, LOG_ERR, "No plaintext file descriptor supplied to TLS Pool");
+		send_error (cmd, EINVAL, "No plaintext file descriptor supplied to TLS Pool");
+		manage_txn_rollback (&cmd->txn);
+		close (cryptfd);
+		return;
+	}
+	if (cmd->cmd.pio_cmd != PIOC_PLAINTEXT_CONNECT_V2) {
+		tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has bad command code");
+		send_error (cmd, EINVAL, "Callback response has bad command code");
+		manage_txn_rollback (&cmd->txn);
+		close (cryptfd);
+		close (plainfd);
+		return;
+	}
+	cmd->cmd.pio_cmd = oldcmd;
+	send_command (cmd, -1);		// app sent plainfd to us
 
 	//
 	// Copy TLS records until the connection is closed
-	copycat (soxx [1], passfd, session, clientfd); // soxx [1] is pooled decryptlink
-	close (soxx [1]);
-	close (passfd);
-	gnutls_deinit (session);
+	manage_txn_commit (&cmd->txn);
+	copycat (plainfd, cryptfd, session, clientfd);
 }
 
 

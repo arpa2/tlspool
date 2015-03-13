@@ -36,50 +36,75 @@ int tlspool_socket (char *path);
 
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
+ *
+ * A non-zero server flag indicates that the connection is protected from
+ * the server side, although the flags may modify this somewhat.  The
+ * checkname() function is only used for server connections.
+ * 
+ * The cryptfd handle supplies the TLS connection that is assumed to have
+ * been setup.  When the function ends, either in success or failure, this
+ * handle will no longer be available to the caller; the responsibility of
+ * closing it is passed on to the function and/or the TLS Pool.
+ *
+ * The tlsdata structure will be copied into the command structure,
+ * and upon completion it will be copied back.  You can use it to
+ * communicate flags, protocols and other parameters, including the
+ * most important settings -- local and remote identifiers.  See
+ * the socket protocol document for details.
+ *
+ * The privdata handle is used in conjunction with the namedconnect() call;
+ * it is passed on to connect the latter to the context from which it was
+ * called and is not further acted upon by this function.
+ *
+ * The namedconnect() function is called when the identities have been
+ * exchanged, and established, in the TLS handshake.  This is the point
+ * at which a connection to the plaintext side is needed, and a callback
+ * to namedconnect() is made to find a handle for it.  The function is
+ * called with a version of the tlsdata that has been updated by the
+ * TLS Pool to hold the local and remote identities.  The return value
+ * should be -1 on error, with errno set, or it should be a valid file
+ * handle that can be passed back to the TLS Pool to connect to.
+ *
+ * When the namedconnect argument passed is NULL, default behaviour is
+ * triggered.  This interprets the privdata handle as an (int *) holding
+ * a file descriptor.  If its value is valid, that is, >= 0, it will be
+ * returned directly; otherwise, a socketpair is constructed, one of the
+ * sockets is stored in privdata for use by the caller and the other is
+ * returned as the connected file descriptor for use by the TLS Pool.
+ * This means that the privdata must be properly initialised for this
+ * use, with either -1 (to create a socketpair) or the TLS Pool's
+ * plaintext file descriptor endpoint.  The file handle returned in
+ * privdata, if it is >= 0, should be closed by the caller, both in case
+ * of success and failure.
+ *
+ * This function returns zero on success, and -1 on failure.  In case of
+ * failure, errno will be set.
  */
-int _starttls_libfun (int server, int fd, starttls_t *tlsdata, int checksni (char *,size_t));
+int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
+			void *privdata,
+			int namedconnect (starttls_t *tlsdata, void *privdata));
 
 
 /* The starttls_client() call is an inline wrapper around the library
- * function that combines client and server operations.
- *
- * The tlsdata structure will be copied into the command structure,
- * and upon completion it will be copied back.  You can use it to
- * communicate flags, protocols and other parameters, including the
- * most important settings -- local and remote identifiers.  See
- * the socket protocol document for details.
- *
- * The function returns -1 on error, and sets errno appropriately.
+ * function that combines client and server operations.  Its behaviour is
+ * the same, except that the server flag is not required.
  */
-static inline int starttls_client (int fd, starttls_t *tlsdata) {
-	return _starttls_libfun (0, fd, tlsdata, NULL);
+static inline int starttls_client (int cryptfd, starttls_t *tlsdata,
+			void *privdata,
+			int namedconnect (starttls_t *tlsdata,void *privdata)) {
+	return _starttls_libfun (0, cryptfd, tlsdata, privdata, namedconnect);
 }
 
-
-/* The starttls_server() call is an inline warpper around the library
- * function that combiners client and server operations.
- *
- * The tlsdata structure will be copied into the command structure,
- * and upon completion it will be copied back.  You can use it to
- * communicate flags, protocols and other parameters, including the
- * most important settings -- local and remote identifiers.  See
- * the socket protocol document for details.
- *
- * The checksni() function is a callback that is used to verify if a
- * proposed local identifier is acceptable.  The buffer along with its
- * size including trailing NUL character is provided, and may be
- * reviewed.  Note that the actual string stored in the buffer may be
- * shorter; the room is provided to offer place for alternate proposals
- * of local identities.  The function may disagree with a name without
- * proposing an alternative by setting the buffer to an emptry string or
- * by returning zero.  Non-zero returned from checksni() means to use
- * the buffer value as it is upon return.
- *
- * The function returns -1 on error, and sets errno appropriately.
+/* The starttls_server() call is an inline wrapper around the library
+ * function that combines client and server operations.  Its behaviour is
+ * the same, except that the server flag is not required.
  */
-static inline int starttls_server (int fd, starttls_t *tlsdata, int checksni (char *,size_t)) {
-	return _starttls_libfun (1, fd, tlsdata, checksni);
+static inline int starttls_server (int cryptfd, starttls_t *tlsdata,
+			void *privdata,
+			int namedconnect (starttls_t *tlsdata,void *privdata)) {
+	return _starttls_libfun (1, cryptfd, tlsdata, privdata, namedconnect);
 }
+
 
 
 

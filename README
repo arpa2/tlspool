@@ -3,85 +3,63 @@ TLSPOOL README
 
 The tlspool package concentrates TLS-use by client and server applications.
 It gets passed a file descriptor of a socket, initiates TLS over it, and
-then passes back a new, TLS-protected socket to the originator.  This makes
-it very straightforward to add TLS support to network software, and the
-central location of the TLS Pool makes it easy to enforce consistent rules
-for authentication and authorization rules.
+then makes a callback with authenticated local/remote identities in a
+request for an additional file descriptor for the plaintext side.  This
+approach makes it straightforward to add TLS support to network software,
+and the central location of the TLS Pool makes it easy to enforce consistent
+rules for authentication and authorization rules.
 
 
-Proof of Concept code included
-------------------------------
-
-Currently, this work is in a proof-of-concept state, and programmed in
-Python.  This has been the work of a couple of students who wrote in Python,
-and it should be seen as a first demonstration of the idea of a TLS Pool.
-It is not at production level, documentation is rather limited, but it
-may be used for demonstration purposes.
-
-Note that this early TLS daemon uses the major concept, namely that of
-file descriptor exchange between application and TLS Pool, but the rest
-of the API has not been explicitly designed; expect this specific API
-to change.
-
-Also note that the DANE implementation only works for the publication of
-hashes of certificates, not for its other forms.  This means that the
-code is only usable in situations where the remote party can be trusted
-to implement this sort of thing.
-
-
-Full-blown daemon development
------------------------------
+Current development
+-------------------
 
 The actual daemon design is part of the plans of InternetWide.org,
 which aims to improve everyone's Internet quality through distribution of
 more protocols and facilities with strong encryption and privacy.  The
-full stretch of this project is documented on the website,
+full stretch of this project is documented on http://internetwide.org
+The practical/project side of this project is called ARPA2.net, and the
+website for the TLS Pool can be found at
 
-http://internetwide.org/
+http://tlspool.arpa2.net
 
 We are currently at a state where the daemon and a small stub library for
-applications are working, and simple ANON-DH encryption-only TLS.  So, even
-though you can ask for STARTTLS to be setup, it won't authenticate and it
-won't even attempt to exchange identity information.
+applications are working for certificate authentication using X.509 certs
+and/or OpenPGP keys.  We have built-in initial support for a few upcoming
+authentication approaches, namely Secure Remote Passwords and our own
+work on TLS-KDH,
 
-What it WILL do, is setup all the plumbing for an exchange that provides a
-place for this to be added.  It is built like this:
+http://tls-kdh.arpa2.net
 
-- src/tlspool is a daemon that provides the centralised STARTTLS service.
-- lib/libstarttls.so / .a provide a stub library for applications.
-- lib/testsrv is a test server using immediate STARTTLS on incoming TCP.
-- lib/testcli is a test client using immediate STARTTLS on outgoing TCP.
+Please see the TODO file for work that has not yet been completed.
 
-These can be run on one system (testcli and testsrv connect on localhost
-port 12345) to setup a line-based chat system between client and server.
-Note that the server will only respond to one client at a time; it is a
-mere test program that wants to show the chat on the server console.
+
+Using the library API
+---------------------
 
 The core logic used here is (client shown, server is similar):
 
 	#include <tlspool/starttls.h>
 	...
-	fd = starttls_client (fd, &tlsparams);
-	...
+	plainfd = -1;
+	if (-1 == starttls_client (fd, &tlsparams, &plainfd, NULL)) {
+		if (plainfd >= 0) {
+			close (plainfd);
+			plainfd = -1;
+		}
+		...error reoprting...
+	} else {
+		...continue to use plainfd...
+	}
 
 The daemon will cover TCP, UDP and SCTP over IPv4 and IPv6.  Asynchronous
-versions of these calls are under design, but their use is obvious and the
-API to the TLS Pool has been designed to support it.
+versions of these calls are possible by directly talking to the UNIX domain
+socket of the API.  The library routines above are only simple interfaces
+to these socket interactions.
 
-The daemon will provide configurable hooks for authentication and
-authorization; this can then be setup for the entire system at once.
-The resulting information of both authentication and authorization will be
-shared using memcached, to simplify sharing of outcome not just accross
-time and between protocols, but also between different servers.  The design
-goal of memcached is to avoid repeated checks and repeated access to
-remotely stored information, until a certain caching time has passed.
-
-CURRENT STATUS: The daemon starts, parses configuration directives and
-processes most of them.  The actual service is a full connection with
-all the plumbing for setting it up and tearing it down gracefully,
-but the only part of TLS that has been implemented is ANON-DH, which
-does encrypt the connection, but without any authentication or identity
-exchange.
+Unlike with common libraries, the identity forms (X.509 certificates,
+OpenPGP keys, Kerberos tickets, ...) are not made available to the
+application.  What is provided, are authenticated identities contained
+in the tlsparams structure after this call.
 
 
 The importance of PKCS #11
@@ -126,6 +104,39 @@ So, large-scale organisations could setup a networked HSM and use it
 both for production use and for feeding the intrusion detectors.
 
 
+The use of Central Configuration
+--------------------------------
+
+It is common for TLS applications to have locally defined settings for
+things like cipher suites, keys, methods of authentication supported, and
+much more.  Given the complexity of TLS and the application-specific
+format of configuration, the result is not ideal:
+
+  - Applications need to concern themselves with security issues.  In most
+    cases, the ability to externalise these concerns is desirable for the
+    application programmer, system administrator and security officer.
+
+  - When changes are necessary, many applications need to be reconfigured,
+    each in their own format.  This is a problem when such changes are
+    needed as a result of security disclosures.
+
+  - Not all applications cover the full range of features that TLS can
+    offer.  This means that security policies are constrained to the
+    lowest common denominator.
+
+The TLS Pool resolves this situation by not interfacing with the application
+about security settings.  All security settings are made out-of-band, and
+can be set in the same way for all applications at once; variations are
+supported per service, but even then the grammar is consistent.
+
+Configuration information for the TLS Pool is stored in simple key-value
+databases, whose contents may be modified without taking the TLS Pool
+offline.  The databases can be managed from the commandline, over a
+web-based API or from a central configuration in LDAP, using the sister
+project SteamWorks, documented on http://steamworks.arpa2.net -- there
+is a SteamWorks Pulley plugin for TLS Pool configuration.
+
+
 Additional Rules: RADIUS
 ------------------------
 
@@ -161,15 +172,90 @@ Accounting in the style of the TLS Pool comes down to counting ticks or
 time; a series of values is supplied to both the start and end that is
 being accounted:
 
- - an identifier for the kind of thing being accounted;
- - an identifier for the instance being accounted;
- - a local and remote identity of a user@domain or of a domain.
+  - an identifier for the kind of thing being accounted;
+  - an identifier for the instance being accounted;
+  - a local and remote identity of a user@domain or of a domain.
 
 For each of these, information is collected to support accounting:
 
- - the identifier for the kind of thing being accounted;
- - the identifier for the instance being accounted;
- - the local and remote identity of a user@domain or of a domain;
- - a timestamp for the start and, if present, the end of a period;
- - a final count representing the number of items being accounted.
+  - the identifier for the kind of thing being accounted;
+  - the identifier for the instance being accounted;
+  - the local and remote identity of a user@domain or of a domain;
+  - a timestamp for the start and, if present, the end of a period;
+  - a final count representing the number of items being accounted.
+
+
+
+Build targets
+-------------
+
+  - src/tlspool is a daemon that provides the centralised STARTTLS service.
+  - lib/libtlspool.so / .a provide a stub library for applications.
+  - tool/testsrv is a test server using immediate STARTTLS on incoming TCP.
+  - tool/testcli is a test client using immediate STARTTLS on outgoing TCP.
+  - tool/tlstunnel is an instant wrapper using STARTTLS after optional CHAT.
+
+
+Tests / demonstrations
+----------------------
+
+A simple test can be run on one system (testcli and testsrv connect on
+localhost port 12345) to setup a line-based chat system between client and
+server.  Note that the server will only respond to one client at a time; it
+is a mere test program that wants to show the chat on the server console.
+
+    tty0# src/tlspool -kc etc/tlspool.conf
+    tty1$ tool/testsrv
+    > Hello
+    < Oh, hi
+    ^D
+    tty2$ tool/testcli
+    < Hello
+    > Oh, hi
+    ^D
+
+A more lively demonstration is the tlstunnel tool, which connects an address
+and port in plaintext to an address and port in TLS-encrypted ciphertext.
+It can even perform a simple CHAT interaction to bootstrap a textual sequence
+to negotiate protocol-specific STARTTLS.
+
+    tty0# src/tlspool -kc etc/tlspool.conf
+    tty1$ tool/tlstunnel -s -l [::1]:22335 -L testsrv@tlspool.arpa2.lab -r [2001:db8::80]:80
+    tty2$ tool/tlstunnel -c -l [::1]:22334 -L testcli@tlspool.arpa2.lab -r [::1]:22335 -R testsrv@tlspool.arpa2.lab
+    tty3$ nc ::1 22334
+    GET / HTTP/1.0
+    Host: demo.web
+
+    HTTP/1.0 200 OK
+    ...
+
+Note that this starts two tunnels; one is the server, marked with the `-s`
+option, translating TLS-wrapped content to plaintext, connected to the
+backend server (fill in your own address, for instance a web server);
+the second is the client, marked with the `-c` option, translating plaintext
+to TLS-wrapped content; the `nc` command connects to the client, which in
+turn connects over TLS to the server, which in turn connects in plaintext
+to the (web) server.  You can now manually run a web query in `nc`.
+
+
+Windows Porting
+---------------
+
+The TLS Pool makes heavy use of UNIX domain sockets, and specifically their
+ability to pass a file descriptor between processes using `SOL_SOCKET` and
+`SCM_RIGHTS`.  For Windows, another approach is provisioned:
+
+TODO: This needs to be tried and built into the code base!
+
+  - The TLS Pool offers its services through a NamedPipe
+  - Waiting can be done with I/O Completion Ports
+  - File descriptor passing may be ported to random-name-passing for a NamedPipe
+  - This would require NamedPipe access being available only to the TLS Pool
+  - Alternatively, we could use CreatePipe and DuplicateHandle
+
+Links:
+
+http://comp.os.ms-windows.programmer.win32.narkive.com/wzRZJosf/anybody-used-createpipe-between-different-programs-prcesses
+
+http://tinyclouds.org/iocp-links.html
 

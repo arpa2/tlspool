@@ -144,3 +144,48 @@ listening for such inquiries, then no identity is offered to the remote.
 **Value**
 is the key of the local identity database, so it is a NAI.
 
+
+Trust database
+--------------
+
+**TODO:** Complete
+
+The default name of this database is ``trust.db``.
+
+The purpose of this database is to establish trust in credentials such as
+certificates.  It may hold several methods to establish this trust:
+
+-  Trust anchors, notably X.509 root certificates and trusted OpenPGP public keys
+-  X.509 certificate chains of OpenPGP public key paths leading to a trust anchor
+-  Pinned public credentials for individual peer identities
+-  Withdrawal descriptors to express explicit loss of trust
+-  Validation requirements for anything subordinate this entry
+
+Entries in this database are accessible to parties other than the TLS Pool;
+this means that it would be possible to control the TLS Pool centrally by
+a provisioning mechanism that ends up writing into this database.  This even
+means that centralised credential pinning is supported, to relieve individual
+users falling under central management.
+
+The origin of the data need not be manually administered.  Protocols such
+as OCSP or DANE could be used to retrieve information to be automaically
+inserted into this database.  This might be done from a central location,
+and both simplify and speedup the management of provisioned setups.
+
+
+Policy database
+---------------
+
+**TODO:** Complete
+
+The default name of this database is ``policy.db``.
+
+The purpose of this database is to store the current policy settings, and
+to permit dynamic changes to these settings in a way that is automatically
+picked up by the TLS Pool.
+
+Lookups in this database are based on local/remote identities, which are
+searched through iteration with a DoNAI selector that gradually moves from
+concrete identity to the most abstract one.
+
+

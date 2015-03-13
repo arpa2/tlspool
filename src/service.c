@@ -8,6 +8,7 @@
 #include <string.h>
 #include <errno.h>
 #include <pthread.h>
+#include <assert.h>
 
 #include <syslog.h>
 #include <fcntl.h>
@@ -100,6 +101,7 @@ static struct command *allocate_command_for_clientfd (int fd) {
 		}
 	}
 	cmdpool [pos].clientfd = fd;
+	cmdpool [pos].passfd = -1;
 	cmdpool [pos].handler = pthread_self ();	// Not fit for cancel
 	cmdpool [pos].claimed = 1;
 	return &cmdpool [pos];
@@ -179,6 +181,7 @@ int send_command (struct command *cmd, int passfd) {
 	struct msghdr mh;
 	struct cmsghdr *cmsg;
 
+	assert (passfd == -1);	// Working passfd code retained but not used
 	bzero (anc, sizeof (anc));
 	bzero (&iov, sizeof (iov));
 	bzero (&mh, sizeof (mh));
@@ -227,7 +230,8 @@ void send_error (struct command *cmd, int tlserrno, char *msg) {
 
 /* Receive a command.  Return nonzero on success, zero on failure. */
 int receive_command (int sox, struct command *cmd) {
-	int newfd;
+	int newfds [2];
+	int newfdcnt = 0;
 	char anc [CMSG_SPACE (sizeof (int))];
 	struct iovec iov;
 	struct msghdr mh = { 0 };
@@ -240,7 +244,6 @@ int receive_command (int sox, struct command *cmd) {
 	mh.msg_control = anc;
 	mh.msg_controllen = sizeof (anc);
 
-	cmd->passfd = -1;
 	if (recvmsg (sox, &mh, 0) == -1) {
 		//TODO// Differentiate behaviour based on errno?
 		perror ("Failed to receive command");
@@ -249,11 +252,19 @@ int receive_command (int sox, struct command *cmd) {
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received command request code 0x%08x with cbid=%d over fd=%d", cmd->cmd.pio_cmd, cmd->cmd.pio_cbid, sox);
 
 	cmsg = CMSG_FIRSTHDR (&mh);
+	//TODO// It is more general to look at all FDs passed, close all 2+
 	if (cmsg && (cmsg->cmsg_len == CMSG_LEN (sizeof (int)))) {
 		if ((cmsg->cmsg_level == SOL_SOCKET) && (cmsg->cmsg_type == SCM_RIGHTS)) {
-			cmd->passfd = * (int *) CMSG_DATA (cmsg);
-			tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d", cmd->passfd);
+			if (cmd->passfd == -1) {
+				cmd->passfd = * (int *) CMSG_DATA (cmsg);
+				tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d", cmd->passfd);
+			} else {
+				int superfd = * (int *) CMSG_DATA (cmsg);
+				tlog (TLOG_UNIXSOCK, LOG_ERR, "Received superfluous file descriptor as %d", superfd);
+				close (superfd);
+			}
 		}
+		cmsg = CMSG_NXTHDR (&mh, cmsg);
 	}
 
 	return 1;
@@ -351,13 +362,13 @@ static void process_command (struct command *cmd) {
 	}
 	switch (cmd->cmd.pio_cmd) {
 	case PIOC_PING_V1:
-		strcpy (d->pioc_ping.YYYYMMDD_producer, TLSPOOL_IDENTITY_V1);
+		strcpy (d->pioc_ping.YYYYMMDD_producer, TLSPOOL_IDENTITY_TMP);
 		send_command (cmd, -1);
 		return;
-	case PIOC_STARTTLS_CLIENT_V1:
+	case PIOC_STARTTLS_CLIENT_V2:
 		starttls_client (cmd);
 		return;
-	case PIOC_STARTTLS_SERVER_V1:
+	case PIOC_STARTTLS_SERVER_V2:
 		starttls_server (cmd);
 		return;
 	case PIOC_PINENTRY_V1:

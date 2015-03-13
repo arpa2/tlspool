@@ -128,6 +128,10 @@ void error_db2posix (int db_errno, char *new_errstr) {
 	error_setstring (new_errstr);
 	//
 	// Translate error to a POSIX errno value
+	if (db_errno > 0) {
+		errno = db_errno;
+		return;
+	}
 	switch (db_errno) {
 	case DB_BUFFER_SMALL:
 	case DB_LOG_BUFFER_FULL:

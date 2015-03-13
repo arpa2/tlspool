@@ -8,7 +8,7 @@
 #include <stdint.h>
 
 
-#define TLSPOOL_IDENTITY_V1	"20130710tlspool@openfortress.nl"
+#define TLSPOOL_IDENTITY_TMP	"20150310tlspool@tmp.vanrein.org"
 
 
 /****************************** STRUCTURES *****************************/
@@ -116,14 +116,14 @@ typedef struct pioc_starttls starttls_t;
  * the current exchange.  It explains why, through a code and message,
  * in the pioc_error type.  Error codes are defined in <errno.h>
  */
-#define PIOC_SUCCESS_V1			0x00000000
+#define PIOC_SUCCESS_V1				0x00000000
 
 
 /* An error packet is sent if the other party is unwilling to continue
  * the current exchange.  It explains why, through a code and message,
  * in the pioc_error type.  Error codes are defined in <errno.h>
  */
-#define PIOC_ERROR_V1			0x00000001
+#define PIOC_ERROR_V1				0x00000001
 
 
 /* A simple command to exchange courtesy, keepalives and potentially
@@ -134,7 +134,7 @@ typedef struct pioc_starttls starttls_t;
  * the software semantics version, plus a domain or user@domain identity
  * representing the producer at that time, terminated with '\0'.
  */
-#define PIOC_PING_V1			0x00000010
+#define PIOC_PING_V1				0x00000010
 
 
 /* Start a TLS sequence as a TLS client.  This uses PIO_STARTTLS_xxx
@@ -146,7 +146,7 @@ typedef struct pioc_starttls starttls_t;
  * leaving it an empty string.  They may already present their localid
  * or leave it open for possible interaction during the TLS exchange.
  */
-#define PIOC_STARTTLS_CLIENT_V1		0x00000020
+#define PIOC_STARTTLS_CLIENT_V2			0x00000022
 
 
 /* Start a TLS sequence as a TLS server.  This uses PIO_STARTTLS_xxx
@@ -159,7 +159,7 @@ typedef struct pioc_starttls starttls_t;
  * service many, so it is even possible to set that to an empty string
  * and leave it to the TLS exchange to propose localid values.
  */
-#define PIOC_STARTTLS_SERVER_V1		0x00000021
+#define PIOC_STARTTLS_SERVER_V2			0x00000023
 
 
 /* When a client initiates TLS, it may have started off with an empty
@@ -176,7 +176,7 @@ typedef struct pioc_starttls starttls_t;
  * remoteid are meaningful when sent by the TLS pool, and only the
  * localid is interpreted when it returns to the TLS pool.
  */
-#define PIOC_STARTTLS_LOCALID_V1	0x00000028
+#define PIOC_STARTTLS_LOCALID_V1		0x00000028
 
 
 /* TODO: Possibly support renegotiation, like for explicit authn */
@@ -194,7 +194,16 @@ typedef struct pioc_starttls starttls_t;
 #define PIOC_PINENTRY_V1			0x00000029
 
 
-/* TODO: Define accounting as a best-effort, forked RADIUS interaction */
+/* The named connect command.  This is used in callbacks from the TLS Pool,
+ * to ask the application for a file descriptor.  Since this is called
+ * after the TLS handshake has succeeded, there is no danger of leaking
+ * information early; visibility and accessibility are usually arranged
+ * through PIOC_STARTTLS_LOCALID_V1 and not here.  The use of this callback
+ * is to provide a second file descriptor to the TLS Pool, and it is only
+ * used when this has not been provided yet.  The information in the
+ * tlsdata_t reflects localid and remoteid information from the handshake.
+ */
+#define PIOC_PLAINTEXT_CONNECT_V2		0x0000002a
 
 
 /* This command bit that marks a command as local.  Local commands are always
@@ -203,7 +212,7 @@ typedef struct pioc_starttls starttls_t;
  * control over the visibility of the extension code.  Picking rather
  * arbitrary codes may also help somewhat.
  */
-#define PIOC_LOCAL			0x80000000
+#define PIOC_LOCAL				0x80000000
 
 
 /********************************* FLAGS ********************************/

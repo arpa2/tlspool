@@ -4,7 +4,7 @@ tlstunnel -- Forward TLS/DTLS connections as TCP/UDP/SCTP, and vice versa.
 
 SYNOPSIS
 
-tlstunnel -c|-s [-u|-t|-x #|-y #] -l id [-r id] [-S path] inaddr inport fwaddr fwport
+tlstunnel -c|-s [-u|-t|-x #|-y #] -l id [-r id] [-S path] inaddr inport fwaddr fwport [--] [chatargs]
 
 DESCRIPTION
 

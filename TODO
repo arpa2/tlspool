@@ -30,3 +30,4 @@ There are many ways in which the current TLS Pool can be improved:
 + Port to the FreeBSD platform
 - Port to the Windows platform
 - Port to the Mac OS X platform
+- Consider a thread pool for session passthrough (the current copycat function)

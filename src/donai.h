@@ -24,7 +24,7 @@
 #define LID_TYPE_X509	0x00000001	/* X.509 certificate, DER-encoded */
 #define LID_TYPE_PGP	0x00000002	/* OpenPGP public key, binary form */
 #define LID_TYPE_SRP	0x00000003	/* No data, flags existence */
-#define LID_TYPE_KRB5	0x00000004	/* Ticket */
+#define LID_TYPE_KRB5	0x00000004	/* Kerberos5 ticket */
 
 #define LID_TYPE_MIN	LID_TYPE_X509
 #define LID_TYPE_MAX	LID_TYPE_KRB5
@@ -127,7 +127,7 @@ static inline void dbt_store (DBT *dbt, pool_datum_t *output) {
  * The value returned is only non-zero if a value was setup.
  * The DB_NOTFOUND value indicates that the key was not found.
  */
-success_t dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata);
+db_error dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata);
 
 /* Construct an iterator for a given remoteid selector.  Apply stepwise
  * generalisation to find the most concrete match.  The first value found
@@ -158,7 +158,7 @@ success_t dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata)
  * The DB_NOTFOUND value indicates that no selector matching the remoteid
  * was found in dbh_disclose.
  */
-success_t dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_localid, selector_t *remotesel, DBT *discpatn, DBT *keydata, DBT *creddata);
+db_error dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_localid, selector_t *remotesel, DBT *discpatn, DBT *keydata, DBT *creddata);
 
 /* Move an iterator to the next credential data value.  When done, the value
  * returned should be DB_NOTFOUND.

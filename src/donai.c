@@ -89,11 +89,11 @@ int dbcred_interpret (pool_datum_t *creddata, uint32_t *flags, char **p11priv, u
  * The value returned is only non-zero if a value was setup.
  * The DB_NOTFOUND value indicates that the key was not found.
  */
-success_t dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata) {
+db_error dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata) {
 	int db_errno = 0;
 	E_d2e ("Key not found in db_localid",
 		cursor->get (cursor, keydata, creddata, DB_SET));
-	return !errno;
+	return db_errno;
 }
 
 
@@ -126,7 +126,7 @@ success_t dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata)
  * The DB_NOTFOUND value indicates that no selector matching the remoteid
  * was found in dbh_disclose.
  */
-success_t dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_localid, selector_t *remotesel, DBT *discpatn, DBT *keydata, DBT *creddata) {
+db_error dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_localid, selector_t *remotesel, DBT *discpatn, DBT *keydata, DBT *creddata) {
 	int db_errno = 0;
 	int more = 1;
 	while (more) {
@@ -143,7 +143,7 @@ success_t dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_loc
 					keydata,
 					creddata,
 					DB_SET));
-			return !errno;
+			return db_errno;
 		} else if (fnd != DB_NOTFOUND) {
 			E_d2e ("Failed while searching with remote ID selector", fnd);
 			break;
@@ -153,7 +153,7 @@ success_t dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_loc
 	// Ended here with nothing more to find
 	E_d2e ("No selector matches remote ID in db_disclose",
 		DB_NOTFOUND);
-	return !errno;
+	return db_errno;
 }
 
 

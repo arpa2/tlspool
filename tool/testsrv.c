@@ -18,7 +18,7 @@ static starttls_t tlsdata_srv = {
 	.flags = 0,
 	.local = 0,
 	.ipproto = IPPROTO_TCP,
-	.localid = "testsrv@localhost",
+	.localid = "testsrv@tlspool.arpa2.lab",
 };
 
 void runterminal (int chanio) {
@@ -92,12 +92,16 @@ int main (int argc, char *argv) {
 			perror ("Failed to accept incoming connection");
 			continue;
 		}
-		plainfd = starttls_server (cnx, &tlsdata_srv, NULL);
-		if (plainfd == -1) {
+		plainfd = -1;
+		if (-1 == starttls_server (cnx, &tlsdata_srv, &plainfd, NULL)) {
 			perror ("Failed to STARTTLS on testsrv");
+			if (plainfd >= 0) {
+				close (plainfd);
+			}
 			exit (1);
 		}
 		printf ("DEBUG: STARTTLS succeeded on testsrv\n");
+		printf ("DEBUG: Local plainfd = %d\n", plainfd);
 		runterminal (plainfd);
 		printf ("DEBUG: Client connection terminated\n");
 		close (plainfd);

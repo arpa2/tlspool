@@ -279,9 +279,9 @@ size_t len;
  *	Perform a UUCP-dialer-like chat script on stdin and stdout.
  */
 int
-chat (plainfd, skipc, argc, argv)
+chat_builtin (plainfd, progpath, argc, argv)
      int plainfd;
-     int skipc;
+     char *progpath;
      int argc;
      char **argv;
 {
@@ -298,9 +298,12 @@ chat (plainfd, skipc, argc, argv)
 	return cs.exit_code;
     }
 
-    cs.program_name = *argv;
-    argv += skipc - 1;	/* -1 to incorporate an ignored program name position */
-    argc -= skipc - 1;
+    cs.program_name = strrchr (progpath, '/');
+    if (cs.program_name != NULL) {
+	cs.program_name++;
+    } else {
+	cs.program_name = progpath;
+    }
     tzset();
 
     while ((option = OPTION(argc, argv)) != 0) {

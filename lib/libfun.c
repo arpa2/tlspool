@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <syslog.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -21,7 +22,6 @@
  */
 int tlspool_socket (char *path) {
 	static int poolfd = -1;	/* Kept open until program termination */
-poolfd = -1; //TODO// Recognise crashed TLS Pool daemon and _then_ reset poolfd
 /*
 	if (poolfd != -1) {
 		fd_set fdtest;
@@ -58,6 +58,7 @@ poolfd = -1; //TODO// Recognise crashed TLS Pool daemon and _then_ reset poolfd
 		if (strlen (path) + 1 > sizeof (sun.sun_path)) {
 			errno = ENAMETOOLONG;
 		}
+		bzero (&sun, sizeof (sun));
 		strcpy (sun.sun_path, path);
 		sun.sun_family = AF_UNIX;
 		poolfd = socket (AF_UNIX, SOCK_STREAM, 0);
@@ -77,44 +78,72 @@ poolfd = -1; //TODO// Recognise crashed TLS Pool daemon and _then_ reset poolfd
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
  *
+ * A non-zero server flag indicates that the connection is protected from
+ * the server side, although the flags may modify this somewhat.  The
+ * checkname() function is only used for server connections.
+ * 
+ * The cryptfd handle supplies the TLS connection that is assumed to have
+ * been setup.  When the function ends, either in success or failure, this
+ * handle will no longer be available to the caller; the responsibility of
+ * closing it is passed on to the function and/or the TLS Pool.
+ *
  * The tlsdata structure will be copied into the command structure,
  * and upon completion it will be copied back.  You can use it to
  * communicate flags, protocols and other parameters, including the
  * most important settings -- local and remote identifiers.  See
  * the socket protocol document for details.
- * TODO: Use iovec() instead of memcpy() to optimise sending.
  *
- * The checksni() function is a callback that is used to verify if a
- * proposed local identifier is acceptable.  The buffer along with its
- * size including trailing NUL character is provided, and may be
- * reviewed.  Note that the actual string stored in the buffer may be
- * shorter; the room is provided to offer place for alternate proposals
- * of local identities.  The function may disagree with a name without
- * proposing an alternative by setting the buffer to an emptry string or
- * by returning zero.  Non-zero returned from checksni() means to use
- * the buffer value as it is upon return.
+ * The privdata handle is used in conjunction with the namedconnect() call;
+ * it is passed on to connect the latter to the context from which it was
+ * called and is not further acted upon by this function.
  *
- * The function returns -1 on error, and sets errno appropriately.
+ * The namedconnect() function is called when the identities have been
+ * exchanged, and established, in the TLS handshake.  This is the point
+ * at which a connection to the plaintext side is needed, and a callback
+ * to namedconnect() is made to find a handle for it.  The function is
+ * called with a version of the tlsdata that has been updated by the
+ * TLS Pool to hold the local and remote identities.  The return value
+ * should be -1 on error, with errno set, or it should be a valid file
+ * handle that can be passed back to the TLS Pool to connect to.
+ *
+ * When the namedconnect argument passed is NULL, default behaviour is
+ * triggered.  This interprets the privdata handle as an (int *) holding
+ * a file descriptor.  If its value is valid, that is, >= 0, it will be
+ * returned directly; otherwise, a socketpair is constructed, one of the
+ * sockets is stored in privdata for use by the caller and the other is
+ * returned as the connected file descriptor for use by the TLS Pool.
+ * This means that the privdata must be properly initialised for this
+ * use, with either -1 (to create a socketpair) or the TLS Pool's
+ * plaintext file descriptor endpoint.  The file handle returned in
+ * privdata, if it is >= 0, should be closed by the caller, both in case
+ * of success and failure.
+ *
+ * This function returns zero on success, and -1 on failure.  In case of
+ * failure, errno will be set.
  */
-int _starttls_libfun (int server, int fd, starttls_t *tlsdata, int checksni (char *,size_t)) {
+int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
+			void *privdata,
+			int namedconnect (starttls_t *tlsdata,void *privdata)) {
 	struct tlspool_command cmd;
-	int poolfd;
+	int poolfd = -1;
+	int plainfd = -1;
+	int sentfd = -1;
 	char anc [CMSG_SPACE(sizeof (int))];
 	struct iovec iov;
 	struct cmsghdr *cmsg;
 	struct msghdr mh = { 0 };
-	int processing = 1;
+	int processing;
 
 	/* Prepare command structure */
 	poolfd = tlspool_socket (NULL);
 	if (poolfd == -1) {
-		close (fd);
+		close (cryptfd);
 		return -1;
 	}
 	bzero (&cmd, sizeof (cmd));	/* Do not leak old stack info */
 	cmd.pio_reqid = 666;	/* Static: No asynchronous behaviour */
 	cmd.pio_cbid = 0;
-	cmd.pio_cmd = server? PIOC_STARTTLS_SERVER_V1: PIOC_STARTTLS_CLIENT_V1;
+	cmd.pio_cmd = server? PIOC_STARTTLS_SERVER_V2: PIOC_STARTTLS_CLIENT_V2;
 	memcpy (&cmd.pio_data.pioc_starttls, tlsdata, sizeof (struct pioc_starttls));
 
 	/* Send the request */
@@ -127,64 +156,88 @@ int _starttls_libfun (int server, int fd, starttls_t *tlsdata, int checksni (cha
 	cmsg = CMSG_FIRSTHDR (&mh);
 	cmsg->cmsg_level = SOL_SOCKET;
 	cmsg->cmsg_type = SCM_RIGHTS;
+	* (int *) CMSG_DATA (cmsg) = cryptfd;	/* cannot close it yet */
 	cmsg->cmsg_len = CMSG_LEN (sizeof (int));
-	* (int *) CMSG_DATA (cmsg) = fd;
 	if (sendmsg (poolfd, &mh, 0) == -1) {
+		close (cryptfd);
 		return -1;
 	}
+	sentfd = cryptfd;  /* Close anytime after response and before fn end */
 
 	/* Handle responses until success or error */
+	processing = 1;
 	while (processing) {
 		mh.msg_control = anc;
 		mh.msg_controllen = sizeof (anc);
 		if (recvmsg (poolfd, &mh, 0) == -1) {
-			close (fd);
+			close (sentfd);
 			return -1;
 		}
 		switch (cmd.pio_cmd) {
 		case PIOC_ERROR_V1:
 			/* Bad luck, we failed */
-			//TODO// Send errno + message to syslog()
 			errno = cmd.pio_data.pioc_error.tlserrno;
-			close (fd);
+			syslog (LOG_INFO, "TLS Pool error to _starttls_libfun(): %s", cmd.pio_data.pioc_error.message);
+			close (sentfd);
 			return -1;
-		case PIOC_STARTTLS_LOCALID_V1:
-			/* Check if a proposed local name is acceptable */
-			if (server && checksni && checksni (cmd.pio_data.pioc_starttls.localid, 128)) {
-				;	// Use the value now stored in localid
+		case PIOC_PLAINTEXT_CONNECT_V2:
+			if (namedconnect) {
+				plainfd =  namedconnect (tlsdata, privdata);
 			} else {
-				*cmd.pio_data.pioc_starttls.localid = 0;
+				/* default namedconnect() implementation */
+				plainfd = * (int *) privdata;
+				if (plainfd < 0) {
+					int soxx [2];
+					//TODO// Setup for TCP, UDP, SCTP
+					if (socketpair (AF_UNIX, SOCK_SEQPACKET, 0, soxx) == 0) {
+						/* Socketpair created */
+						plainfd = soxx [0];
+						* (int *) privdata = soxx [1];
+					} else {
+						/* Socketpair failed */
+						cmd.pio_cmd = PIOC_ERROR_V1;
+						cmd.pio_data.pioc_error.tlserrno = errno;
+						plainfd = -1;
+					}
+				}
 			}
-			mh.msg_control = NULL;
-			mh.msg_controllen = 0;
+			/* We now have a value to send in plainfd */
+			mh.msg_control = anc;
+			mh.msg_controllen = sizeof (anc);
+			cmsg = CMSG_FIRSTHDR (&mh);
+			cmsg->cmsg_level = SOL_SOCKET;
+			cmsg->cmsg_type = SCM_RIGHTS;
+			* (int *) CMSG_DATA (cmsg) = plainfd;
+			cmsg->cmsg_len = CMSG_LEN (sizeof (int));
+			/* Setup plainfd in sentfd, for delayed closing */
+			if (sentfd >= 0) {
+				close (sentfd);
+			}
+			sentfd = plainfd;
+			/* Now supply plainfd in the callback response */
 			if (sendmsg (poolfd, &mh, 0) == -1) {
+				close (sentfd);
 				return -1;
 			}
 			break;	// Loop around and try again
-		case PIOC_STARTTLS_CLIENT_V1:
-		case PIOC_STARTTLS_SERVER_V1:
+		case PIOC_STARTTLS_CLIENT_V2:
+		case PIOC_STARTTLS_SERVER_V2:
 			/* Wheee!!! we're done */
 			processing = 0;
 			break;
 		default:
-			/* V1 protocol error */
+			/* V2 protocol error */
 			errno = EPROTO;
-			close (fd);
+			close (sentfd);
 			return -1;
 		}
 	}
 
-	/* Close the now-duplicated or now-erradicated original fd */
-	close (fd);
+	/* Close the now-duplicated or now-erradicated plaintext fd */
+	close (sentfd);
 
-	/* Return command output data */
-	cmsg = CMSG_FIRSTHDR (&mh);
-	if (!cmsg) {
-		errno = EPROTO;
-		return -1;
-	}
 	memcpy (tlsdata, &cmd.pio_data.pioc_starttls, sizeof (struct pioc_starttls));
-	return * (int *) CMSG_DATA (cmsg);
+	return 0;
 }
 
 

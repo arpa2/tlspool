@@ -51,9 +51,11 @@ There are three sub-targets with their own Makefiles:
  * src/* hosts the daemon, which is an executable named "tlspool"
  * lib/* hosts the stub library for applications, and provides:
     - "libstarttls.a" and "libstarttls.so" to append to applications
+    - "tlspool.py" is similar, but used with Python
  * tool/* hosts a few demonstration applications, and provides:
     - "testcli" and "testsrv" test/demo apps, for line-based chat
     - "tlstunnel" as a plaintext-to-TLS or TLS-to-plaintext passthrough
+    - "webclientdemo.py" and "webserverdemo.py" are Python demonstrations
 
 The main directory "make" will also make all these subdirectory projects.
 
@@ -84,25 +86,24 @@ the testdata and under the warnings above:
 
 	cd src
 	./tlspool -kc ../etc/tlspool.conf
-	../tool/tlstunnel -s -L testsrv@tlspool.arpa2.lab ::1 22335 2001:db8::1234 80
-	../tool/tlstunnel -c -L testcli@tlspool.arpa2.lab -R testsrv@tlspool.arpa2.lab ::1 22334 ::1 22335
+	../tool/tlstunnel -s -l [::1]:22335 -L testsrv@tlspool.arpa2.lab -r [2001:db8::1234]:80
+	../tool/tlstunnel -c -l [::1]:22334 -L testcli@tlspool.arpa2.lab -r [::1]:22335 -R testsrv@tlspool.arpa2.lab
 	nc ::1 22334
 
 The `tlspool` binary is the TLS Pool itself.
 
 The `tlstunnel -s` is a server-side TLS unwrapper.  It receives TLS traffic
-on `::1 22335`, uses the TLS Pool to unwrap it, and forwards the traffic
-to `2001:db8::1234 80`, which is a non-existent address but could be replaced
+on `[::1]:22335`, uses the TLS Pool to unwrap it, and forwards the traffic
+to `[2001:db8::1234]:80`, which is a non-existent address but could be replaced
 by something like a web server.  You should provide your own
-IPv6 server address of choice.  Note that it is possible to enter an IPv4
-address as if it were an IPv6 address by prefixing it with two colons, as in
-`::123.45.67.89`.  The identity of the server is `testsrv@tlspool.arpa2.lab`
+IPv6 server address of choice.  Note that backward compatibility with IPv4
+is available.  The identity of the server is `testsrv@tlspool.arpa2.lab`
 and that is all that the tunnel needs to know; it will ask the TLS Pool to
 fill in the credentials belonging to this identity.
 
 The `tlstunnel -c` is a client-side TLS wrapper.  It receives plaintext
-traffic on `::1 22334`, uses the TLS Pool to wrap it in TLS, and forwards
-the traffic to `::1 22335`, which was not quite coincidentally configured
+traffic on `[::1]:22334`, uses the TLS Pool to wrap it in TLS, and forwards
+the traffic to `[::1]:22335`, which was not quite coincidentally configured
 before as a TLS-unwrapping server.  The client needs to know both its local
 identity, `testcli@tlspool.arpa2.lab`, as the server's.  The local identity
 is used to access the client credentials, as was done on the server, and the
