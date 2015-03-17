@@ -604,6 +604,7 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 	struct pollfd inout [3];
 	ssize_t sz;
 	struct linger linger = { 1, 10 };
+
 	inout [0].fd = local;
 	inout [1].fd = remote;
 	inout [2].fd = master;
@@ -778,12 +779,12 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 		cmd->cmd.pio_cmd = PIOC_STARTTLS_LOCALID_V1;
 		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response with PIOC_STARTTLS_LOCALID_V1");
 		cmd = send_callback_and_await_response (cmd);
-		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that sets plainfd:=%d and lid:=\"%s\" for rid==\"%s\"", cmd->passfd, lid, rid);
 		if (cmd->cmd.pio_cmd != PIOC_STARTTLS_LOCALID_V1) {
-			tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has bad command code");
+			tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has unexpected command code");
 			cmd->cmd.pio_cmd = oldcmd;
 			return GNUTLS_E_CERTIFICATE_ERROR;
 		}
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that sets plainfd:=%d and lid:=\"%s\" for rid==\"%s\"", cmd->passfd, lid, rid);
 		cmd->cmd.pio_cmd = oldcmd;
 		//
 		// Check that new rid is a generalisation of original rid
@@ -1789,6 +1790,15 @@ static void *starttls_thread (void *cmd_void) {
 	cmd->cmd.pio_cmd = PIOC_PLAINTEXT_CONNECT_V2;
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response with PIOC_PLAINTEXT_CONNECT_V2");
 	cmd = send_callback_and_await_response (cmd);
+		if (cmd->cmd.pio_cmd != PIOC_PLAINTEXT_CONNECT_V2) {
+			tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has unexpected command code");
+			if (cmd->cmd.pio_cmd == PIOC_ERROR_V1) {
+				send_command (cmd, -1);	// Bounce error back
+			} else {
+				send_error (cmd, EPROTO, "Unexpected response to plaintext connection callback");
+			}
+			return;
+		}
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that set plainfd:=%d for lid==\"%s\" and rid==\"%s\"", cmd->passfd, cmd->cmd.pio_data.pioc_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid);
 	plainfd = cmd->passfd;
 	cmd->passfd = -1;

@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
+#include <fcntl.h>
 
 #include <errno.h>
 #include <poll.h>
@@ -274,7 +275,7 @@ int connect_remote (starttls_t *curtlsdata, void *vlai) {
 					continue;
 				}
 				fprintf (stderr, "DEBUG: Formatting returned %s\n", sun.sun_path);
-				sai = &sun;
+				sai = (struct sockaddr *) &sun;
 			}
 			if (connect (sox, sai, sailen) == 0) {
 				return sox;
@@ -563,6 +564,8 @@ int main (int argc, char *argv []) {
 	maxbound = 0;
 	addrwalk = localaddrinfo;
 	while (addrwalk) {
+		int true = 1;
+		long fcntl_flags;
 		int sox = socket (addrwalk->ai_family, addrwalk->ai_socktype, addrwalk->ai_protocol);
 		if (sox == -1) {
 			fprintf (stderr, "Failed to create socket for %s: %s\n",
@@ -570,7 +573,23 @@ int main (int argc, char *argv []) {
 					strerror (errno));
 			exit (1);
 		}
-		//TODO// Set sox to non-blocking
+		// Share the socket; used because the TLS Pool holds older
+		// connections alive while restarting a TLS Tunnel.
+		if (setsockopt (sox, SOL_SOCKET, SO_REUSEADDR, &true, sizeof (true)) != 0) {
+			fprintf (stderr, "Failed to setup socket for reuse of local address (non-fatal)\n");
+		}
+		// Set the socket to non-blocking mode; this avoids a lockup
+		// on accept() when select() reports a connection attempt that
+		// is retracted before accept() is tried.
+		fcntl_flags = fcntl (sox, F_GETFL, 0);
+		if (fcntl_flags >= 0) {
+			if (fcntl (sox, F_SETFL, fcntl_flags | O_NONBLOCK) != 0) {
+				fcntl_flags = -1;
+			}
+		}
+		if (fcntl_flags < 0) {
+			fprintf (stderr, "Failed to setup for non-blocking accept()\n");
+		}
 		if (bind (sox, addrwalk->ai_addr, addrwalk->ai_addrlen) == -1) {
 			fprintf (stderr, "Failed to bind to %s: %s\n",
 					addrwalk->ai_canonname,

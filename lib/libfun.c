@@ -5,75 +5,361 @@
 #include <errno.h>
 #include <string.h>
 #include <syslog.h>
+#include <assert.h>
+
+#include <unistd.h>
+#include <pthread.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/select.h>
-
-#include <unistd.h>
+#include <sys/resource.h>
 
 #include <tlspool/starttls.h>
 #include <tlspool/commands.h>
 
 
+/* The master thread will run the receiving side of the socket that connects
+ * to the TLS Pool.  The have_master_lock is used with _trylock() and will
+ * succeed to lock once, thereby approving the creation of the master thread.
+ */
+
+static pthread_mutex_t have_master_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void *master_thread (void *path);
+
+static int poolfd = -1;		/* Blocked retrieval with tlspool_socket() */
+
+static pthread_cond_t updated_poolfd = PTHREAD_COND_INITIALIZER;
+
+
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
+ *
+ * As a side effect, this routine ensures that a master thread is running
+ * on the poolfd.  This is the process that actually contacts the TLS Pool
+ * and sets up the poolfd socket.
  */
 int tlspool_socket (char *path) {
-	static int poolfd = -1;	/* Kept open until program termination */
-/*
-	if (poolfd != -1) {
-		fd_set fdtest;
-		struct timeval fdtout;
-		FD_ZERO (&fdtest);
-		FD_SET (poolfd, &fdtest);
-		// select() with timeout 0.000000 becomes a quick poll
-		fdtout.tv_sec  = 0;
-		fdtout.tv_usec = 0;
-		// Select may return -1 on error, 1 on fd-except, 0 on no change
-		if (select (poolfd + 1, NULL, NULL, &fdtest, &fdtout) != 0) {
-			close (poolfd);	// Likely to fail silently
-			errno = 0;
-			poolfd = -1;
+	int poolfdsample = poolfd;
+	if (poolfdsample < 0) {
+		pthread_mutex_t local_cond_wait = PTHREAD_MUTEX_INITIALIZER;
+		//
+		// Now that we have established a (first) poolfd, start up
+		// the master thread that will recv() from it, and distribute.
+		if (pthread_mutex_trylock (&have_master_lock) == 0) {
+			pthread_t thr;
+			if (!path) {
+				path = TLSPOOL_DEFAULT_SOCKET_PATH;
+			}
+			if (strlen (path) + 1 > sizeof (((struct sockaddr_un *) NULL)->sun_path)) {
+				syslog (LOG_ERR, "TLS Pool path name too long for UNIX domain socket");
+				exit (1);
+			}
+			if (pthread_create (&thr, NULL, master_thread, (void *) path) != 0) {
+				syslog (LOG_NOTICE, "Failed to create TLS Pool client master thread");
+				pthread_mutex_unlock (&have_master_lock);
+				close (poolfd);
+				poolfd = -1;
+				return -1;
+			}
+			pthread_detach (thr);
 		}
+		//
+		// Wait until the master thread signals that it updated the
+		// poolfd, as long as it is invalid.
+		//
+		// The cond_wait requires a mutex to wait on; the specs leave
+		// room for different mutexes for each waiter (otherwise it
+		// would not have been supplied with each pthread_cond_wait()
+		// call) and that helps to avoid threads to contend on a
+		// shared mutex -- which is why we use a local mutex per
+		// thread: we don't need to wait for unique access.
+		assert (pthread_mutex_lock (&local_cond_wait) == 0);
+		while (poolfdsample = poolfd, poolfdsample < 0) {
+			pthread_cond_wait (&updated_poolfd, &local_cond_wait);
+		}
+		pthread_mutex_unlock (&local_cond_wait);
 	}
-*/
-/*
-	if (poolfd != -1) {
-		struct sockaddr_un sun;
-		socklen_t sunlen = sizeof (sun);
-		if (getpeername (poolfd, (struct sockaddr *) &sun, &sunlen) == -1) {
-			close (poolfd);	// Likely to fail silently
-			errno = 0;
-			poolfd = -1;
-		}
-	}
-*/
-	if (poolfd == -1) {
-		struct sockaddr_un sun;
-		if (!path) {
-			path = TLSPOOL_DEFAULT_SOCKET_PATH;
-		}
-		if (strlen (path) + 1 > sizeof (sun.sun_path)) {
-			errno = ENAMETOOLONG;
-		}
-		bzero (&sun, sizeof (sun));
-		strcpy (sun.sun_path, path);
-		sun.sun_family = AF_UNIX;
-		poolfd = socket (AF_UNIX, SOCK_STREAM, 0);
-		if (poolfd == -1) {
-			return -1;
-		}
-		if (connect (poolfd, (struct sockaddr *) &sun, SUN_LEN (&sun)) == -1) {
-			close (poolfd);
-			poolfd = -1;
-		}
-	}
-	return poolfd;
+	return poolfdsample;
 }
 
 
+/* Determine an upper limit for simultaneous STARTTLS threads, based on the
+ * number of available file descriptors.  Note: The result is cached, so
+ * don't use root to increase beyond max in setrlimit() after calling this.
+ */
+int tlspool_simultaneous_starttls (void) {
+	static int simu = -1;
+	if (simu < 0) {
+		struct rlimit rlimit_nofile;
+		if (getrlimit (RLIMIT_NOFILE, &rlimit_nofile) == -1) {
+			syslog (LOG_NOTICE, "Failed to determine simultaneous STARTTLS: %s", strerror (errno));
+			rlimit_nofile.rlim_max = 1024;  // Pick something
+		}
+		simu = rlimit_nofile.rlim_max / 2;  // 2 FDs per STARTTLS
+	}
+}
+
+
+/* The request registry is an array of pointers, filled by the starttls_xxx()
+ * functions for as long as they have requests standing out.  The registry
+ * permits instant lookup of a mutex to signal, so the receiving end may
+ * pickup the message in its also-registered tlspool command buffer.
+ */
+
+struct registry_entry {
+	pthread_mutex_t *sig;		/* Wait for master thread's recvmsg() */
+	struct tlspool_command *buf;	/* Buffer to hold received command */
+	int pfd;			/* Client thread's assumed poolfd */
+};
+
+static struct registry_entry **registry;
+
+static pthread_mutex_t registry_lock = PTHREAD_MUTEX_INITIALIZER;
+
+
+/* Register a request handling structure under a request ID.  Registers the
+ * registry entry at the given reqid; if reqid is -1, a new one, mappable to
+ * the uint16_t type for the field is allocated and set in *reqid.  When the
+ * registry entry is NULL, it will be removed from the registry and the reqid
+ * is reset to -1.
+ *
+ * The return value is 0 on success, or -1 on failure; the most probable
+ * cause for failure is 
+ */
+static int registry_update (int *reqid, struct registry_entry *entry) {
+	static int simu = -1;
+	static uint16_t pos = 0;
+	int ctr;
+	if (registry == NULL) {
+		simu = tlspool_simultaneous_starttls ();
+		registry = calloc (simu, sizeof (struct registry_entry *));
+		if (registry == NULL) {
+			syslog (LOG_NOTICE, "Failed to allocate TLS Pool request registry");
+			return -1;
+		}
+	}
+	if (entry != NULL) {
+		/* Set the entry in the given entry */
+		if (*reqid < 0) {
+			/* Allocate an entry in the registry */
+			assert (pthread_mutex_lock (&registry_lock) == 0);
+			ctr = simu;
+			while (ctr-- > 0) {
+				if (registry [pos] == NULL) {
+					registry [pos] = entry;
+					*reqid = pos;
+					break;
+				}
+				pos++;
+				if (pos >= simu) {
+					pos = 0;
+				}
+			}
+			pthread_mutex_unlock (&registry_lock);
+		}
+		if (*reqid < 0) {
+			return -1;
+		}
+	} else {
+		if ((*reqid < 0) || (*reqid >= simu)) {
+			return -1;
+		}
+		/* Remove the entry from the given entry */
+		assert (pthread_mutex_lock (&registry_lock) == 0);
+		registry [*reqid] = NULL;	/* may not be atomic */
+		*reqid = -1;
+		pthread_mutex_unlock (&registry_lock);
+	}
+	return 0;
+}
+
+
+/* Flush registry entries with an older poolfd value; this is used after
+ * reconnecting to the TLS Pool, presumably having closed the old poolfd.
+ * Any outstanding registry entries will be sent an ERROR value at this
+ * time.
+ */
+void registry_flush (int poolfd) {
+	int regid = tlspool_simultaneous_starttls ();
+	assert (pthread_mutex_lock (&registry_lock) == 0);
+	while (regid-- > 0) {
+		struct registry_entry *entry = registry [regid];
+		if ((entry != NULL) && (entry->pfd != poolfd)) {
+			// Fill the cmd buffer with an error message
+			entry->buf->pio_cmd = PIOC_ERROR_V1;
+			entry->buf->pio_data.pioc_error.tlserrno = EPIPE;
+			strncpy (entry->buf->pio_data.pioc_error.message,
+				"No reply from TLS Pool",
+				sizeof (entry->buf->pio_data.pioc_error.message));
+			// Signal continuation to the recipient
+			pthread_mutex_unlock (entry->sig);
+			// Do not remove the entry; the recipient will do this
+		}
+	}
+	pthread_mutex_unlock (&registry_lock);
+}
+
+
+/* The master thread issues the recv() commands on the TLS Pool socket, and
+ * redistributes the result to the registry entries that are waiting for
+ * the data.  The thread is started when the poolfd is first requested.
+ *
+ * Having a dedicated master thread is a great design simplification over
+ * temporary promotion of one of the application threads to a master status.
+ * The locking involved in the distinct state without a master, and the
+ * raceconditions while establishing the first on-demand master are dreadful.
+ *
+ * An additional advantage of a separate master thread is that it will
+ * instantly notice when the TLS Pool goes offline.  At this time, it will
+ * lock the registry and cancel any requests in the registry that are
+ * waiting for the older connection.  Subsequent attempts to receive are
+ * stopped immediately.  The TLS Pool then tries to reconnect to the
+ * TLS Pool anew, using exponential back-off.
+ */
+static void *master_thread (void *path) {
+	useconds_t usec;
+	struct sockaddr_un sun;
+	struct tlspool_command cmd;
+	//NOT-USED// char anc [CMSG_SPACE(sizeof (int))];
+	struct iovec iov;
+	struct cmsghdr *cmsg;
+	struct msghdr mh = { 0 };
+	struct registry_entry *entry;
+
+	//
+	// Setup path information -- value and size were checked
+	bzero (&sun, sizeof (sun));
+	strcpy (sun.sun_path, (char *) path);
+	sun.sun_family = AF_UNIX;
+	//
+	// Service forever
+	while (1) {
+		//
+		// If any old socket clients persist, tell them that the
+		// TLS Pool has been disconnected.
+		if (poolfd >= 0) {
+			int poolfdcopy = poolfd;
+printf ("DEBUG: Removing old poolfd %d\n", poolfd);
+			poolfd = -1;
+			registry_flush (-1);
+			close (poolfdcopy);
+		}
+		//
+		// First, connect to the TLS Pool; upon failure, retry
+		// with 0.25s, 0.5s, ... 32s intervals.
+		usec = 250;
+		while (poolfd < 0) {
+			poolfd = socket (AF_UNIX, SOCK_STREAM, 0);
+			if (poolfd != -1) {
+				if (connect (poolfd, (struct sockaddr *) &sun, SUN_LEN (&sun)) == -1) {
+					close (poolfd);
+					poolfd = -1;
+				}
+			}
+printf ("DEBUG: Trying new poolfd %d\n", poolfd);
+			//
+			// Signal a newly set poolfd value to all waiting.
+			// Note that we do not need to claim a mutex first;
+			// there is always one writer to poolfd (namely, this
+			// master_thread) and the rest simply reads it.  This
+			// makes a silent assumption of atomic writes to the
+			// poolfd, which seems fair because the size of an
+			// fd table has been smaller than the size of the
+			// data bus since the times of ZX Spectrum and CP/M.
+			pthread_cond_broadcast (&updated_poolfd);
+printf ("DEBUG: Signalled slave threads with poolfd %d\n", poolfd);
+			//
+			// Wait before repeating, with exponential back-off
+			if (poolfd < 0) {
+				usleep (usec);
+				usec <<= 1;
+				if (usec > 32000000) {
+					usec = 32000000;
+				}
+			}
+		}
+		//
+		// We now have an established link to the TLS Pool, until
+		// further notice -- that is, until the TLS Pool terminates.
+		// At that time, a break ends the following loop and jumps
+		// back up to the re-connection logic.
+		while (1) {
+			int retval;
+			iov.iov_base = &cmd;
+			iov.iov_len = sizeof (cmd);
+			mh.msg_iov = &iov;
+			mh.msg_iovlen = 1;
+			//NOT-USED// mh.msg_control = anc;
+			//NOT-USED// mh.msg_controllen = sizeof (anc);
+			retval = recvmsg (poolfd, &mh, MSG_NOSIGNAL);
+			if (retval == 0) {
+				errno = EPIPE;
+				retval = -1;
+			}
+			if (retval == -1) {
+				// This includes EPIPE, or EOF, for detached
+				// TLS Pool; the treatment is to reconnect.
+printf ("DEBUG: recvmsg() returned -1 due to: %s\n", strerror (errno));
+				break;
+			}
+			//
+			// Determine where to post the received message
+			entry = registry [cmd.pio_reqid];
+			if (entry == NULL) {
+				// Protocol error!  Client detached!
+printf ("DEBUG: Client detached! poolfd=%d, cmd=0x%08x, reqid=%d, cbid=%d\n", poolfd, cmd.pio_cmd, cmd.pio_reqid, cmd.pio_cbid);
+				if ((cmd.pio_cbid != 0) && (cmd.pio_cmd != PIOC_ERROR_V1)) {
+printf ("DEBUG: Will send PIOC_ERROR_V1 as callback to TLS Pool\n");
+					// TLS Pool is waiting for a callback;
+					// Send it an ERROR message instead.
+					cmd.pio_cmd = PIOC_ERROR_V1;
+					cmd.pio_data.pioc_error.tlserrno = EPIPE;
+					strncpy (cmd.pio_data.pioc_error.message, "Client prematurely left TLS Pool negotiations", sizeof (cmd.pio_data.pioc_error.message));
+					sendmsg (poolfd, &mh, MSG_NOSIGNAL);
+					// Ignore errors
+printf ("DEBUG: Sent      PIOC_ERROR_V1 as callback to TLS Pool\n");
+				}
+				// Do not attempt delivery
+				continue;
+			}
+			if (entry->pfd != poolfd) {
+printf ("DEBUG: Registry entry has older poolfd %d not %d, flushing registry\n", entry->pfd, poolfd);
+				registry_flush (poolfd);
+			}
+			memcpy (entry->buf, &cmd, sizeof (cmd));
+			//NOT-USED// deliver anc or passfd to recipient
+			pthread_mutex_unlock (entry->sig);
+printf ("DEBUG: Signalled slave with new message in place\n");
+		}
+	}
+}
+
+
+/* Consider handling the message reception interface, if no other thread is
+ * doing that yet.  Then, wait until a message has been received.
+ */
+void registry_recvmsg (struct registry_entry *entry) {
+	static int lastpoolfd = -1;
+	//
+	// Detect poolfd socket change for potential dangling recipients
+	if (entry->pfd != lastpoolfd) {
+		lastpoolfd = tlspool_socket (NULL);
+		if ((entry->pfd != lastpoolfd) && (lastpoolfd != -1)) {
+			// Signal PIOC_ERROR to outdated recipients.
+			// (That will include the current recipient.)
+			registry_flush (lastpoolfd);
+		}
+	}
+	//
+	// Now wait for the registered command structure to be filled
+	// by the master thread.  Note that the call to tlspool_socket()
+	// above is made when this function is first called, and that
+	// routine ensures running of the master thread.
+	assert (pthread_mutex_lock (entry->sig) == 0);
+}
 
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
@@ -125,6 +411,9 @@ int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
 			void *privdata,
 			int namedconnect (starttls_t *tlsdata,void *privdata)) {
 	struct tlspool_command cmd;
+	pthread_mutex_t recvwait = PTHREAD_MUTEX_INITIALIZER;
+	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
+	int entry_reqid = -1;
 	int poolfd = -1;
 	int plainfd = -1;
 	int sentfd = -1;
@@ -138,10 +427,20 @@ int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
 	poolfd = tlspool_socket (NULL);
 	if (poolfd == -1) {
 		close (cryptfd);
+		errno = ENODEV;
+		return -1;
+	}
+	/* Finish setting up the registry entry */
+	regent.pfd = poolfd;
+	pthread_mutex_lock (&recvwait);		// Will await unlock by master
+	/* Determine the request ID */
+	if (registry_update (&entry_reqid, &regent) != 0) {
+		close (cryptfd);
+		errno = EBUSY;
 		return -1;
 	}
 	bzero (&cmd, sizeof (cmd));	/* Do not leak old stack info */
-	cmd.pio_reqid = 666;	/* Static: No asynchronous behaviour */
+	cmd.pio_reqid = entry_reqid;
 	cmd.pio_cbid = 0;
 	cmd.pio_cmd = server? PIOC_STARTTLS_SERVER_V2: PIOC_STARTTLS_CLIENT_V2;
 	memcpy (&cmd.pio_data.pioc_starttls, tlsdata, sizeof (struct pioc_starttls));
@@ -158,8 +457,11 @@ int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
 	cmsg->cmsg_type = SCM_RIGHTS;
 	* (int *) CMSG_DATA (cmsg) = cryptfd;	/* cannot close it yet */
 	cmsg->cmsg_len = CMSG_LEN (sizeof (int));
-	if (sendmsg (poolfd, &mh, 0) == -1) {
+	if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
+		//TODO// Let SIGPIPE be reported as EPIPE
 		close (cryptfd);
+		registry_update (&entry_reqid, NULL);
+		// errno inherited from sendmsg()
 		return -1;
 	}
 	sentfd = cryptfd;  /* Close anytime after response and before fn end */
@@ -167,22 +469,20 @@ int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
 	/* Handle responses until success or error */
 	processing = 1;
 	while (processing) {
-		mh.msg_control = anc;
-		mh.msg_controllen = sizeof (anc);
-		if (recvmsg (poolfd, &mh, 0) == -1) {
-			close (sentfd);
-			return -1;
-		}
+		//NOTUSED// mh.msg_control = anc;
+		//NOTUSED// mh.msg_controllen = sizeof (anc);
+		registry_recvmsg (&regent);
 		switch (cmd.pio_cmd) {
 		case PIOC_ERROR_V1:
 			/* Bad luck, we failed */
-			errno = cmd.pio_data.pioc_error.tlserrno;
 			syslog (LOG_INFO, "TLS Pool error to _starttls_libfun(): %s", cmd.pio_data.pioc_error.message);
 			close (sentfd);
+			registry_update (&entry_reqid, NULL);
+			errno = cmd.pio_data.pioc_error.tlserrno;
 			return -1;
 		case PIOC_PLAINTEXT_CONNECT_V2:
 			if (namedconnect) {
-				plainfd =  namedconnect (tlsdata, privdata);
+				plainfd = namedconnect (tlsdata, privdata);
 			} else {
 				/* default namedconnect() implementation */
 				plainfd = * (int *) privdata;
@@ -215,8 +515,11 @@ int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
 			}
 			sentfd = plainfd;
 			/* Now supply plainfd in the callback response */
-			if (sendmsg (poolfd, &mh, 0) == -1) {
+			if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
+				//TODO// Let SIGPIPE be reported as EPIPE
 				close (sentfd);
+				registry_update (&entry_reqid, NULL);
+				// errno inherited from sendmsg()
 				return -1;
 			}
 			break;	// Loop around and try again
@@ -227,8 +530,9 @@ int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
 			break;
 		default:
 			/* V2 protocol error */
-			errno = EPROTO;
 			close (sentfd);
+			registry_update (&entry_reqid, NULL);
+			errno = EPROTO;
 			return -1;
 		}
 	}
@@ -237,6 +541,7 @@ int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
 	close (sentfd);
 
 	memcpy (tlsdata, &cmd.pio_data.pioc_starttls, sizeof (struct pioc_starttls));
+	registry_update (&entry_reqid, NULL);
 	return 0;
 }
 

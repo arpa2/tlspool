@@ -204,24 +204,29 @@ localhost port 12345) to setup a line-based chat system between client and
 server.  Note that the server will only respond to one client at a time; it
 is a mere test program that wants to show the chat on the server console.
 
-    tty0# src/tlspool -kc etc/tlspool.conf
-    tty1$ tool/testsrv
+    tty0# cd src ; ./tlspool -kc ../etc/tlspool.conf
+    tty1$ ../tool/testsrv
     > Hello
     < Oh, hi
     ^D
-    tty2$ tool/testcli
+    tty2$ ../tool/testcli
     < Hello
     > Oh, hi
     ^D
+
+**Note:** The `cd src` is done to ensure that the default database references
+in `../etc/tlspool.conf` can point to `../testdata/*` files.  In an installed
+version, the configuration file would hold absolute path names and there
+would be no reason to be in any particular directory.
 
 A more lively demonstration is the tlstunnel tool, which connects an address
 and port in plaintext to an address and port in TLS-encrypted ciphertext.
 It can even perform a simple CHAT interaction to bootstrap a textual sequence
 to negotiate protocol-specific STARTTLS.
 
-    tty0# src/tlspool -kc etc/tlspool.conf
-    tty1$ tool/tlstunnel -s -l [::1]:22335 -L testsrv@tlspool.arpa2.lab -r [2001:db8::80]:80
-    tty2$ tool/tlstunnel -c -l [::1]:22334 -L testcli@tlspool.arpa2.lab -r [::1]:22335 -R testsrv@tlspool.arpa2.lab
+    tty0# cd src ; ./tlspool -kc ../etc/tlspool.conf
+    tty1$ ../tool/tlstunnel -s -l [::1]:22335 -L testsrv@tlspool.arpa2.lab -r [2001:db8::80]:80
+    tty2$ ../tool/tlstunnel -c -l [::1]:22334 -L testcli@tlspool.arpa2.lab -r [::1]:22335 -R testsrv@tlspool.arpa2.lab
     tty3$ nc ::1 22334
     GET / HTTP/1.0
     Host: demo.web
