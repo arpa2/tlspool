@@ -166,6 +166,7 @@ static void unregister_client_socket_byindex (int soxidx) {
 	int sox = soxpoll [soxidx].fd;
 	pinentry_forget_clientfd (sox);
 	free_commands_by_clientfd (sox);
+	ctlkey_close_clientfd (sox);
 	num_sox--;
 	if (soxidx < num_sox) {
 		memcpy (&soxinfo [soxidx], &soxinfo [num_sox], sizeof (*soxinfo));
@@ -213,11 +214,27 @@ int send_command (struct command *cmd, int passfd) {
 }
 
 
+/* Report success to the user.  Note that this function does not terminate
+ * actions, but it should be the last response to the client.
+ */
+void send_success (struct command *cmd) {
+	cmd->cmd.pio_cmd = PIOC_SUCCESS_V1;
+	cmd->cmd.pio_cbid = 0;
+	if (!send_command (cmd, -1)) {
+		perror ("Failed to send success reply");
+	}
+}
+
+
 /* Report an error response to the user.  Report with the given errno and msg.
  * Note that this function does not terminate actions, but it should be the
  * last response to the client.
  */
 void send_error (struct command *cmd, int tlserrno, char *msg) {
+	if (tlserrno == 0) {
+		send_success (cmd);
+		return;
+	}
 	cmd->cmd.pio_cmd = PIOC_ERROR_V1;
 	cmd->cmd.pio_cbid = 0;
 	cmd->cmd.pio_data.pioc_error.tlserrno = tlserrno;
@@ -370,6 +387,12 @@ static void process_command (struct command *cmd) {
 		return;
 	case PIOC_STARTTLS_SERVER_V2:
 		starttls_server (cmd);
+		return;
+	case PIOC_CONTROL_DETACH_V2:
+		ctlkey_detach (cmd);
+		return;
+	case PIOC_CONTROL_REATTACH_V2:
+		ctlkey_reattach (cmd);
 		return;
 	case PIOC_PINENTRY_V1:
 		register_pinentry_command (cmd);

@@ -94,6 +94,22 @@ int main (int argc, char *argv) {
 		exit (1);
 	}
 	printf ("DEBUG: STARTTLS succeeded on testcli\n");
+	// Play around, just for fun, with the control key
+	if (tlspool_control_reattach (tlsdata_cli.ctlkey) != -1) {
+		printf ("ERROR: Could reattach before detaching the control?!?\n");
+	}
+	if (tlspool_control_detach (tlsdata_cli.ctlkey) == -1) {
+		printf ("ERROR: Could not detach the control?!?\n");
+	}
+	if (tlspool_control_detach (tlsdata_cli.ctlkey) != -1) {
+		printf ("ERROR: Could detach the control twice?!?\n");
+	}
+	if (tlspool_control_reattach (tlsdata_cli.ctlkey) == -1) {
+		printf ("ERROR: Could not reattach the control?!?\n");
+	}
+	if (tlspool_control_reattach (tlsdata_cli.ctlkey) != -1) {
+		printf ("ERROR: Could reattach the control twice?!?\n");
+	}
 	printf ("DEBUG: Local plainfd = %d\n", plainfd);
 	runterminal (plainfd);
 	close (plainfd);

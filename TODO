@@ -24,7 +24,7 @@ There are many ways in which the current TLS Pool can be improved:
 + Move database environment and names into configuration parameters
 + Move DH params file to a configuration parameter
 - Explain how to generate X.509 and GnuPG certificates with PKCS #11
-- Recognise callbacks with a "same" file handle as session access requests
++ Recognise callbacks with a "same" file handle as session access requests
 - Move PID file handling to daemon.c; make -k switch after new initialisation
 + Add autotools support with bootstrap.sh and subsequent ./configure
 + Port to the FreeBSD platform

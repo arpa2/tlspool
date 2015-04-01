@@ -85,25 +85,40 @@ int main (int argc, char *argv []) {
 	if (pinentry) {
 		enter_pins (pinentry);
 	} else {
+		//UNDO// sigset_t sigblockmask;
 		int pid = fork ();
 		switch (pid) {
 		case -1:
 			perror ("Failed to fork daemon");
 			exit (1);
 		case 0:
+			// Detach from the startup session
 			setsid ();
+			//TODO// close the common fd's 0/1/2
+			// Setup a SIGHUP handler to gracefully stop service
 			if (sigaction (SIGHUP, &hupaction, NULL) != 0) {
 				perror ("Failed to setup HUP signal handler");
 			}
-			//TODO// close the common fd's 0/1/2
+			//UNDO// // Block SIGINT, which is used between copycat() threads
+			//UNDO// sigemptyset (&sigblockmask);
+			//UNDO// sigaddset (&sigblockmask, SIGINT);
+			//UNDO// if (sigprocmask (SIG_BLOCK, &sigblockmask, NULL) != 0) {
+			//UNDO// 	perror ("Failed to set signal mask");
+			//UNDO// 	exit (1);
+			//UNDO// }
+			// Setup program structures
 			parse_cfgfile (cfgfile, kill_competition);
 			setup_error ();
 			tlog (TLOG_DAEMON, LOG_INFO, "TLS Pool started");
 			setup_management ();
 			setup_starttls ();
 			setup_pinentry ();
+			setup_ctlkey ();
+			// Run the TLS Pool service's main routine
 			run_service ();
+			// Cleanup for shutdown of the TLS Pool
 			tlog (TLOG_DAEMON, LOG_DEBUG, "Preparing to stop -- Cleanup started");
+			cleanup_ctlkey ();
 			cleanup_pinentry ();
 			cleanup_starttls ();
 			cleanup_management ();

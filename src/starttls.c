@@ -599,20 +599,27 @@ void cleanup_starttls (void) {
  * http://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
  * http://www.greenend.org.uk/rjk/tech/poll.html
  */
-static void copycat (int local, int remote, gnutls_session_t wrapped, int master) {
+static void copycat (int local, int remote, gnutls_session_t wrapped, int client) {
 	char buf [1024];
 	struct pollfd inout [3];
 	ssize_t sz;
 	struct linger linger = { 1, 10 };
+	int have_client;
 
 	inout [0].fd = local;
 	inout [1].fd = remote;
-	inout [2].fd = master;
-	inout [0].events = inout [1].events = POLLIN;
+	inout [2].fd = client;
+	have_client = inout [2].fd >= 0;
+	if (!have_client) {
+		inout [2].revents = 0;	// Will not be written by poll
+		//FORK!=DETACH// inout [2].fd = ctlkey_signalling_fd;
+	}
+	inout [0].events = POLLIN;
+	inout [1].events = POLLIN;
 	inout [2].events = 0;	// error events only
-	tlog (TLOG_COPYCAT, LOG_DEBUG, "Starting copycat cycle for local=%d, remote=%d", local, remote);
+	tlog (TLOG_COPYCAT, LOG_DEBUG, "Starting copycat cycle for local=%d, remote=%d, control=%d", local, remote, client);
 	while (((inout [0].events | inout [1].events) & POLLIN) != 0) {
-		if (poll (inout, 3, -1) == -1) {
+		if (poll (inout, have_client? 3: 2, -1) == -1) {
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat polling returned an error");
 			break;	// Polling sees an error
 		}
@@ -659,14 +666,28 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int master
 		}
 		inout [0].revents &= ~(POLLIN | POLLHUP); // Thy copying cat?
 		inout [1].revents &= ~(POLLIN | POLLHUP); // Retract thee claws!
-		if ((inout [0].revents | inout [1].revents | inout [2].revents) & ~POLLIN) {
-			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat polling returned a special condition");
+		if ((inout [0].revents | inout [1].revents) & ~POLLIN) {
+			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat data connection polling returned a special condition");
 			break;	// Apparently, one of POLLERR, POLLHUP, POLLNVAL
+		}
+		if (inout [2].revents & ~POLLIN) {
+			if (have_client) {
+				// This case is currently not ever triggered
+				tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat control connection polling returned a special condition");
+				break;	// Apparently, one of POLLERR, POLLHUP, POLLNVAL
+			} else {
+				inout [2].fd = client;
+				have_client = inout [2].fd >= 0;
+				if (have_client) {
+					tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat signalling_fd polling raised a signal to set control fd to %d", inout [2].fd);
+				} else {
+					tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat signalling_fd polling raised a signal that could be ignored");
+				}
+				continue;
+			}
 		}
 	}
 	tlog (TLOG_COPYCAT, LOG_DEBUG, "Ending copycat cycle for local=%d, remote=%d", local, remote);
-	close (local);
-	close (remote);
 	gnutls_deinit (wrapped);
 }
 
@@ -1535,6 +1556,7 @@ static void *starttls_thread (void *cmd_void) {
 	int i;
 	struct credinfo *clisrv_creds;
 	int clisrv_credcount;
+	struct ctlkeynode ctlkeyregent;
 
 	//
 	// General thread setup
@@ -1557,6 +1579,13 @@ static void *starttls_thread (void *cmd_void) {
 	clientfd = cmd->clientfd;
 	cmd->session_certificate = (intptr_t) (void *) NULL;
 	cmd->session_privatekey = (intptr_t) (void *) NULL;
+
+	//
+	// Potentially decouple the controlling fd (ctlkey is in orig_piocdata)
+	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_FORK) {
+		cmd->cmd.pio_data.pioc_starttls.flags &= ~PIOF_STARTTLS_FORK;
+		clientfd = -1;
+	}
 
 	//
 	// Setup BDB transactions and reset credential datum fields
@@ -1823,7 +1852,14 @@ static void *starttls_thread (void *cmd_void) {
 	//
 	// Copy TLS records until the connection is closed
 	manage_txn_commit (&cmd->txn);
-	copycat (plainfd, cryptfd, session, clientfd);
+	//TODO// Register ctlkey in mapping to pthread
+	//TODO// Register ctlkey early, and be able to send_error() when failed
+	if (ctlkey_register (orig_piocdata.ctlkey, &ctlkeyregent, cmd->clientfd) == 0) {
+		copycat (plainfd, cryptfd, session, clientfd);
+		ctlkey_unregister (orig_piocdata.ctlkey);
+	}
+	close (plainfd);
+	close (cryptfd);
 }
 
 

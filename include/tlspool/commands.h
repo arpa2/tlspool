@@ -8,25 +8,28 @@
 #include <stdint.h>
 
 
-#define TLSPOOL_IDENTITY_TMP	"20150310tlspool@tmp.vanrein.org"
+#define TLSPOOL_IDENTITY_TMP	"20150313tlspool@tmp.vanrein.org"
 
 
 /****************************** STRUCTURES *****************************/
 
 
+#define TLSPOOL_CTLKEYLEN 16
+
+
 /*
- * TLS pool communication proceeds over a UNIX file system socket, by
+ * TLS Pool communication proceeds over a UNIX file system socket, by
  * sending and receiving messages like below.
  *
  * The order of events is always one where the application connecting
- * to the socket sends messages, and the TLS pool always sends a response.
+ * to the socket sends messages, and the TLS Pool always sends a response.
  * Depending on the command, this response may be fast or slow, but there
  * will always be a response as long as the connection is kept open.  If
  * the application can handle concurrent communication, it may send
  * more than one packet at a time.  The response will always copy the
  * pio_reqid field from the request to facilitate this; the application
  * should ensure different pio_reqid values for simultaneously sent
- * requests.  The TLS pool may also request follow-up action, which
+ * requests.  The TLS Pool may also request follow-up action, which
  * should also lead to exactly one action.  In this case, the pio_cbid
  * field must be copied into the new request.
  *
@@ -51,7 +54,7 @@
  * such upgrades should be readily available to all targeted users!
  *
  * It is generally safe to assume that applications need no protection
- * from the TLS pool.  The opposite does not hold, as there are secrets
+ * from the TLS Pool.  The opposite does not hold, as there are secrets
  * in the pool that may be interesting to attack.
  *
  * When a command fails, an error must always be reported through the
@@ -90,18 +93,24 @@ struct tlspool_command {
 			uint16_t streamid;	// Needed for SCTP
 			char localid [128];	// Local ID or empty string
 			char remoteid [128];	// Remote ID or empty string
+			uint8_t ctlkey [TLSPOOL_CTLKEYLEN];	// Key for detach
 		} pioc_starttls;
 		struct pioc_pinentry {
 			uint32_t flags;		// PIOF_PINENTRY_xxx below
 			uint32_t attempt;	// Attempt counter -- display!
 			uint32_t timeout_us;	// Timeout in microseconds
 			char pin [128];		// Empty string means no PIN
-			char prompt [128];	// Prompt from TLS pool
+			char prompt [128];	// Prompt from TLS Pool
 			char token_manuf [33];	// PKCS #11 token manufacturer
 			char token_model [17];	// PKCS #11 token model
 			char token_serial [17];	// PKCS #11 token serial number
 			char token_label [33];	// PKCS #11 token label
 		} pioc_pinentry;
+		struct pioc_control {
+			uint32_t flags;		// PIOF_CONTROL_xxx, none yet
+			uint8_t ctlkey [TLSPOOL_CTLKEYLEN]; // Control key
+			char name [128];	// A name field
+		} pioc_control;
 	} pio_data;
 };
 
@@ -138,7 +147,7 @@ typedef struct pioc_starttls starttls_t;
 
 
 /* Start a TLS sequence as a TLS client.  This uses PIO_STARTTLS_xxx
- * flags, defined below.  The local definitions of the TLS pool define
+ * flags, defined below.  The local definitions of the TLS Pool define
  * part of the semantics.
  * The payload data is defined in pioc_starttls and is the same
  * for the client and server, and for request and response.  Clients
@@ -150,7 +159,7 @@ typedef struct pioc_starttls starttls_t;
 
 
 /* Start a TLS sequence as a TLS server.  This uses PIO_STARTTLS_xxx
- * flags, defined below.  The local definitions of the TLS pool define
+ * flags, defined below.  The local definitions of the TLS Pool define
  * part of the semantics.
  * The payload data is defined in pioc_starttls and is the same
  * for the client and server, and for request and response.  Servers
@@ -167,14 +176,14 @@ typedef struct pioc_starttls starttls_t;
  * it may have done the same.  This can lead to a response by the TLS
  * daemon, proposing a localid that can be modified by the application
  * and sent back in the same message format.  The remoteid is sent
- * by the TLS pool as extra information, but it is an empty string if
+ * by the TLS Pool as extra information, but it is an empty string if
  * the information is unavailable.
  * Be prepared to receive zero or more of these proposals in the course
  * of a TLS exchange.  Especially when rejecting one localid there may
- * be ways for the TLS pool to propose other localid values.
+ * be ways for the TLS Pool to propose other localid values.
  * The payload used is the pioc_starttls, but only the localid and
- * remoteid are meaningful when sent by the TLS pool, and only the
- * localid is interpreted when it returns to the TLS pool.
+ * remoteid are meaningful when sent by the TLS Pool, and only the
+ * localid is interpreted when it returns to the TLS Pool.
  */
 #define PIOC_STARTTLS_LOCALID_V1		0x00000028
 
@@ -183,9 +192,9 @@ typedef struct pioc_starttls starttls_t;
 
 
 /* The PIN entry command.  The data stored in tlscmd_pinentry determines
- * what happens exactly.  When sent to the TLS pool it can provide a
+ * what happens exactly.  When sent to the TLS Pool it can provide a
  * non-empty PIN, which only makes sense in response to a PIOC_PINENTRY_V1
- * from the TLS pool.  An empty PIN always means that no PIN is being
+ * from the TLS Pool.  An empty PIN always means that no PIN is being
  * provided, possibly due to cancellation by the user.  All
  * token-descriptive are terminated with a NUL-character, unlike in
  * PKCS #11 where they have a fixed length.  Trailing spaces available
@@ -206,6 +215,23 @@ typedef struct pioc_starttls starttls_t;
 #define PIOC_PLAINTEXT_CONNECT_V2		0x0000002a
 
 
+/* Detach the connection decribed by the given ctlkey value.  The value for
+ * each connection is provided by the client during the STARTTLS setup.
+ * When the ctlkey is not found, an error is returned, otherwise SUCCESS.
+ * See also the PIOF_STARTTLS_DETACH flag, which performs this action as part
+ * of the STARTTLS setup.
+ */
+#define PIOC_CONTROL_DETACH_V2			0x00000100
+
+
+/* Reattach a connection described by the given ctlkey value.  This can be
+ * issued over any client connection to the TLS Pool to regain control over
+ * a TLS/plaintext connection, but only if no controlling client is attached
+ * yet.  The command returns an ERROR or SUCCESS.
+ */
+#define PIOC_CONTROL_REATTACH_V2		0x00000101
+
+
 /* This command bit that marks a command as local.  Local commands are always
  * a bit of a risk, and should incorporate some way of identifying the
  * source of the command, or would otherwise be wise to exercise complete
@@ -220,7 +246,7 @@ typedef struct pioc_starttls starttls_t;
 
 /* PIOF_STARTTLS_xxx flags are sent and received in pioc_starttls.
  *
- * When sent to the TLS pool, they may provide it some freedom; when
+ * When sent to the TLS Pool, they may provide it some freedom; when
  * it is still set in the response then this freedom has been exercised.
  *
  * Other flags indicate additional requirements.  When these are not met,
@@ -233,15 +259,15 @@ typedef struct pioc_starttls starttls_t;
 #define PIOF_STARTTLS_DTLS			0x00000001
 
 
-/* PIOF_STARTTLS_REQUIRE_DNSSEC tells the TLS pool that DNSSEC must be
+/* PIOF_STARTTLS_REQUIRE_DNSSEC tells the TLS Pool that DNSSEC must be
  * used for all information in DNS; so, a self-acclaimed I-can-do-without
- * domain is no longer permitted to connect over TLS.  The TLS pool may
+ * domain is no longer permitted to connect over TLS.  The TLS Pool may
  * rely on an external resolver to properly set the AD bits.
  */
 #define PIOF_STARTTLS_REQUIRE_DNSSEC		0x00000010
 
 
-/* PIOF_STARTTLS_TIGHTEN_LDAP tells the TLS pool that LDAP connections must
+/* PIOF_STARTTLS_TIGHTEN_LDAP tells the TLS Pool that LDAP connections must
  * be secured through TLS.  In addition, the certificate used by LDAP will
  * be verified as is normally done for domain certificates.  Normally, that
  * means it must be acknowledged in a TLSA record.  Users and domains from
@@ -253,18 +279,18 @@ typedef struct pioc_starttls starttls_t;
 #define PIOF_STARTTLS_REQUIRE_LDAP_SECURITY	0x00000060
 
 
-/* PIOF_STARTTLS_SKIP_EXT_AUTHN tells the TLS pool that no external
+/* PIOF_STARTTLS_SKIP_EXT_AUTHN tells the TLS Pool that no external
  * authentication is needed on top of the normal operations of the
- * TLS pool.  Usually, if an external authentication source is configured,
+ * TLS Pool.  Usually, if an external authentication source is configured,
  * it will be RADIUS.  If it is not even configured, then this flag is of
  * no consequence.
  */
 #define PIOF_STARTTLS_SKIP_EXT_AUTHN		0x00000080
 
 
-/* PIOF_STARTTLS_SKIP_EXT_AUTHZ tells the TLS pool that no external
+/* PIOF_STARTTLS_SKIP_EXT_AUTHZ tells the TLS Pool that no external
  * authorization is needed on top of the normal operations of the
- * TLS pool.  Usually, if an external authorization source is configured,
+ * TLS Pool.  Usually, if an external authorization source is configured,
  * it will be RADIUS.  If it is not even configured, then this flag is of
  * no consequence.
  */
@@ -286,20 +312,20 @@ typedef struct pioc_starttls starttls_t;
 #define PIOF_STARTTLS_SEND_SNI			0x00000200
 
 
-/* PIOF_STARTTLS_IGNORE_CACHES requires the TLS pool to perform the
+/* PIOF_STARTTLS_IGNORE_CACHES requires the TLS Pool to perform the
  * validation here and now.  It will not accept cached results from
  * recent encounters as sufficient proof that the remote peer has
  * the acclaimed identity.  This can be used at places in an
  * interaction where the identity of the remote peer must be firmly
  * established.  Note that bypassing the caches dramatically increases
- * the amount of work for the TLS pool, and should thus be used with
+ * the amount of work for the TLS Pool, and should thus be used with
  * care.  Note that the validation outcome may still be cached, for
  * future use when the peer relation is more relaxed.
  */
 #define PIOF_STARTTLS_IGNORE_CACHES		0x00000400
 
 
-/* PIOF_STARTTLS_REQUEST_REMOTEID means that the TLS pool should not
+/* PIOF_STARTTLS_REQUEST_REMOTEID means that the TLS Pool should not
  * strictly require, but merely request a remote identity.  This is
  * useful if the remote peer is a client who may not have a certificate
  * to authenticate with, and should still be able to access the service
@@ -312,7 +338,7 @@ typedef struct pioc_starttls starttls_t;
 #define PIOF_STARTTLS_REQUEST_REMOTEID		0x00000800
 
 
-/* PIOF_STARTTLS_IGNORE_REMOTEID means that the TLS pool need not bother
+/* PIOF_STARTTLS_IGNORE_REMOTEID means that the TLS Pool need not bother
  * to even request a remote identity.  If one is provided, it is not
  * validated.  This is useful if the local application cannot use the
  * remote identity in any useful way.  It is also useful to permit
@@ -323,6 +349,45 @@ typedef struct pioc_starttls starttls_t;
  * against passive observers.
  */
 #define PIOF_STARTTLS_IGNORE_REMOTEID		0x00001000
+
+
+/* PIOF_STARTTLS_DETACH instructs the TLS Pool to detach the TLS session
+ * from the client connection over which it was setup.  This means that
+ * no more control commands can be sent in relation to the TLS session
+ * until a client connection issues a successful PIOC_CONTROL_REATTACH_V2.
+ * 
+ * In many applications, this flag will be combined with PIOF_STARTTLS_FORK
+ * which has an independent meaning; FORK applies to the independent
+ * life of a TLS session that is run by the TLS Pool, and DETACH applies to
+ * the ability to send control commands in relation to a TLS session.
+ *
+ * The TLS Pool also implements one relationship between FORK and DETACH;
+ * after a FORK, the close-down of the client that setup a connection will
+ * automatically cause a DETACH of those TLS sessions.
+ *
+ * When the PIOC_STARTTLS_xxx exchange starts, the value in ctlkey is stored
+ * fur future reference; control can be regained from any TLS Pool client
+ * connection that presents the ctlkey in PIOC_CONTROL_REATTACH_V2.
+ *
+ * See also the PIOC_CONTROL_DETACH_V2 command, which performs the action as
+ * a separate command.
+ */
+#define PIOF_STARTTLS_DETACH			0x00002000
+
+
+/* PIOF_STARTTLS_FORK instructs the TLS Pool that the TLS session should
+ * continue to run when the client connection over which it was setup closes.
+ * By default, TLS sessions are terminated when their requesting client
+ * disappears, for instance due to termination of the requesting program.
+ *
+ * FORK and DETACH are different concepts; FORK applies to the independent
+ * life of a TLS session that is run by the TLS Pool, and DETACH applies to
+ * the ability to send control commands in relation to a TLS session.  Many
+ * applications will use the two combined.  The TLS Pool also implements one
+ * relation; after a FORK, the close-down of the client that setup a
+ * connection will automatically cause a DETACH of those TLS sessions.
+ */
+#define PIOF_STARTTLS_FORK			0x00004000
 
 
 #endif //TLSPOOL_COMMANDS_H

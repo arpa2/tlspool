@@ -367,6 +367,7 @@ int main (int argc, char *argv []) {
 	int sctpudp = 0;
 	long parsed_number;
 	int stream;
+	int tlsfork = 0;
 	char *localid = NULL;
 	char *remotid = NULL;
 	char *cmdsoxpath = NULL;
@@ -420,7 +421,7 @@ int main (int argc, char *argv []) {
 	while (parsing) {
 		//TODO// getlongopt
 		//TODO// -d for DTLS / -D for TLS; -w for SCTP-over-UDP; -W not
-		int opt = getopt (argc, argv, "udDtx:l:r:L:R:S:C:");
+		int opt = getopt (argc, argv, "udDtx:fl:r:L:R:S:C:");
 		switch (opt) {
 		case 'u':
 			/* -u for DTLS/UDP */
@@ -461,6 +462,14 @@ int main (int argc, char *argv []) {
 			}
 			hint.ai_socktype = SOCK_SEQPACKET;
 			stream = parsed_number;
+			break;
+		case 'f':
+			/* -f to fork TLS sessions */
+			if (tlsfork) {
+				fprintf (stderr, "You should only specify TLS session forking once\n");
+				exit (1);
+			}
+			tlsfork = 1;
 			break;
 		case 'l':
 			/* -l xxx for local  address xxx */
@@ -541,6 +550,9 @@ int main (int argc, char *argv []) {
 	tlsdata.flags = (sctpdtls? PIOF_STARTTLS_DTLS: 0);	//TODO// Later
 	if (role == 'c') {
 		tlsdata.flags |= PIOF_STARTTLS_SEND_SNI;
+	}
+	if (tlsfork) {
+		tlsdata.flags |= PIOF_STARTTLS_FORK;
 	}
 	//
 	// Allocate an information structure per file descriptor

@@ -91,6 +91,7 @@ void parse_cfgfile (char *filename, int kill_competition);
 void run_service (void);
 void hangup_service (void);
 void send_error (struct command *cmd, int tlserrno, char *msg);
+void send_success (struct command *cmd);
 int send_command (struct command *cmd, int passfd);
 struct command *send_callback_and_await_response (struct command *cmdresp);
 
@@ -211,5 +212,54 @@ void tlog (unsigned int logmask, int priority, char *format, ...);
 #define TLOG_COPYCAT	0x00002000
 #define TLOG_UNIXSOCK	0x00004000
 #define TLOG_DAEMON	0x00008000
+
+
+/* The ctlkeynode structure is allocated (possibly on the stack) by each
+ * thread that registers, until it unregisters.
+ */
+struct ctlkeynode {
+	uint8_t ctlkey [TLSPOOL_CTLKEYLEN];
+	struct ctlkeynode *lessnode, *morenode;
+	int ctlfd;
+};
+
+/* The ctlkey_signalling_fd is a file descriptor that can be listened to in
+ * poll() with revents==0; it will signal an error if it is closed.  The file
+ * is in fact an open file descriptor for /dev/null and it will be replaced
+ * by a new one in this variable before it is closed.  The closing however,
+ * ensures that the poll() is interrupted and interrogation of changed
+ * conditions, notably reattahed file descriptors, can be tried.
+ */
+//NOT// extern int ctlkey_signalling_fd;
+
+/* Register a ctlkey and return 0 if it was successfully registered.  The
+ * only reason for failure would be that the ctlkey is already registered,
+ * which signifies an extremely unlikely clash -- or a program error by
+ * not using properly scattered random sources.  The provided *ctlfdp may
+ * be -1 to signal it is not valid.
+ */
+int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, int ctlfd);
+
+/* Remove a registered cltkey value from th registry.  This is the most
+ * complex operation, as it needs to merge the subtrees.
+ */
+void ctlkey_unregister (uint8_t *ctlkey);
+
+/* Dattach the given ctlkey, assuming it has clientfd as control connection.
+ */
+void ctlkey_detach (struct command *cmd);
+
+/* Reattach to the given ctlkey, and use *ctlfdp as the controlling connection.
+ * This function returns 0 on success, -1 on failure.
+ */
+void ctlkey_reattach (struct command *cmd);
+
+/* Setup the ctlkey registry; notably, allocate the ctlkey_signalling_fd.
+ */
+void setup_ctlkey (void);
+
+/* Cleanup the ctlkey registry.
+ */
+void cleanup_ctlkey (void);
 
 #endif //TLSPOOL_INTERNAL_H

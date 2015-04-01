@@ -80,7 +80,7 @@ int tlspool_socket (char *path);
  * This function returns zero on success, and -1 on failure.  In case of
  * failure, errno will be set.
  */
-int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
+int _tlspool_starttls (int server, int cryptfd, starttls_t *tlsdata,
 			void *privdata,
 			int namedconnect (starttls_t *tlsdata, void *privdata));
 
@@ -92,7 +92,7 @@ int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
 static inline int starttls_client (int cryptfd, starttls_t *tlsdata,
 			void *privdata,
 			int namedconnect (starttls_t *tlsdata,void *privdata)) {
-	return _starttls_libfun (0, cryptfd, tlsdata, privdata, namedconnect);
+	return _tlspool_starttls (0, cryptfd, tlsdata, privdata, namedconnect);
 }
 
 /* The starttls_server() call is an inline wrapper around the library
@@ -102,10 +102,42 @@ static inline int starttls_client (int cryptfd, starttls_t *tlsdata,
 static inline int starttls_server (int cryptfd, starttls_t *tlsdata,
 			void *privdata,
 			int namedconnect (starttls_t *tlsdata,void *privdata)) {
-	return _starttls_libfun (1, cryptfd, tlsdata, privdata, namedconnect);
+	return _tlspool_starttls (1, cryptfd, tlsdata, privdata, namedconnect);
 }
 
 
+/* The library function to send a control connection command, notably
+ * TLSPOOL_CONTROL_DETACH and TLSPOOL_CONTROL_REATTACH.
+ *
+ * This function returns zero on success, and -1 on failure.  In case of
+ * failure, errno will be set.
+ */
+int _tlspool_control_command (int cmd, uint8_t *ctlkey);
+
+
+/* Explicitly detach a TLS session from the controlling connection to the
+ * TLS Pool.  This means that the control connection (and so, this program)
+ * can be taken down without affecting the TLS session as it is setup.  It
+ * also means that any control connection (including ones from other processes
+ * and other programs) can reattach, using the ctlkey for the TLS session.
+ *
+ * The return value is 0 for success, -1 for failure.  In case of failure,
+ * errno will also be set.
+ */
+static inline int tlspool_control_detach (uint8_t *ctlkey) {
+	return _tlspool_control_command (PIOC_CONTROL_DETACH_V2, ctlkey);
+}
+
+/* Explicitly reattach a control connection to a TLS session.  This may be
+ * called on a TLS session that is detached, by any process or program that
+ * presents the proper control key.
+ *
+ * The return value is 0 for success, -1 for failure.  In case of failure,
+ * errno will also be set.
+ */
+static inline int tlspool_control_reattach (uint8_t *ctlkey) {
+	return _tlspool_control_command (PIOC_CONTROL_REATTACH_V2, ctlkey);
+}
 
 
 #endif // TLSPOOL_STARTTLS_H

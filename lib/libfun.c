@@ -20,6 +20,7 @@
 #include <tlspool/commands.h>
 
 
+
 /* The master thread will run the receiving side of the socket that connects
  * to the TLS Pool.  The have_master_lock is used with _trylock() and will
  * succeed to lock once, thereby approving the creation of the master thread.
@@ -32,6 +33,8 @@ static void *master_thread (void *path);
 static int poolfd = -1;		/* Blocked retrieval with tlspool_socket() */
 
 static pthread_cond_t updated_poolfd = PTHREAD_COND_INITIALIZER;
+
+static pthread_mutex_t prng_lock = PTHREAD_MUTEX_INITIALIZER;
 
 
 /* The library function for starttls, which is normally called through one
@@ -50,6 +53,8 @@ int tlspool_socket (char *path) {
 		// the master thread that will recv() from it, and distribute.
 		if (pthread_mutex_trylock (&have_master_lock) == 0) {
 			pthread_t thr;
+			unsigned int seed;
+			pid_t me;
 			if (!path) {
 				path = TLSPOOL_DEFAULT_SOCKET_PATH;
 			}
@@ -65,6 +70,11 @@ int tlspool_socket (char *path) {
 				return -1;
 			}
 			pthread_detach (thr);
+			//
+			// We need enough randomness to avoid clashing ctlkeys
+			me = getpid ();
+			seed = ((unsigned int) time (NULL)) ^ (((unsigned int) me) << 16);
+			srandom (seed);
 		}
 		//
 		// Wait until the master thread signals that it updated the
@@ -249,17 +259,20 @@ printf ("DEBUG: Removing old poolfd %d\n", poolfd);
 		}
 		//
 		// First, connect to the TLS Pool; upon failure, retry
-		// with 0.25s, 0.5s, ... 32s intervals.
-		usec = 250;
+		// with 1s, 2s, 4s, 8s, 16s, 32s, 32s, 32s, ... intervals.
+		usec = 1000000;
 		while (poolfd < 0) {
-			poolfd = socket (AF_UNIX, SOCK_STREAM, 0);
-			if (poolfd != -1) {
-				if (connect (poolfd, (struct sockaddr *) &sun, SUN_LEN (&sun)) == -1) {
-					close (poolfd);
-					poolfd = -1;
+			int newpoolfd = socket (AF_UNIX, SOCK_STREAM, 0);
+			if (newpoolfd != -1) {
+				if (connect (newpoolfd, (struct sockaddr *) &sun, SUN_LEN (&sun)) == 0) {
+printf ("DEBUG: Succeeded connect() to TLS Pool\n");
+					poolfd = newpoolfd;
+				} else {
+					close (newpoolfd);
+					newpoolfd = -1;
 				}
 			}
-printf ("DEBUG: Trying new poolfd %d\n", poolfd);
+printf ("DEBUG: Trying new poolfd %d for path %s\n", poolfd, sun.sun_path);
 			//
 			// Signal a newly set poolfd value to all waiting.
 			// Note that we do not need to claim a mutex first;
@@ -407,7 +420,7 @@ void registry_recvmsg (struct registry_entry *entry) {
  * This function returns zero on success, and -1 on failure.  In case of
  * failure, errno will be set.
  */
-int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
+int _tlspool_starttls (int server, int cryptfd, starttls_t *tlsdata,
 			void *privdata,
 			int namedconnect (starttls_t *tlsdata,void *privdata)) {
 	struct tlspool_command cmd;
@@ -445,6 +458,28 @@ int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
 	cmd.pio_cmd = server? PIOC_STARTTLS_SERVER_V2: PIOC_STARTTLS_CLIENT_V2;
 	memcpy (&cmd.pio_data.pioc_starttls, tlsdata, sizeof (struct pioc_starttls));
 
+#if RAND_MAX < 0xfffff
+#  error "Failure on assumption of 16 bits of random material per random() call"
+#endif
+
+#if TLSPOOL_CTLKEYLEN != 16
+#  error "Failure on assumption of 16 bytes per ctlkey"
+#endif
+
+	assert (pthread_mutex_lock (&prng_lock) == 0);
+	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 0] = random ();
+	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 2] = random ();
+	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 4] = random ();
+	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 6] = random ();
+	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 8] = random ();
+	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [10] = random ();
+	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [12] = random ();
+	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [14] = random ();
+	pthread_mutex_unlock (&prng_lock);
+printf ("DEBUG: ctlkey =");
+{int i; for (i=0;i<16;i++) printf (" %02x", cmd.pio_data.pioc_starttls.ctlkey [i]);}
+printf ("\n");
+
 	/* Send the request */
 	iov.iov_base = &cmd;
 	iov.iov_len = sizeof (cmd);
@@ -458,7 +493,7 @@ int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
 	* (int *) CMSG_DATA (cmsg) = cryptfd;	/* cannot close it yet */
 	cmsg->cmsg_len = CMSG_LEN (sizeof (int));
 	if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
-		//TODO// Let SIGPIPE be reported as EPIPE
+		// Let SIGPIPE be reported as EPIPE
 		close (cryptfd);
 		registry_update (&entry_reqid, NULL);
 		// errno inherited from sendmsg()
@@ -516,7 +551,7 @@ int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
 			sentfd = plainfd;
 			/* Now supply plainfd in the callback response */
 			if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
-				//TODO// Let SIGPIPE be reported as EPIPE
+				// Let SIGPIPE be reported as EPIPE
 				close (sentfd);
 				registry_update (&entry_reqid, NULL);
 				// errno inherited from sendmsg()
@@ -541,8 +576,69 @@ int _starttls_libfun (int server, int cryptfd, starttls_t *tlsdata,
 	close (sentfd);
 
 	memcpy (tlsdata, &cmd.pio_data.pioc_starttls, sizeof (struct pioc_starttls));
+printf ("DEBUG: Returning control key %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n", tlsdata->ctlkey [0], tlsdata->ctlkey [1], tlsdata->ctlkey [2], tlsdata->ctlkey [3], tlsdata->ctlkey [4], tlsdata->ctlkey [5], tlsdata->ctlkey [6], tlsdata->ctlkey [7], tlsdata->ctlkey [8], tlsdata->ctlkey [9], tlsdata->ctlkey [10], tlsdata->ctlkey [11], tlsdata->ctlkey [12], tlsdata->ctlkey [13], tlsdata->ctlkey [14], tlsdata->ctlkey [15]);
 	registry_update (&entry_reqid, NULL);
 	return 0;
 }
 
+
+/* The library function to send a control connection command, notably
+ * TLSPOOL_CONTROL_DETACH and TLSPOOL_CONTROL_REATTACH.
+ *
+ * This function returns zero on success, and -1 on failure.  In case of
+ * failure, errno will be set.
+ */
+int _tlspool_control_command (int cmdcode, uint8_t *ctlkey) {
+	struct tlspool_command cmd;
+	pthread_mutex_t recvwait = PTHREAD_MUTEX_INITIALIZER;
+	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
+	int entry_reqid = -1;
+	int retval;
+
+	/* Prepare command structure */
+	poolfd = tlspool_socket (NULL);
+	if (poolfd == -1) {
+		errno = ENODEV;
+		return -1;
+	}
+	/* Finish setting up the registry entry */
+	regent.pfd = poolfd;
+	pthread_mutex_lock (&recvwait);		// Will await unlock by master
+	/* Determine the request ID */
+	if (registry_update (&entry_reqid, &regent) != 0) {
+		errno = EBUSY;
+		return -1;
+	}
+	bzero (&cmd, sizeof (cmd));	/* Do not leak old stack info */
+	cmd.pio_reqid = entry_reqid;
+	cmd.pio_cbid = 0;
+	cmd.pio_cmd = cmdcode;
+	memcpy (&cmd.pio_data.pioc_control.ctlkey, ctlkey, TLSPOOL_CTLKEYLEN);
+printf ("DEBUG: Using control key %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n", cmd.pio_data.pioc_control.ctlkey [0], cmd.pio_data.pioc_control.ctlkey [1], cmd.pio_data.pioc_control.ctlkey [2], cmd.pio_data.pioc_control.ctlkey [3], cmd.pio_data.pioc_control.ctlkey [4], cmd.pio_data.pioc_control.ctlkey [5], cmd.pio_data.pioc_control.ctlkey [6], cmd.pio_data.pioc_control.ctlkey [7], cmd.pio_data.pioc_control.ctlkey [8], cmd.pio_data.pioc_control.ctlkey [9], cmd.pio_data.pioc_control.ctlkey [10], cmd.pio_data.pioc_control.ctlkey [11], cmd.pio_data.pioc_control.ctlkey [12], cmd.pio_data.pioc_control.ctlkey [13], cmd.pio_data.pioc_control.ctlkey [14], cmd.pio_data.pioc_control.ctlkey [15]);
+
+	/* Send the request */
+	if (send (poolfd, &cmd, sizeof (cmd), MSG_NOSIGNAL) == -1) {
+		// Let SIGPIPE be reported as EPIPE
+		registry_update (&entry_reqid, NULL);
+		// errno inherited from send()
+		return -1;
+	}
+
+	/* Receive the response */
+	registry_recvmsg (&regent);
+	switch (cmd.pio_cmd) {
+	case PIOC_SUCCESS_V1:
+		retval = 0;
+		break;
+	case PIOC_ERROR_V1:
+		retval = -1;
+		errno = cmd.pio_data.pioc_error.tlserrno;
+		break;
+	default:
+		errno = EPROTO;
+		retval = -1;
+		break;
+	}
+	return retval;
+}
 
