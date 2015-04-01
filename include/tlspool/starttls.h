@@ -37,10 +37,6 @@ int tlspool_socket (char *path);
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
  *
- * A non-zero server flag indicates that the connection is protected from
- * the server side, although the flags may modify this somewhat.  The
- * checkname() function is only used for server connections.
- * 
  * The cryptfd handle supplies the TLS connection that is assumed to have
  * been setup.  When the function ends, either in success or failure, this
  * handle will no longer be available to the caller; the responsibility of
@@ -80,30 +76,9 @@ int tlspool_socket (char *path);
  * This function returns zero on success, and -1 on failure.  In case of
  * failure, errno will be set.
  */
-int _tlspool_starttls (int server, int cryptfd, starttls_t *tlsdata,
+int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 			void *privdata,
 			int namedconnect (starttls_t *tlsdata, void *privdata));
-
-
-/* The starttls_client() call is an inline wrapper around the library
- * function that combines client and server operations.  Its behaviour is
- * the same, except that the server flag is not required.
- */
-static inline int starttls_client (int cryptfd, starttls_t *tlsdata,
-			void *privdata,
-			int namedconnect (starttls_t *tlsdata,void *privdata)) {
-	return _tlspool_starttls (0, cryptfd, tlsdata, privdata, namedconnect);
-}
-
-/* The starttls_server() call is an inline wrapper around the library
- * function that combines client and server operations.  Its behaviour is
- * the same, except that the server flag is not required.
- */
-static inline int starttls_server (int cryptfd, starttls_t *tlsdata,
-			void *privdata,
-			int namedconnect (starttls_t *tlsdata,void *privdata)) {
-	return _tlspool_starttls (1, cryptfd, tlsdata, privdata, namedconnect);
-}
 
 
 /* The library function to send a control connection command, notably

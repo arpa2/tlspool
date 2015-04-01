@@ -8,13 +8,16 @@
 #include <stdint.h>
 
 
-#define TLSPOOL_IDENTITY_TMP	"20150313tlspool@tmp.vanrein.org"
+#define TLSPOOL_IDENTITY_TMP	"20150319tlspool@tmp.vanrein.org"
 
 
 /****************************** STRUCTURES *****************************/
 
 
 #define TLSPOOL_CTLKEYLEN 16
+#define TLSPOOL_SERVICELEN 32
+#define TLSPOOL_TIMEOUT_DEFAULT 0
+#define TLSPOOL_TIMEOUT_INFINITE (~(uint32_t)0)
 
 
 /*
@@ -94,6 +97,8 @@ struct tlspool_command {
 			char localid [128];	// Local ID or empty string
 			char remoteid [128];	// Remote ID or empty string
 			uint8_t ctlkey [TLSPOOL_CTLKEYLEN];	// Key for detach
+			uint8_t service [TLSPOOL_SERVICELEN];	// Names from IANA
+			uint32_t timeout;	// in ms, 0=default, ~0=infinite
 		} pioc_starttls;
 		struct pioc_pinentry {
 			uint32_t flags;		// PIOF_PINENTRY_xxx below
@@ -146,29 +151,18 @@ typedef struct pioc_starttls starttls_t;
 #define PIOC_PING_V1				0x00000010
 
 
-/* Start a TLS sequence as a TLS client.  This uses PIO_STARTTLS_xxx
- * flags, defined below.  The local definitions of the TLS Pool define
- * part of the semantics.
+/* Start a TLS handshake.  This uses PIO_STARTTLS_xxx flags, defined below.
+ * One of the things these flags set is the acceptable roles of the local
+ * and remote node -- client, server or peer (for which both are acceptable).
+ * The local definitions of the TLS Pool define part of the semantics.
+ *
  * The payload data is defined in pioc_starttls and is the same
- * for the client and server, and for request and response.  Clients
+ * for clients, servers and peers, and for request and response.  Clients
  * usually know the remoteid, and should fill that field instead of
  * leaving it an empty string.  They may already present their localid
  * or leave it open for possible interaction during the TLS exchange.
  */
-#define PIOC_STARTTLS_CLIENT_V2			0x00000022
-
-
-/* Start a TLS sequence as a TLS server.  This uses PIO_STARTTLS_xxx
- * flags, defined below.  The local definitions of the TLS Pool define
- * part of the semantics.
- * The payload data is defined in pioc_starttls and is the same
- * for the client and server, and for request and response.  Servers
- * do not always know the remoteid, and may set this to an empty string
- * to skip checking it.  They may not even know their localid if they
- * service many, so it is even possible to set that to an empty string
- * and leave it to the TLS exchange to propose localid values.
- */
-#define PIOC_STARTTLS_SERVER_V2			0x00000023
+#define PIOC_STARTTLS_V2			0x00000024
 
 
 /* When a client initiates TLS, it may have started off with an empty
@@ -254,10 +248,35 @@ typedef struct pioc_starttls starttls_t;
  */
 
 
-/* PIOF_STARTTLS_DTLS requests to setup DTLS instead of TLS.
+/* PIOF_STARTTLS_xxxROLE_xxx flags define whether the local or remote should
+ * act as a client or as a server.  This is the TLS relationship, and may or
+ * may not match the transport connection over which TLS runs.
+ *
+ * Each side may be setup to act as a peer, which means it will mirror the
+ * other side.  When either side is setup as a peer, the TLS Pool will begin
+ * as a client, but employ a TLS extension that can ignore the ClientHello
+ * from one of the sides -- this is not currently a part of TLS, but may be
+ * added later on, in support of peer-to-peer connections as drafted in
+ * draft-vanrein-tls-p2p.
+ *
+ * At some point, the TLS transaction has an obvious client and server side,
+ * even in peer-to-peer connections, and a normal handshake commences.  But
+ * the remote role helps to decide which forms of identity are acceptable,
+ * and when a remote peer effectively became a server it may still present
+ * a client credential, and the similar freedom may also be assumed by the
+ * local side, although the "right" kind of credential is preferred.
  */
-#define PIOF_STARTTLS_DTLS			0x00000001
 
+#define PIOF_STARTTLS_LOCALROLE_CLIENT		0x00000001
+#define PIOF_STARTTLS_LOCALROLE_SERVER		0x00000002
+#define PIOF_STARTTLS_LOCALROLE_PEER		0x00000003
+
+#define PIOF_STARTTLS_REMOTEROLE_CLIENT		0x00000004
+#define PIOF_STARTTLS_REMOTEROLE_SERVER		0x00000008
+#define PIOF_STARTTLS_REMOTEROLE_PEER		0x0000000c
+
+
+#if 0 /* WILL NOT IMPLEMENT -- WILL REMOVE SOON */
 
 /* PIOF_STARTTLS_REQUIRE_DNSSEC tells the TLS Pool that DNSSEC must be
  * used for all information in DNS; so, a self-acclaimed I-can-do-without
@@ -295,6 +314,13 @@ typedef struct pioc_starttls starttls_t;
  * no consequence.
  */
 #define PIOF_STARTTLS_BYPASS_EXT_AUTHZ		0x00000100
+
+#endif
+
+
+/* PIOF_STARTTLS_DTLS requests to setup DTLS instead of TLS.
+ */
+#define PIOF_STARTTLS_DTLS			0x00000100
 
 
 /* PIOF_STARTTLS_SEND_SNI can be used for client-side STARTTLS as an

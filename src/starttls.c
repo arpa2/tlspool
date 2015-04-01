@@ -737,14 +737,14 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 			GNUTLS_E_INVALID_SESSION);
 		return gtls_errno;
 	}
-	if (cmd->cmd.pio_cmd == PIOC_STARTTLS_SERVER_V2) {
-		lidrole = LID_ROLE_SERVER;
-		rolestr = "server";
-	} else if (cmd->cmd.pio_cmd == PIOC_STARTTLS_CLIENT_V2) {
+	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_CLIENT) {
 		lidrole = LID_ROLE_CLIENT;
 		rolestr = "client";
+	} else if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_SERVER) {
+		lidrole = LID_ROLE_SERVER;
+		rolestr = "server";
 	} else {
-		E_g2e ("TLS Pool command is not _STARTTLS_",
+		E_g2e ("TLS Pool command supports neither local client nor local server role",
 			GNUTLS_E_INVALID_SESSION);
 		return gtls_errno;
 	}
@@ -810,7 +810,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 		//
 		// Check that new rid is a generalisation of original rid
 		// Note: This is only of interest for client operation
-		if (oldcmd == PIOC_STARTTLS_CLIENT_V2) {
+		if (lidrole == LID_ROLE_CLIENT) {
 			selector_t newrid = donai_from_stable_string (rid, strlen (rid));
 			donai_t oldrid = donai_from_stable_string (cmd->orig_piocdata->remoteid, strlen (cmd->orig_piocdata->remoteid));
 			if (!donai_matches_selector (&oldrid, &newrid)) {
@@ -1092,12 +1092,13 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 
 	//
 	// Setup a number of common references and structures
-	if (cmd->cmd.pio_cmd == PIOC_STARTTLS_SERVER_V2) {
-		lidrole = LID_ROLE_SERVER;
-	} else if (cmd->cmd.pio_cmd == PIOC_STARTTLS_CLIENT_V2) {
+	// Note: Current GnuTLS cannot support being a peer
+	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_CLIENT) {
 		lidrole = LID_ROLE_CLIENT;
+	} else if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_SERVER) {
+		lidrole = LID_ROLE_SERVER;
 	} else {
-		E_g2e ("TLS Pool command is not _STARTTLS_",
+		E_g2e ("TLS Pool command supports neither local client nor local server role",
 			GNUTLS_E_INVALID_SESSION);
 		return gtls_errno;
 	}
@@ -1557,6 +1558,7 @@ static void *starttls_thread (void *cmd_void) {
 	struct credinfo *clisrv_creds;
 	int clisrv_credcount;
 	struct ctlkeynode ctlkeyregent;
+	uint32_t tout;
 
 	//
 	// General thread setup
@@ -1608,26 +1610,8 @@ static void *starttls_thread (void *cmd_void) {
 
 	//
 	// Negotiate TLS; split client/server mode setup
-	if (orig_cmd == PIOC_STARTTLS_SERVER_V2) {
-		//
-		// Setup as a TLS server
-		//
-		E_g2e ("Failed to initialise GnuTLS server session",
-			gnutls_init (
-				&session,
-				GNUTLS_SERVER));
-		if (gtls_errno == GNUTLS_E_SUCCESS) {
-			gnutls_session_set_ptr (session, cmd);
-			gnutls_handshake_set_post_client_hello_function (
-				session,
-				srv_clienthello);
-		}
-		//
-		// Setup for server credential installation in this session
-		clisrv_creds     = srv_creds;
-		clisrv_credcount = srv_credcount;
-
-	} else if (orig_cmd == PIOC_STARTTLS_CLIENT_V2) {
+	// Note: GnuTLS cannot yet setup p2p connections
+	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_CLIENT) {
 		//
 		// Setup as a TLS client
 		//
@@ -1674,6 +1658,25 @@ static void *starttls_thread (void *cmd_void) {
 		// Setup for client credential installation in this session
 		clisrv_creds     = cli_creds;
 		clisrv_credcount = cli_credcount;
+
+	} else if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_SERVER) {
+		//
+		// Setup as a TLS server
+		//
+		E_g2e ("Failed to initialise GnuTLS server session",
+			gnutls_init (
+				&session,
+				GNUTLS_SERVER));
+		if (gtls_errno == GNUTLS_E_SUCCESS) {
+			gnutls_session_set_ptr (session, cmd);
+			gnutls_handshake_set_post_client_hello_function (
+				session,
+				srv_clienthello);
+		}
+		//
+		// Setup for server credential installation in this session
+		clisrv_creds     = srv_creds;
+		clisrv_credcount = srv_credcount;
 
 	} else {
 		//
@@ -1741,6 +1744,18 @@ static void *starttls_thread (void *cmd_void) {
 	// Check if past code stored an error code through POSIX
 	if (cmd->session_errno) {
 		gtls_errno = GNUTLS_E_USER_ERROR;
+	}
+
+	//
+	// Setup a timeout value as specified in the command, where TLS Pool
+	// defines 0 as default and ~0 as infinite (GnuTLS has 0 as infinite).
+	tout = cmd->cmd.pio_data.pioc_starttls.timeout;
+	if (tout == TLSPOOL_TIMEOUT_DEFAULT) {
+		gnutls_handshake_set_timeout (session, GNUTLS_DEFAULT_HANDSHAKE_TIMEOUT);
+	} else if (tout == TLSPOOL_TIMEOUT_INFINITE) {
+		gnutls_handshake_set_timeout (session, 0);
+	} else {
+		gnutls_handshake_set_timeout (session, tout);
 	}
 
 	//
@@ -1864,44 +1879,22 @@ static void *starttls_thread (void *cmd_void) {
 
 
 /*
- * The starttls_client function responds to an application's request to 
+ * The starttls function responds to an application's request to 
  * setup TLS for a given file descriptor, and return a file descriptor
  * with the unencrypted view when done.  The main thing done here is to
  * spark off a new thread that handles the operations.
- * TODO: Are client and server routines different?
  */
-void starttls_client (struct command *cmd) {
+void starttls (struct command *cmd) {
 	/* Create a thread and, if successful, wait for it to unlock cmd */
 	errno = pthread_create (&cmd->handler, NULL, starttls_thread, (void *) cmd);
 	if (errno != 0) {
-		send_error (cmd, ESRCH, "STARTTLS_CLIENT thread refused");
+		send_error (cmd, ESRCH, "STARTTLS thread refused");
 		return;
 	}
 	errno = pthread_detach (cmd->handler);
 	if (errno != 0) {
 		pthread_cancel (cmd->handler);
-		send_error (cmd, ESRCH, "STARTTLS_CLIENT thread detachment refused");
-		return;
-	}
-}
-
-/*
- * The starttls_server function responds to an application's request to 
- * setup TLS for a given file descriptor, and return a file descriptor
- * with the unencrypted view when done.  The main thing done here is to
- * spark off a new thread that handles the operations.
- */
-void starttls_server (struct command *cmd) {
-	/* Create a thread and, if successful, wait for it to unlock cmd */
-	errno = pthread_create (&cmd->handler, NULL, starttls_thread, (void *) cmd);
-	if (errno != 0) {
-		send_error (cmd, ESRCH, "STARTTLS_SERVER thread refused");
-		return;
-	}
-	errno = pthread_detach (cmd->handler);
-	if (errno != 0) {
-		//TODO// Kill the thread... somehow
-		send_error (cmd, ESRCH, "STARTTLS_CLIENT thread detachment refused");
+		send_error (cmd, ESRCH, "STARTTLS thread detachment refused");
 		return;
 	}
 }

@@ -382,11 +382,8 @@ static void process_command (struct command *cmd) {
 		strcpy (d->pioc_ping.YYYYMMDD_producer, TLSPOOL_IDENTITY_TMP);
 		send_command (cmd, -1);
 		return;
-	case PIOC_STARTTLS_CLIENT_V2:
-		starttls_client (cmd);
-		return;
-	case PIOC_STARTTLS_SERVER_V2:
-		starttls_server (cmd);
+	case PIOC_STARTTLS_V2:
+		starttls (cmd);
 		return;
 	case PIOC_CONTROL_DETACH_V2:
 		ctlkey_detach (cmd);

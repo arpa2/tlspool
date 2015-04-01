@@ -86,8 +86,9 @@ the include file as TLSPOOL_IDENTITY_V1.
 Starting TLS as a client
 ========================
 
-A client can send the STARTTLS_CLIENT command by filling in a number
-of fields in the command packet.  In addition, it sends a file descriptor
+A client can send the STARTTLS command by filling in a number
+of fields in the command packet.  As part of this, it requests a local role
+as a client, and a remote role as a server.  In addition, it sends a file descriptor
 to TLS-ify as ancillary data.  This file descriptor is duplicated into
 the TLS Pool, and further used for the TLS exchanges.
 
@@ -152,13 +153,13 @@ overriding commands, then it makes more sense to indicate what local
 identity to supply to the remote.
 
 The probes that propose a local identity to use are sent in response
-to the STARTTLS_CLIENT command, which is continued after acceptance.
+to the STARTTLS command, which is continued after acceptance.
 If a local identity is not accepted, it should be set to the empty
 string and the command returned to the TLS Pool with the same request
 identity.
 
-The final response to the STARTTLS_CLIENT command request is either an
-ERROR or a STARTTLS_CLIENT command response.  The latter contains the
+The final response to the STARTTLS command request is either an
+ERROR or a STARTTLS command response.  The latter contains the
 validated results of the succeeded TLS connection setup, including
 any local and remote identity that have been established.  In addition
 to the response packet, this positive command response includes a
@@ -170,9 +171,10 @@ been met by the connection setup.
 Starting TLS as a server
 ========================
 
-A server can send a STARTTLS_SERVER command to the TLS Pool to
+A server can send a STARTTLS command to the TLS Pool to
 initiate TLS over a connection.  To do this, it fills out a number
-of fields in the command packet.  In addition, it sends a file descriptor
+of fields in the command packet.  As part of this, it requests a local role
+as a server, and a remote role as a client.  In addition, it sends a file descriptor
 to TLS-ify as ancillary data.  This file descriptor is duplicated into
 the TLS Pool, and further used for the TLS exchanges.
 
@@ -198,7 +200,7 @@ As a rule, servers do not know the remote identity that they are
 communicating with.  There may be exceptions, where a protocol did
 exchange this information prior to a STARTTLS exchange, but these
 are exceptions.  So usually, a server will not setup a remote identity
-in its STARTTLS_SERVER request command.  If it is set, then the
+in its STARTTLS request command.  If it is set, then the
 TLS client must match the identity, on top of its validation.
 
 A server may have one or more alternate identities.  If it has one,
@@ -218,8 +220,8 @@ TLS connection support anonymous TLS connections, then there may
 be no need to exchange certificates at all.  Such anonymous connections
 are not common, but they are certainly possible.
 
-The final response to the STARTTLS_SERVER command request is either an
-ERROR or a STARTTLS_SERVER command response.  The latter contains the
+The final response to the STARTTLS command request is either an
+ERROR or a STARTTLS command response.  The latter contains the
 validated results of the succeeded TLS connection setup, including
 any local and remote identity that have been established.  In addition
 to the response packet, this positive command response includes a

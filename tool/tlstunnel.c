@@ -337,10 +337,10 @@ void *connection_thread (void *vfdi) {
 	// Invoke starttls
 	if (role == 's') {
 		// Server: on-demand connect_remote based on localaddrinfo
-		setup = starttls_server (cryptfd, &curtlsdata, fdi->localaddrinfo, connect_remote);
+		setup = tlspool_starttls (cryptfd, &curtlsdata, fdi->localaddrinfo, connect_remote);
 	} else {
 		// Client: plainfd already available, default returns it
-		setup = starttls_client (cryptfd, &curtlsdata, &plainfd, NULL);
+		setup = tlspool_starttls (cryptfd, &curtlsdata, &plainfd, NULL);
 	}
 	if (setup == -1) {
 		perror ("Failed to start TLS");
@@ -403,10 +403,14 @@ int main (int argc, char *argv []) {
 	case 'c':
 		/* -c for client */
 		role = 'c';
+		tlsdata.flags = PIOF_STARTTLS_LOCALROLE_CLIENT
+				| PIOF_STARTTLS_REMOTEROLE_SERVER;
 		break;
 	case 's':
 		/* -s for server */
 		role = 's';
+		tlsdata.flags = PIOF_STARTTLS_LOCALROLE_SERVER
+				| PIOF_STARTTLS_REMOTEROLE_CLIENT;
 		break;
 	case -1:
 	default:
@@ -421,7 +425,7 @@ int main (int argc, char *argv []) {
 	while (parsing) {
 		//TODO// getlongopt
 		//TODO// -d for DTLS / -D for TLS; -w for SCTP-over-UDP; -W not
-		int opt = getopt (argc, argv, "udDtx:fl:r:L:R:S:C:");
+		int opt = getopt (argc, argv, "udDtxoO:fs:l:r:L:R:S:C:");
 		switch (opt) {
 		case 'u':
 			/* -u for DTLS/UDP */
@@ -470,6 +474,18 @@ int main (int argc, char *argv []) {
 				exit (1);
 			}
 			tlsfork = 1;
+			break;
+		case 's':
+			/* -s servicename */
+			if (*tlsdata.service) {
+				fprintf (stderr, "You should only specify one service name\n");
+				exit (1);
+			}
+			if (strlen (optarg) > TLSPOOL_SERVICELEN - 1) {
+				fprintf (stderr, "Service names should not exceed a length of %d characters (and be IANA-defined)\n", TLSPOOL_SERVICELEN - 1);
+				exit (1);
+			}
+			strcpy (tlsdata.service, optarg);
 			break;
 		case 'l':
 			/* -l xxx for local  address xxx */
@@ -547,7 +563,7 @@ int main (int argc, char *argv []) {
 			exit (1);
 		}
 	}
-	tlsdata.flags = (sctpdtls? PIOF_STARTTLS_DTLS: 0);	//TODO// Later
+	tlsdata.flags |= (sctpdtls? PIOF_STARTTLS_DTLS: 0);	//TODO// Later
 	if (role == 'c') {
 		tlsdata.flags |= PIOF_STARTTLS_SEND_SNI;
 	}

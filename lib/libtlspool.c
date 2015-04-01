@@ -252,7 +252,7 @@ static void *master_thread (void *path) {
 		// TLS Pool has been disconnected.
 		if (poolfd >= 0) {
 			int poolfdcopy = poolfd;
-printf ("DEBUG: Removing old poolfd %d\n", poolfd);
+// printf ("DEBUG: Removing old poolfd %d\n", poolfd);
 			poolfd = -1;
 			registry_flush (-1);
 			close (poolfdcopy);
@@ -265,14 +265,14 @@ printf ("DEBUG: Removing old poolfd %d\n", poolfd);
 			int newpoolfd = socket (AF_UNIX, SOCK_STREAM, 0);
 			if (newpoolfd != -1) {
 				if (connect (newpoolfd, (struct sockaddr *) &sun, SUN_LEN (&sun)) == 0) {
-printf ("DEBUG: Succeeded connect() to TLS Pool\n");
+// printf ("DEBUG: Succeeded connect() to TLS Pool\n");
 					poolfd = newpoolfd;
 				} else {
 					close (newpoolfd);
 					newpoolfd = -1;
 				}
 			}
-printf ("DEBUG: Trying new poolfd %d for path %s\n", poolfd, sun.sun_path);
+// printf ("DEBUG: Trying new poolfd %d for path %s\n", poolfd, sun.sun_path);
 			//
 			// Signal a newly set poolfd value to all waiting.
 			// Note that we do not need to claim a mutex first;
@@ -283,7 +283,7 @@ printf ("DEBUG: Trying new poolfd %d for path %s\n", poolfd, sun.sun_path);
 			// fd table has been smaller than the size of the
 			// data bus since the times of ZX Spectrum and CP/M.
 			pthread_cond_broadcast (&updated_poolfd);
-printf ("DEBUG: Signalled slave threads with poolfd %d\n", poolfd);
+// printf ("DEBUG: Signalled slave threads with poolfd %d\n", poolfd);
 			//
 			// Wait before repeating, with exponential back-off
 			if (poolfd < 0) {
@@ -315,7 +315,7 @@ printf ("DEBUG: Signalled slave threads with poolfd %d\n", poolfd);
 			if (retval == -1) {
 				// This includes EPIPE, or EOF, for detached
 				// TLS Pool; the treatment is to reconnect.
-printf ("DEBUG: recvmsg() returned -1 due to: %s\n", strerror (errno));
+// printf ("DEBUG: recvmsg() returned -1 due to: %s\n", strerror (errno));
 				break;
 			}
 			//
@@ -323,9 +323,9 @@ printf ("DEBUG: recvmsg() returned -1 due to: %s\n", strerror (errno));
 			entry = registry [cmd.pio_reqid];
 			if (entry == NULL) {
 				// Protocol error!  Client detached!
-printf ("DEBUG: Client detached! poolfd=%d, cmd=0x%08x, reqid=%d, cbid=%d\n", poolfd, cmd.pio_cmd, cmd.pio_reqid, cmd.pio_cbid);
+// printf ("DEBUG: Client detached! poolfd=%d, cmd=0x%08x, reqid=%d, cbid=%d\n", poolfd, cmd.pio_cmd, cmd.pio_reqid, cmd.pio_cbid);
 				if ((cmd.pio_cbid != 0) && (cmd.pio_cmd != PIOC_ERROR_V1)) {
-printf ("DEBUG: Will send PIOC_ERROR_V1 as callback to TLS Pool\n");
+// printf ("DEBUG: Will send PIOC_ERROR_V1 as callback to TLS Pool\n");
 					// TLS Pool is waiting for a callback;
 					// Send it an ERROR message instead.
 					cmd.pio_cmd = PIOC_ERROR_V1;
@@ -339,13 +339,13 @@ printf ("DEBUG: Sent      PIOC_ERROR_V1 as callback to TLS Pool\n");
 				continue;
 			}
 			if (entry->pfd != poolfd) {
-printf ("DEBUG: Registry entry has older poolfd %d not %d, flushing registry\n", entry->pfd, poolfd);
+// printf ("DEBUG: Registry entry has older poolfd %d not %d, flushing registry\n", entry->pfd, poolfd);
 				registry_flush (poolfd);
 			}
 			memcpy (entry->buf, &cmd, sizeof (cmd));
 			//NOT-USED// deliver anc or passfd to recipient
 			pthread_mutex_unlock (entry->sig);
-printf ("DEBUG: Signalled slave with new message in place\n");
+// printf ("DEBUG: Signalled slave with new message in place\n");
 		}
 	}
 }
@@ -377,10 +377,6 @@ void registry_recvmsg (struct registry_entry *entry) {
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
  *
- * A non-zero server flag indicates that the connection is protected from
- * the server side, although the flags may modify this somewhat.  The
- * checkname() function is only used for server connections.
- * 
  * The cryptfd handle supplies the TLS connection that is assumed to have
  * been setup.  When the function ends, either in success or failure, this
  * handle will no longer be available to the caller; the responsibility of
@@ -420,7 +416,7 @@ void registry_recvmsg (struct registry_entry *entry) {
  * This function returns zero on success, and -1 on failure.  In case of
  * failure, errno will be set.
  */
-int _tlspool_starttls (int server, int cryptfd, starttls_t *tlsdata,
+int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 			void *privdata,
 			int namedconnect (starttls_t *tlsdata,void *privdata)) {
 	struct tlspool_command cmd;
@@ -455,7 +451,7 @@ int _tlspool_starttls (int server, int cryptfd, starttls_t *tlsdata,
 	bzero (&cmd, sizeof (cmd));	/* Do not leak old stack info */
 	cmd.pio_reqid = entry_reqid;
 	cmd.pio_cbid = 0;
-	cmd.pio_cmd = server? PIOC_STARTTLS_SERVER_V2: PIOC_STARTTLS_CLIENT_V2;
+	cmd.pio_cmd = PIOC_STARTTLS_V2;
 	memcpy (&cmd.pio_data.pioc_starttls, tlsdata, sizeof (struct pioc_starttls));
 
 #if RAND_MAX < 0xfffff
@@ -476,9 +472,9 @@ int _tlspool_starttls (int server, int cryptfd, starttls_t *tlsdata,
 	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [12] = random ();
 	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [14] = random ();
 	pthread_mutex_unlock (&prng_lock);
-printf ("DEBUG: ctlkey =");
-{int i; for (i=0;i<16;i++) printf (" %02x", cmd.pio_data.pioc_starttls.ctlkey [i]);}
-printf ("\n");
+// printf ("DEBUG: ctlkey =");
+// {int i; for (i=0;i<16;i++) printf (" %02x", cmd.pio_data.pioc_starttls.ctlkey [i]);}
+// printf ("\n");
 
 	/* Send the request */
 	iov.iov_base = &cmd;
@@ -510,7 +506,7 @@ printf ("\n");
 		switch (cmd.pio_cmd) {
 		case PIOC_ERROR_V1:
 			/* Bad luck, we failed */
-			syslog (LOG_INFO, "TLS Pool error to _starttls_libfun(): %s", cmd.pio_data.pioc_error.message);
+			syslog (LOG_INFO, "TLS Pool error to tlspool_starttls(): %s", cmd.pio_data.pioc_error.message);
 			close (sentfd);
 			registry_update (&entry_reqid, NULL);
 			errno = cmd.pio_data.pioc_error.tlserrno;
@@ -558,8 +554,7 @@ printf ("\n");
 				return -1;
 			}
 			break;	// Loop around and try again
-		case PIOC_STARTTLS_CLIENT_V2:
-		case PIOC_STARTTLS_SERVER_V2:
+		case PIOC_STARTTLS_V2:
 			/* Wheee!!! we're done */
 			processing = 0;
 			break;
@@ -614,7 +609,7 @@ int _tlspool_control_command (int cmdcode, uint8_t *ctlkey) {
 	cmd.pio_cbid = 0;
 	cmd.pio_cmd = cmdcode;
 	memcpy (&cmd.pio_data.pioc_control.ctlkey, ctlkey, TLSPOOL_CTLKEYLEN);
-printf ("DEBUG: Using control key %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n", cmd.pio_data.pioc_control.ctlkey [0], cmd.pio_data.pioc_control.ctlkey [1], cmd.pio_data.pioc_control.ctlkey [2], cmd.pio_data.pioc_control.ctlkey [3], cmd.pio_data.pioc_control.ctlkey [4], cmd.pio_data.pioc_control.ctlkey [5], cmd.pio_data.pioc_control.ctlkey [6], cmd.pio_data.pioc_control.ctlkey [7], cmd.pio_data.pioc_control.ctlkey [8], cmd.pio_data.pioc_control.ctlkey [9], cmd.pio_data.pioc_control.ctlkey [10], cmd.pio_data.pioc_control.ctlkey [11], cmd.pio_data.pioc_control.ctlkey [12], cmd.pio_data.pioc_control.ctlkey [13], cmd.pio_data.pioc_control.ctlkey [14], cmd.pio_data.pioc_control.ctlkey [15]);
+// printf ("DEBUG: Using control key %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n", cmd.pio_data.pioc_control.ctlkey [0], cmd.pio_data.pioc_control.ctlkey [1], cmd.pio_data.pioc_control.ctlkey [2], cmd.pio_data.pioc_control.ctlkey [3], cmd.pio_data.pioc_control.ctlkey [4], cmd.pio_data.pioc_control.ctlkey [5], cmd.pio_data.pioc_control.ctlkey [6], cmd.pio_data.pioc_control.ctlkey [7], cmd.pio_data.pioc_control.ctlkey [8], cmd.pio_data.pioc_control.ctlkey [9], cmd.pio_data.pioc_control.ctlkey [10], cmd.pio_data.pioc_control.ctlkey [11], cmd.pio_data.pioc_control.ctlkey [12], cmd.pio_data.pioc_control.ctlkey [13], cmd.pio_data.pioc_control.ctlkey [14], cmd.pio_data.pioc_control.ctlkey [15]);
 
 	/* Send the request */
 	if (send (poolfd, &cmd, sizeof (cmd), MSG_NOSIGNAL) == -1) {

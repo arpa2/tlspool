@@ -14,7 +14,9 @@
 
 
 static starttls_t tlsdata_cli = {
-	.flags = 0x00000200,
+	.flags = PIOF_STARTTLS_SEND_SNI
+		| PIOF_STARTTLS_LOCALROLE_CLIENT
+		| PIOF_STARTTLS_REMOTEROLE_SERVER,
 	.local = 0,
 	.ipproto = IPPROTO_TCP,
 	.localid = "testcli@tlspool.arpa2.lab",
@@ -86,7 +88,7 @@ int main (int argc, char *argv) {
 		exit (1);
 	}
 	plainfd = -1;
-	if (-1 == starttls_client (sox, &tlsdata_cli, &plainfd, NULL)) {
+	if (-1 == tlspool_starttls (sox, &tlsdata_cli, &plainfd, NULL)) {
 		perror ("Failed to STARTTLS on testcli");
 		if (plainfd >= 0) {
 			close (plainfd);
