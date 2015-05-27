@@ -29,12 +29,13 @@ struct command {
 	int clientfd;
 	int passfd;
 	int claimed;
-	int session_errno;
 	pthread_t handler;
 	struct tlspool_command cmd;
+	//TODO// TLS-agnostic data would be a (void *) to a driver stack item:
 	struct pioc_starttls *orig_piocdata;
 	DB_TXN *txn;
 	pool_datum_t lids [EXPECTED_LID_TYPE_COUNT];
+	int session_errno;
 	intptr_t session_certificate;
 	intptr_t session_privatekey;
 };
@@ -62,13 +63,13 @@ struct soxinfo {
  * the application.  The index in this table is used as the callback identity,
  * which is not insecure because we assign it to a specific file descriptor.
  * The fd field can be negative to indicate an entry that is not in use.
- * TODO: Callbacks could time out -- or is that covered with fd teardown?
  */
 struct callback {
 	struct callback *next;		/* Lists, e.g. free list or cbq list */
 	int fd;
 	pthread_cond_t semaphore;	/* Dependent is waiting for signal */
 	struct command *followup;	/* Link to the callback returned cmd */
+	int timedout;			/* Callback will be ignored, timeout */
 };
 
 
@@ -93,7 +94,7 @@ void hangup_service (void);
 void send_error (struct command *cmd, int tlserrno, char *msg);
 void send_success (struct command *cmd);
 int send_command (struct command *cmd, int passfd);
-struct command *send_callback_and_await_response (struct command *cmdresp);
+struct command *send_callback_and_await_response (struct command *cmdresp, time_t opt_timeout);
 
 /* pinentry.c */
 void setup_pinentry (void);
@@ -261,5 +262,70 @@ void setup_ctlkey (void);
 /* Cleanup the ctlkey registry.
  */
 void cleanup_ctlkey (void);
+
+
+/* Register an application socket as one that is willing to process LID entry
+ * requests.  The file descriptor may also be used for other functions,
+ * so it is only safe to use as a sending channel.  Registration is just
+ * for one try, after which the application protocol will let it re-register.
+ */
+void register_lidentry_command (struct command *cmd);
+
+/* Drop any LIDENTRY requests related to the given file descriptor, which is
+ * being closed.  The LIDENTRY facility is freed up immediately for the next
+ * requestor.
+ */
+void lidentry_forget_clientfd (int fd);
+
+/* Check if the localid registration permits skipping of the given database
+ * entry.  Such skips mean that the database entry on its own may fulfill the
+ * completion of the localid value.  This takes into account all the
+ * PIOF_LIDENTRY_SKIP_xxx flags registered by the client.
+ *
+ * The levels_up value counts 2 per step for domain names, and 1 per step for
+ * user@domain identifiers.  So, with 0 for the concrete value, the low bit
+ * indicates removal of a username and all higher bits refer to the steps up
+ * in terms of a domain name.
+ *
+ * The at_root value indicates if this domain name is at the domain root,
+ * irrespective of the existence or removal of usernames.
+ *
+ * This command is not run within a lock that protects against race conditions
+ * related to registration of lidentry programs.  The reasoning is that the
+ * re-registration infrastructure including timeouts suffices to keep these
+ * programs registered once they have been, and when a program registers anew
+ * there are bound to be such race condition opportunities.  It is useful to
+ * have this property, as it also means that no lock is acquired no LID entry
+ * for just checking if a database entry may just skip the callbacks.
+ */
+success_t lidentry_database_mayskip (int levels_up, int at_root);
+/* Implement the function for localid callback with a database entry, as they
+ * precede the localid inquiry callback.
+ *
+ * The maxlevels value counts 1 per step for domain names, and 1 per step for
+ * user@domain identfiers.  The value 0 indicates the concrete value, which
+ * is submitted in the remoteid parameter.  Note that maxlevels differs from
+ * the levels_up parameter to lidentry_database_mayskip() in that domain names
+ * are only half the value.
+ *
+ * This setup will claim the callback program, because a sequence of messages
+ * must now be sent to it.  Without this sequence, the callback program would
+ * get confusing mixtures of messages.  This implies a requirement to also
+ * invoke lidentry_inquiry_callback(), as this is where any such lock will be
+ * released; it is always the last in such sequences of messages.
+ */
+success_t lidentry_database_callback (char *remoteid, int maxlevels, char *localid);
+
+/* Implement the function for localid inquiry callback.  This function will
+ * contact the currently set LID handler connection.
+ *
+ * Upon returning failure, the localid and flags have not been changed.  This
+ * means that it may be possible for the caller to setup defaults and process
+ * the outcome regardless of success or failure of this function.
+ */
+success_t lidentry_inquiry_callback (char remoteid [128], int maxlevels, char localid [128], uint32_t *flags);
+
+void setup_lidentry (void);
+void cleanup_lidentry (void);
 
 #endif //TLSPOOL_INTERNAL_H

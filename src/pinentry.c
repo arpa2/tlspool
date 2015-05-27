@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
+#include <assert.h>
 
 #include <unistd.h>
 #include <syslog.h>
@@ -118,7 +119,7 @@ void enter_pins (char *pinsocket) {
 
 /* The PIN entry procedure consists of a registration for PINENTRY callbacks.
  * When a PIN is needed, the existing callback is used to ask for one.
- * While the collback is being processed, there could be a danger that another
+ * While the callback is being processed, there could be a danger that another
  * process claims this senstive privilege.  To avoid that, the previous
  * requester has the advantage of being the only one to register up to a
  * timeout that it included in the original request.  This mechanism is
@@ -148,14 +149,14 @@ static time_t pinentry_timeout = 0;
 
 
 /*
- * Register a application socket as one that is willing to process PIN entry
+ * Register an application socket as one that is willing to process PIN entry
  * requests.  The file descriptor may also be used for other functions,
  * so it is only safe to use as a sending channel.  Registration is just
  * for one try, after which the application protocol will let it re-register.
  */
 void register_pinentry_command (struct command *cmd) {
 	int error = 0;
-	pthread_mutex_lock (&pinentry_lock);
+	assert (pthread_mutex_lock (&pinentry_lock) == 0);
 	if (!pinentry_cmd) {
 		// There is actually a need for a PIN entry command to register
 		if (pinentry_client == cmd->clientfd) {
@@ -194,7 +195,7 @@ void register_pinentry_command (struct command *cmd) {
  * requestor.
  */
 void pinentry_forget_clientfd (int fd) {
-	pthread_mutex_lock (&pinentry_lock);
+	assert (pthread_mutex_lock (&pinentry_lock) == 0);
 	if (pinentry_client == fd) {
 		// No response possible.  Service reclaims for cmd pooling
 		pinentry_cmd = NULL;
@@ -257,7 +258,7 @@ success_t pin_callback (	int attempt,
 	}
 	//
 	// Grab the current PINENTRY registration or report failure
-	pthread_mutex_lock (&pinentry_lock);
+	assert (pthread_mutex_lock (&pinentry_lock) == 0);
 	cmd = pinentry_cmd;
 	if (cmd != NULL) {
 		tlog (TLOG_PKCS11 | TLOG_USER, LOG_DEBUG, "Using registered PIN entry command");
@@ -301,7 +302,7 @@ success_t pin_callback (	int attempt,
 	//
 	// Await response or timeout
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response()");
-	cmd = send_callback_and_await_response (cmd);
+	cmd = send_callback_and_await_response (cmd, 0);
 	register_pinentry_command (cmd);
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Returnd send_callback_and_await_response()");
 	if ((cmd->cmd.pio_cmd != PIOC_PINENTRY_V1) || !*cmd->cmd.pio_data.pioc_pinentry.pin) {

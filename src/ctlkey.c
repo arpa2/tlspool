@@ -30,6 +30,7 @@
 #include <fcntl.h>
 #include <assert.h>
 #include <errno.h>
+#include <string.h>
 
 #include <pthread.h>
 

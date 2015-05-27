@@ -503,21 +503,25 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		//NOTUSED// mh.msg_control = anc;
 		//NOTUSED// mh.msg_controllen = sizeof (anc);
 		registry_recvmsg (&regent);
+		if (sentfd >= 0) {
+			close (sentfd);
+		}
+		sentfd = -1;
 		switch (cmd.pio_cmd) {
 		case PIOC_ERROR_V1:
 			/* Bad luck, we failed */
 			syslog (LOG_INFO, "TLS Pool error to tlspool_starttls(): %s", cmd.pio_data.pioc_error.message);
-			close (sentfd);
 			registry_update (&entry_reqid, NULL);
 			errno = cmd.pio_data.pioc_error.tlserrno;
 			return -1;
+		case PIOC_STARTTLS_LOCALID_V2:
 		case PIOC_PLAINTEXT_CONNECT_V2:
 			if (namedconnect) {
 				plainfd = namedconnect (tlsdata, privdata);
 			} else {
 				/* default namedconnect() implementation */
 				plainfd = * (int *) privdata;
-				if (plainfd < 0) {
+				if ((plainfd < 0) && (cmd.pio_cmd == PIOC_PLAINTEXT_CONNECT_V2)) {
 					int soxx [2];
 					//TODO// Setup for TCP, UDP, SCTP
 					if (socketpair (AF_UNIX, SOCK_SEQPACKET, 0, soxx) == 0) {
@@ -532,23 +536,24 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 					}
 				}
 			}
-			/* We now have a value to send in plainfd */
-			mh.msg_control = anc;
-			mh.msg_controllen = sizeof (anc);
-			cmsg = CMSG_FIRSTHDR (&mh);
-			cmsg->cmsg_level = SOL_SOCKET;
-			cmsg->cmsg_type = SCM_RIGHTS;
-			* (int *) CMSG_DATA (cmsg) = plainfd;
-			cmsg->cmsg_len = CMSG_LEN (sizeof (int));
-			/* Setup plainfd in sentfd, for delayed closing */
-			if (sentfd >= 0) {
-				close (sentfd);
+			/* We may now have a value to send in plainfd */
+			if (plainfd >= 0) {
+				mh.msg_control = anc;
+				mh.msg_controllen = sizeof (anc);
+				cmsg = CMSG_FIRSTHDR (&mh);
+				cmsg->cmsg_level = SOL_SOCKET;
+				cmsg->cmsg_type = SCM_RIGHTS;
+				* (int *) CMSG_DATA (cmsg) = plainfd;
+				cmsg->cmsg_len = CMSG_LEN (sizeof (int));
 			}
-			sentfd = plainfd;
 			/* Now supply plainfd in the callback response */
+			sentfd = plainfd;
 			if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
 				// Let SIGPIPE be reported as EPIPE
-				close (sentfd);
+				if (sentfd >= 0) {
+					close (sentfd);
+					sentfd = -1;
+				}
 				registry_update (&entry_reqid, NULL);
 				// errno inherited from sendmsg()
 				return -1;
@@ -560,7 +565,6 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 			break;
 		default:
 			/* V2 protocol error */
-			close (sentfd);
 			registry_update (&entry_reqid, NULL);
 			errno = EPROTO;
 			return -1;
@@ -568,7 +572,6 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 	}
 
 	/* Close the now-duplicated or now-erradicated plaintext fd */
-	close (sentfd);
 
 	memcpy (tlsdata, &cmd.pio_data.pioc_starttls, sizeof (struct pioc_starttls));
 printf ("DEBUG: Returning control key %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n", tlsdata->ctlkey [0], tlsdata->ctlkey [1], tlsdata->ctlkey [2], tlsdata->ctlkey [3], tlsdata->ctlkey [4], tlsdata->ctlkey [5], tlsdata->ctlkey [6], tlsdata->ctlkey [7], tlsdata->ctlkey [8], tlsdata->ctlkey [9], tlsdata->ctlkey [10], tlsdata->ctlkey [11], tlsdata->ctlkey [12], tlsdata->ctlkey [13], tlsdata->ctlkey [14], tlsdata->ctlkey [15]);
@@ -637,3 +640,71 @@ int _tlspool_control_command (int cmdcode, uint8_t *ctlkey) {
 	return retval;
 }
 
+
+/* The library function to service local identity callbacks.  It registers
+ * with the TLS Pool and will service callback requests until it is no
+ * longer welcomed.  Of course, if another process already has a claim on
+ * this functionality, the service offering will not be welcome from the
+ * start.
+ */
+int tlspool_localid_service (uint32_t regflags, int responsetimeout, lidentry_callback_t cb, void *data) {
+	struct tlspool_command cmd;
+	pthread_mutex_t recvwait = PTHREAD_MUTEX_INITIALIZER;
+	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
+	int entry_reqid = -1;
+	int retval;
+
+	/* Prepare command structure */
+	poolfd = tlspool_socket (NULL);
+	if (poolfd == -1) {
+		errno = ENODEV;
+		return -1;
+	}
+	/* Finish setting up the registry entry */
+	regent.pfd = poolfd;
+	pthread_mutex_lock (&recvwait);		// Will await unlock by master
+	/* Determine the request ID */
+	if (registry_update (&entry_reqid, &regent) != 0) {
+		errno = EBUSY;
+		return -1;
+	}
+	bzero (&cmd, sizeof (cmd));	/* Do not leak old stack info */
+	cmd.pio_reqid = entry_reqid;
+	cmd.pio_cbid = 0;
+	cmd.pio_cmd = PIOC_LIDENTRY_REGISTER_V2;
+	cmd.pio_data.pioc_lidentry.flags = regflags;
+	cmd.pio_data.pioc_lidentry.timeout = responsetimeout;
+
+	/* Loop forever... or until an error occurs */
+	while (1) {
+
+		/* send the request or, when looping, the callback result */
+printf ("DEBUG: LIDENTRY command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.pio_cmd, cmd.pio_cbid, cmd.pio_data.pioc_lidentry.flags);
+		if (send (poolfd, &cmd, sizeof (cmd), MSG_NOSIGNAL) == -1) {
+			// let SIGPIPE be reported as EPIPE
+			registry_update (&entry_reqid, NULL);
+			// errno inherited from send()
+			return -1;
+		}
+
+		/* receive and process the response */
+		registry_recvmsg (&regent);
+printf ("DEBUG: LIDENTRY callback command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.pio_cmd, cmd.pio_cbid, cmd.pio_data.pioc_lidentry.flags);
+		switch (cmd.pio_cmd) {
+		case PIOC_LIDENTRY_CALLBACK_V2:
+			cb (&cmd, data);
+			//TODO// Claim on regent lost?
+			break;
+		case PIOC_ERROR_V1:
+			errno = cmd.pio_data.pioc_error.tlserrno;
+			syslog (LOG_INFO, "TLS Pool error to tlspool_localid_service(): %s", cmd.pio_data.pioc_error.message);
+			return -1;
+		default:
+			errno = EPROTO;
+			return -1;
+		}
+	}
+
+	/* Never end up here... */
+	return 0;
+}

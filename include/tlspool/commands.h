@@ -8,7 +8,7 @@
 #include <stdint.h>
 
 
-#define TLSPOOL_IDENTITY_TMP	"20150319tlspool@tmp.vanrein.org"
+#define TLSPOOL_IDENTITY_TMP	"20150401tlspool@tmp.vanrein.org"
 
 
 /****************************** STRUCTURES *****************************/
@@ -111,6 +111,13 @@ struct tlspool_command {
 			char token_serial [17];	// PKCS #11 token serial number
 			char token_label [33];	// PKCS #11 token label
 		} pioc_pinentry;
+		struct pioc_lidentry {
+			uint32_t flags;		// PIOF_LIDENTRY_xxx below
+			uint16_t maxlevels;	// Max # iterations for concrete ID
+			time_t timeout;		// Regtimeout[s] or resptimeout
+			char localid [128];	// Local ID or empty string
+			char remoteid [128];	// Remote ID or empty string
+		} pioc_lidentry;
 		struct pioc_control {
 			uint32_t flags;		// PIOF_CONTROL_xxx, none yet
 			uint8_t ctlkey [TLSPOOL_CTLKEYLEN]; // Control key
@@ -172,14 +179,27 @@ typedef struct pioc_starttls starttls_t;
  * and sent back in the same message format.  The remoteid is sent
  * by the TLS Pool as extra information, but it is an empty string if
  * the information is unavailable.
- * Be prepared to receive zero or more of these proposals in the course
- * of a TLS exchange.  Especially when rejecting one localid there may
+ *
+ * Various sources may supply a local identity; it may arrive in a
+ * Server Name Indication over TLS, it may be suggested by the disclose.db
+ * with potentially registered LIDENTRY extension.  The outcome of these
+ * sources is presented through this command.
+ *
+ * This callback is only made when PIOF_STARTTLS_LOCALID_CHECK is set.
+ * Then, be prepared to receive zero or more of these proposals in the course
+ * of a TLS handshake.  Especially when rejecting one localid there may
  * be ways for the TLS Pool to propose other localid values.
  * The payload used is the pioc_starttls, but only the localid and
  * remoteid are meaningful when sent by the TLS Pool, and only the
- * localid is interpreted when it returns to the TLS Pool.
+ * localid is interpreted when it returns to the TLS Pool.  In all these
+ * identity strings, the empty string is used to indicate absense of an
+ * acceptable value.
+ *
+ * When this callback passes a file descriptor to the TLS Pool, it will be
+ * interpreted as the plaintext file descriptor and an implied acceptance
+ * of the local identity presented, regardless of the localid returned.
  */
-#define PIOC_STARTTLS_LOCALID_V1		0x00000028
+#define PIOC_STARTTLS_LOCALID_V2		0x00000028
 
 
 /* TODO: Possibly support renegotiation, like for explicit authn */
@@ -198,13 +218,17 @@ typedef struct pioc_starttls starttls_t;
 
 
 /* The named connect command.  This is used in callbacks from the TLS Pool,
- * to ask the application for a file descriptor.  Since this is called
+ * to ask the application for a file descriptor.  Since this is normally called
  * after the TLS handshake has succeeded, there is no danger of leaking
  * information early; visibility and accessibility are usually arranged
- * through PIOC_STARTTLS_LOCALID_V1 and not here.  The use of this callback
- * is to provide a second file descriptor to the TLS Pool, and it is only
- * used when this has not been provided yet.  The information in the
- * tlsdata_t reflects localid and remoteid information from the handshake.
+ * through PIOC_LIDENTRY_xxx callbacks or the disclose.db but not here.  See
+ * PIOF_STARTTLS_LOCALID_CHECK for an earlier, optional callback with
+ * PIOC_STARTTLS_LOCALID_V2 though.
+ *
+ * The use of this callback is to provide a second file descriptor to the
+ * TLS Pool, and it is called exactly once as part of a successful TLS
+ * connection setup.  The information in the tlsdata_t reflects localid and
+ * remoteid information from the handshake.
  */
 #define PIOC_PLAINTEXT_CONNECT_V2		0x0000002a
 
@@ -226,6 +250,29 @@ typedef struct pioc_starttls starttls_t;
 #define PIOC_CONTROL_REATTACH_V2		0x00000101
 
 
+/* Register a LIDENTRY extension with the given flags to indicate the desired
+ * callbacks.  Only one application may register for such callbacks, and the
+ * registration will provide callbacks for as long as the connection to the
+ * TLS Pool is kept alive.  The command never returns; it provides callbacks.
+ *
+ * The data field for this command is pioc_lidentry, of which only the flags
+ * are interpreted; and of those, only the ones that impact registration.
+ *
+ * Presently, callbacks may be expected to follow a sequence, where zero or
+ * more database entries may be sent preceding the actual callback that asks
+ * for the desired localid to use.  This means that other TLS handshakes that
+ * desire to be in the same sequence are locked out, and that may be overruled
+ * at a later time, if we need to provide better interaction.
+ */
+#define PIOC_LIDENTRY_REGISTER_V2		0x00000200
+
+
+/* Callback to the LIDENTRY extension, as well as its non-ERROR responses, use
+ * the PIOC_LIDENTRY_CALLBACK_V2 command with the pioc_lidentry data format.
+ */
+#define PIOC_LIDENTRY_CALLBACK_V2		0x00000201
+
+
 /* This command bit that marks a command as local.  Local commands are always
  * a bit of a risk, and should incorporate some way of identifying the
  * source of the command, or would otherwise be wise to exercise complete
@@ -235,7 +282,7 @@ typedef struct pioc_starttls starttls_t;
 #define PIOC_LOCAL				0x80000000
 
 
-/********************************* FLAGS ********************************/
+/*************************** PIOF_STARTTLS_xxx FLAGS **************************/
 
 
 /* PIOF_STARTTLS_xxx flags are sent and received in pioc_starttls.
@@ -414,6 +461,154 @@ typedef struct pioc_starttls starttls_t;
  * connection will automatically cause a DETACH of those TLS sessions.
  */
 #define PIOF_STARTTLS_FORK			0x00004000
+
+
+/* PIOF_STARTTLS_LOCALID_CHECK requests that a local identity is provided
+ * to the application before it is accepted; this mechanism allows the
+ * application to check such things as its list of virtual host names, and
+ * whether these can be served.  When this flag is set, the callback command
+ * PIOC_STARTTLS_LOCALID_V2 is sent before presenting the local identity.
+ * The local identity that is being checked is the outcome from the disclose.db
+ * with possible extensions by a registered LIDENTRY extension.
+ */
+#define PIOF_STARTTLS_LOCALID_CHECK		0x00010000
+
+
+/*************************** PIOF_LIDENTRY_xxx FLAGS **************************/
+
+
+/* The flags below set the behaviour while searching the disclose.db for entries
+ * that map a remote identity to a list of local identities.  It indicates which
+ * values may be passed without interaction by the LIDENTRY extension; by
+ * default, the registration of a LIDENTRY extension implies that all attempts
+ * to determine a local identity pass through the extension; the _SKIP_ flags
+ * indicate which entries may be implicitly skipped when they *all* apply.
+ *
+ * PIOF_LIDENTRY_SKIP_USER indicates that part of the skip condition is that
+ * any username is not removed; variants with just a domain name are also
+ * considered skippable under this flag;
+ *
+ * PIOF_LIDENTRY_SKIP_DOMAIN_xxx indicates whether the domain may be changed;
+ * use _SAME and/or _ONEUP to indicate 0 and 1 levels up from the concrete
+ * domain name; the _SUB variation combines _SAME and _ONEUP.
+ *
+ * PIOF_LIDENTRY_SKIP_NOTROOT indicates that the entry must not be the root
+ * domain entry; whether or not the username is removed is not of influence
+ * on the meaning of this flag.
+ *
+ * PIOF_LIDENTRY_SKIP_DBENTRY indicates that the entry must be in the database;
+ * it is implied by all the above, but has meaning when used on its own, as it
+ * permits skipping anything that is stored, without further restricting flags.
+ *
+ * These flags are used while registering a LIDENTRY extension; they are also
+ * returned in callbacks, where they refer to the remote identity selector.
+ * For example, _SKIP_USER indicates that the username part was skipped, and
+ * _SKIP_DOMAIN_ONEUP indicates that the domain name goes one up.
+ *
+ * Although the skip selection could be made in the extension, it is less
+ * efficient that way; the interaction with the extension is forced into a
+ * sequence, and concurrent contenders may therefore need to wait for the
+ * extension while it is interacting with the user.  So, skipping user
+ * interaction when it is not needed is advantageous.  When skipping, the
+ * disclose.db is used as a source, as if the LIDENTRY extension was not
+ * registered at all.
+ */
+#define PIOF_LIDENTRY_SKIP_DBENTRY		0x00000080 /* in all _SKIP_ */
+#define PIOF_LIDENTRY_SKIP_USER			0x00000081
+#define PIOF_LIDENTRY_SKIP_DOMAIN_SAME		0x00000082
+#define PIOF_LIDENTRY_SKIP_DOMAIN_ONEUP		0x00000084
+#define PIOF_LIDENTRY_SKIP_DOMAIN_SUB		0x00000086 /* _SAME | _ONEUP */
+#define PIOF_LIDENTRY_SKIP_NOTROOT		0x00000088
+
+
+/* PIOF_LIDENTRY_DBENTRY is used as a flag during PIOC_LIDENTRY_REGISTER_V2
+ * and will cause PIOC_LIDENTRY_CALLBACK_V2 callbacks for database entries at
+ * the most concrete level above the considered remoteid.
+ *
+ * Any such database entry callbacks precede the normal callback and have:
+ *  - PIOF_LIDENTRY_DBENTRY set
+ *  - maxlevels set to the number of levels up for this entry (0 for concrete)
+ *  - remoteid set to the remoteid entry found in disclose.db
+ *  - localid set to an entry found in the database
+ * The return from the callback should not be ERROR but is otherwise ignored.
+ *
+ * The final/normal callback is different:
+ *  - PIOF_LIDENTRY_DBENTRY is not set
+ *  - maxlevels set to the number of permissible levels up (from 0 for concrete)
+ *  - remoteid set to the concrete remote identity considered
+ *  - localid set to the application-suggested local identity, or empty=undef
+ * The return value from the callback should be PIOC_LIDENTRY_CALLBACK and have:
+ *  - flags can hold PIOF_LIDENTRY_xxx flags suitable for callback processing
+ *  - remoteid is the given concrete, or no more than maxlevels iterations up
+ *  - localid is the concrete identity to disclose, unrelated to the suggested
+ */
+#define PIOF_LIDENTRY_DBENTRY			0x00000100
+
+
+/* PIOF_LIDENTRY_DBAPPEND and PIOF_LIDENTRY_DBINSERT indicate that the provided
+ * information should be added to the database, respectively at the end or
+ * beginning of the disclose.db list of local identities for the given remote
+ * identity.  When the entry is already available, the posision is not changed
+ * by default, but that will be done when PIOF_LIDENTRY_DBREORDER is set.
+ *
+ * Changes to the database are part of a database transaction that is rolled
+ * back when the TLS handshake fails.  This means that providing an identity
+ * that somehow fails to work is not going to be remembered for the next time.
+ * A simple restart of the TLS handshake therefore suffices to restart the
+ * user interaction and find an alternative.  Note that it is assumed that the
+ * application that uses the TLS Pool will somehow report back on the failure,
+ * and the user should therefore not be surprised to be confronted with a
+ * question that he though had been stored.
+ *
+ * Note that these flags lead to database activity; optimal efficiency
+ * requires that they are only set on PIOF_LIDENTRY_CALLBACK_V2 responses
+ * that actually write to the database -- because they return either:
+ *  - a remoteid less than maxlevels steps up with _DBINSERT/_DBAPPEND
+ *  - a localid with _DBINSERT/_DBAPPEND if it is not yet setup in the database
+ *  - a localid whose position must be updated under _DBREORDER
+ */
+#define PIOF_LIDENTRY_DBINSERT			0x00000200
+#define PIOF_LIDENTRY_DBAPPEND			0x00000400
+#define PIOF_LIDENTRY_DBREORDER			0x00000800
+
+
+/* PIOF_LIDENTRY_NEW indicates in a response to a callback that the selected
+ * local identity should be available soon, but may not have come through yet.
+ * It instructs the TLS Pool to await its arrival before proceeding.
+ *
+ * This flag is useful to end a callback (and thus free up the resource of the
+ * forced user-interaction sequence) while identities are being created in
+ * complex network infrastructures that may involve key generation, publication
+ * in identity showcases like DNS or LDAP, and whatever else is needed to have
+ * identities embedded in an infrastructure.
+ *
+ * TODO: This is unimplemented behaviour; the flag is merely allocated.
+ */
+// #define PIOF_LIDENTRY_NEW			0x00010000
+
+
+/* PIOF_LIDENTRY_ONTHEFLY indicates in a response to callback that the selected
+ * local identity should be setup as an on-the-fly identity.  This type of
+ * identity is only available locally, and uses a configured credential to
+ * vouch for the on-the-fly generated identity.  The manner in which this
+ * is done depends on the kind of credential to provide.
+ *
+ * These on-the-fly identities will disappear when the TLS Pool restarts, and
+ * possibly sooner.  They are to be considered usable for one connection only,
+ * although temporary caching may be used to improve efficiency.  In general,
+ * do not rely on the same certificate to stay available.  Also, do not expect
+ * public visibility of this identity in LDAP, DNS, or other identity showcase.
+ *
+ * Note that it should be assumed that these identities require special setup
+ * in the remote node; if it is a full-blown TLS Pool, it will not appreciate
+ * the locality of the identity, and demand more infrastructural confirmation
+ * in identity showcases.  One example of its use however, is towards lame
+ * and old-fashioned remote services and towards highly structured local users,
+ * such as off-the-shelve browsers that require a HTTPS proxy.
+ *
+ * TODO: This is unimplemented behaviour; the flag is merely allocated.
+ */
+// #define PIOF_LIDENTRY_ONTHEFLY		0x00030000
 
 
 #endif //TLSPOOL_COMMANDS_H

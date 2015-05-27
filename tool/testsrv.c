@@ -93,8 +93,9 @@ int main (int argc, char *argv) {
 			perror ("Failed to accept incoming connection");
 			continue;
 		}
+		starttls_t tlsdata_now = tlsdata_srv;
 		plainfd = -1;
-		if (-1 == tlspool_starttls (cnx, &tlsdata_srv, &plainfd, NULL)) {
+		if (-1 == tlspool_starttls (cnx, &tlsdata_now, &plainfd, NULL)) {
 			perror ("Failed to STARTTLS on testsrv");
 			if (plainfd >= 0) {
 				close (plainfd);

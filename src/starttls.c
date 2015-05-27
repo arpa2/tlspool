@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <memory.h>
 #include <pthread.h>
+#include <assert.h>
 
 #include <unistd.h>
 #include <syslog.h>
@@ -40,9 +41,9 @@
  * to encrypt and decrypt traffic while it is in transit.
  *
  * Every TLS connection (including the attempt to set it up) is hosted in
- * its own thread.  This means that it can abide time to wait for PINENTRY
- * or LOCALID responses.  It also means a very clear flow when the time
- * comes to destroy a connection.
+ * its own thread.  This means that it can abide time to wait for PINENTRY,
+ * LOCALID or LIDENTRY responses.  It also means a very clear flow when the
+ * time comes to destroy a connection.
  *
  * While encrypting and decrypting traffic passing through, the thread
  * will use its own poll() call, and thus offload the potentially large
@@ -793,18 +794,19 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 	//
 	// Find the prefetched local identity to use towards this remote
 	// Send a callback to the user if none is available and accessible
-	//TODO// This callback will be redirected to the identity watchdog
-	//TODO// Define a flag to enforce this callback (to set plainfd)
-	if (cmd->lids [lidtype - LID_TYPE_MIN].data == NULL) {
+	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALID_CHECK) {
 		uint32_t oldcmd = cmd->cmd.pio_cmd;
-		cmd->cmd.pio_cmd = PIOC_STARTTLS_LOCALID_V1;
-		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response with PIOC_STARTTLS_LOCALID_V1");
-		cmd = send_callback_and_await_response (cmd);
-		if (cmd->cmd.pio_cmd != PIOC_STARTTLS_LOCALID_V1) {
+		struct command *resp;
+		cmd->cmd.pio_cmd = PIOC_STARTTLS_LOCALID_V2;
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response with PIOC_STARTTLS_LOCALID_V2");
+		resp = send_callback_and_await_response (cmd, 0);
+		assert (resp != NULL);	// No timeout, should be non-NULL
+		if (resp->cmd.pio_cmd != PIOC_STARTTLS_LOCALID_V2) {
 			tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has unexpected command code");
 			cmd->cmd.pio_cmd = oldcmd;
 			return GNUTLS_E_CERTIFICATE_ERROR;
 		}
+		assert (resp == cmd);  // No ERROR, so should be the same
 		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that sets plainfd:=%d and lid:=\"%s\" for rid==\"%s\"", cmd->passfd, lid, rid);
 		cmd->cmd.pio_cmd = oldcmd;
 		//
@@ -817,12 +819,6 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 				return GNUTLS_E_NO_CERTIFICATE_FOUND;
 			}
 		}
-		//
-		// Add (rid,lid) to db_disclose for acceptance.
-		// Note that this is done within the STARTTLS transaction.
-		// Upon secure setup failure this change will roll back.
-		//TODO// Client => add (rid,lid) to db_disclose within cmd->txn
-		//TODO// Decide how to deal with lower-level overrides
 		//
 		// Now reiterate to lookup lid credentials in db_localid
 		E_g2e ("Missing local credentials",
@@ -1831,34 +1827,27 @@ static void *starttls_thread (void *cmd_void) {
 	//
 	// Request the plaintext file descriptor with a callback
 	uint32_t oldcmd = cmd->cmd.pio_cmd;
+	struct command *resp;
 	cmd->cmd.pio_cmd = PIOC_PLAINTEXT_CONNECT_V2;
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response with PIOC_PLAINTEXT_CONNECT_V2");
-	cmd = send_callback_and_await_response (cmd);
-		if (cmd->cmd.pio_cmd != PIOC_PLAINTEXT_CONNECT_V2) {
-			tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has unexpected command code");
-			if (cmd->cmd.pio_cmd == PIOC_ERROR_V1) {
-				send_command (cmd, -1);	// Bounce error back
-			} else {
-				send_error (cmd, EPROTO, "Unexpected response to plaintext connection callback");
-			}
-			return;
-		}
+	resp = send_callback_and_await_response (cmd, 0);
+	assert (resp != NULL);	// No timeout, should be non-NULL
+	if (resp->cmd.pio_cmd != PIOC_PLAINTEXT_CONNECT_V2) {
+		tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has unexpected command code");
+		send_error (cmd, EINVAL, "Callback response has bad command code");
+		manage_txn_rollback (&cmd->txn);
+		close (cryptfd);
+		close (plainfd);
+		return;
+	}
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that set plainfd:=%d for lid==\"%s\" and rid==\"%s\"", cmd->passfd, cmd->cmd.pio_data.pioc_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid);
-	plainfd = cmd->passfd;
-	cmd->passfd = -1;
+	plainfd = resp->passfd;
+	resp->passfd = -1;
 	if (plainfd < 0) {
 		tlog (TLOG_UNIXSOCK, LOG_ERR, "No plaintext file descriptor supplied to TLS Pool");
 		send_error (cmd, EINVAL, "No plaintext file descriptor supplied to TLS Pool");
 		manage_txn_rollback (&cmd->txn);
 		close (cryptfd);
-		return;
-	}
-	if (cmd->cmd.pio_cmd != PIOC_PLAINTEXT_CONNECT_V2) {
-		tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has bad command code");
-		send_error (cmd, EINVAL, "Callback response has bad command code");
-		manage_txn_rollback (&cmd->txn);
-		close (cryptfd);
-		close (plainfd);
 		return;
 	}
 	cmd->cmd.pio_cmd = oldcmd;
@@ -1867,8 +1856,6 @@ static void *starttls_thread (void *cmd_void) {
 	//
 	// Copy TLS records until the connection is closed
 	manage_txn_commit (&cmd->txn);
-	//TODO// Register ctlkey in mapping to pthread
-	//TODO// Register ctlkey early, and be able to send_error() when failed
 	if (ctlkey_register (orig_piocdata.ctlkey, &ctlkeyregent, cmd->clientfd) == 0) {
 		copycat (plainfd, cryptfd, session, clientfd);
 		ctlkey_unregister (orig_piocdata.ctlkey);

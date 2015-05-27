@@ -121,6 +121,7 @@ static void free_commands_by_clientfd (int clientfd) {
 	for (i=0; i<cmdpool_len; i++) {
 		if (cmdpool [i].claimed) {
 			if (cmdpool [i].clientfd == clientfd) {
+				//TODO// don't be so disruptive
 				pthread_cancel (cmdpool [i].handler);
 				cmdpool [i].claimed = 0;
 			}
@@ -160,12 +161,16 @@ void register_client_socket (int clisox) {
 }
 
 
+static void free_callbacks_by_clientfd (int clientfd);
+
 /* TODO: This may copy information back and thereby avoid processing in the
  * current loop passthrough.  No problem, poll() will show it once more. */
 static void unregister_client_socket_byindex (int soxidx) {
 	int sox = soxpoll [soxidx].fd;
-	pinentry_forget_clientfd (sox);
+	free_callbacks_by_clientfd (sox);
 	free_commands_by_clientfd (sox);
+	pinentry_forget_clientfd (sox);
+	lidentry_forget_clientfd (sox);
 	ctlkey_close_clientfd (sox);
 	num_sox--;
 	if (soxidx < num_sox) {
@@ -321,11 +326,19 @@ static int is_callback (struct command *cmd) {
  * The condition awaited for which the callback's condition presents a hint
  * is the setting of the followup pointer in the callback structure, which
  * links in the command that responds to the callback placed.
+ *
+ * The caller may supply the absolute time_t value at which it times out.
+ * If opt_timeout is 0, it is not considered to be a timeout value.  If it
+ * is supplied, the return value may be NULL to signal timeout.  There is
+ * no information fed back from the caller, but at least the TLS Pool does
+ * not block on it, but can continue to process failure.  Later submissions
+ * of the callback response are swallowed silently (although a log entry
+ * will be made).
  */
-struct command *send_callback_and_await_response (struct command *cmdresp) {
+struct command *send_callback_and_await_response (struct command *cmdresp, time_t opt_timeout) {
 	struct callback *cb;
 	struct command *followup;
-	pthread_mutex_lock (&cbfree_mutex);
+	assert (pthread_mutex_lock (&cbfree_mutex) == 0);
 	cb = cbfree;
 	if (!cb) {
 		//TODO// Allocate more...
@@ -338,17 +351,35 @@ struct command *send_callback_and_await_response (struct command *cmdresp) {
 	cb->fd = cmdresp->clientfd;
 	cb->followup = NULL;
 	cb->next = NULL; //TODO// Enqueue in fd-queue
+	cb->timedout = 0;
 	send_command (cmdresp, -1);
 	do {
-		//TODO// pthread_cond_timedwait?
 		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Waiting with fd=%d and cbid=%d on semaphone 0x%08x", cb->fd, cmdresp->cmd.pio_cbid, cb);
-		pthread_cond_wait (&cb->semaphore, &cbfree_mutex);
+		if (opt_timeout != 0) {
+			struct timespec ts;
+			memset (&ts, 0, sizeof (ts));
+			ts.tv_sec = opt_timeout;
+			if (pthread_cond_timedwait (&cb->semaphore, &cbfree_mutex, &ts) != 0) {
+				// Timed out (or interrupted) so give up
+				followup = NULL;
+				break;
+			}
+		} else {
+			pthread_cond_wait (&cb->semaphore, &cbfree_mutex);
+		}
 		followup = cb->followup;
 	} while (!followup);
 	//TODO// Remove cb from the fd's cblist
-	cb->next = cbfree;
-	cbfree = cb;
+	if (followup) {
+		cb->next = cbfree;
+		cbfree = cb;
+	} else {
+		cb->timedout = 1;	// Defer freeing it to the signaler
+	}
 	pthread_mutex_unlock (&cbfree_mutex);
+	if (!followup) {
+		tlog (TLOG_UNIXSOCK, LOG_NOTICE, "Requested callback over %d timed out, cleanup of structures deferred", cmdresp->clientfd);
+	}
 	return followup;
 }
 
@@ -361,10 +392,47 @@ static void post_callback (struct command *cmd) {
 	uint16_t cbid = cmd->cmd.pio_cbid - 1;
 	cblist [cbid].fd = -1;
 	cblist [cbid].followup = cmd;
-	pthread_mutex_lock (&cbfree_mutex);
+	assert (pthread_mutex_lock (&cbfree_mutex) == 0);
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Signaling on the semaphore of callback 0x%08x", &cblist [cbid]);
-	pthread_cond_signal (&cblist [cbid].semaphore);
+	if (!cblist [cbid].timedout) {
+		// Still waiting, send a signal to the requester
+		pthread_cond_signal (&cblist [cbid].semaphore);
+	} else {
+		// Timed out, but the callback structure awaits cleanup
+		cblist [cbid].next = cbfree;
+		cbfree = &cblist [cbid];
+		cmd->claimed = 0;
+		//TODO// Might report an error back, to indicate ignorance
+	}
 	pthread_mutex_unlock (&cbfree_mutex);
+}
+
+
+/* Forget all callbacks that were sent to the given clientfd, by posting an
+ * ERROR message to them.  This is used to avoid infinitely waiting threads
+ * in the TLS Pool when a clientfd is closed by the client (perhaps due to
+ * a crash in response to the callback).
+ */
+static void free_callbacks_by_clientfd (int clientfd) {
+	int i;
+	for (i=0; i<1024; i++) {
+//TODO// == clientfd was >= 0 (and managed to get closes sent back to all)
+		if (cblist [i].fd == clientfd) {
+			struct command *errcmd;
+			errcmd = allocate_command_for_clientfd (clientfd);
+			errcmd->clientfd = clientfd;
+			errcmd->passfd = -1;
+			errcmd->claimed = 1;
+			errcmd->cmd.pio_reqid = 0;  // Don't know how to set it
+			errcmd->cmd.pio_cbid = i + 1;
+			errcmd->cmd.pio_cmd = PIOC_ERROR_V1;
+			errcmd->cmd.pio_data.pioc_error.tlserrno = ECONNRESET;
+			snprintf (errcmd->cmd.pio_data.pioc_error.message, 127, "Client fd %d closed", clientfd);
+printf ("DEBUG: Freeing callback with cbid=%d for clientfd %d\n", i+1, clientfd);
+			post_callback (errcmd);
+printf ("DEBUG: Freed   callback with cbid=%d for clientfd %d\n", i+1, clientfd);
+		}
+	}
 }
 
 
@@ -374,6 +442,7 @@ static void process_command (struct command *cmd) {
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing command 0x%08x", cmd->cmd.pio_cmd);
 	union pio_data *d = &cmd->cmd.pio_data;
 	if (is_callback (cmd)) {
+printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
 		post_callback (cmd);
 		return;
 	}
@@ -393,6 +462,9 @@ static void process_command (struct command *cmd) {
 		return;
 	case PIOC_PINENTRY_V1:
 		register_pinentry_command (cmd);
+		return;
+	case PIOC_LIDENTRY_REGISTER_V2:
+		register_lidentry_command (cmd);
 		return;
 	default:
 		send_error (cmd, ENOSYS, "Command not implemented");

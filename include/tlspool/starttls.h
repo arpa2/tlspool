@@ -115,4 +115,44 @@ static inline int tlspool_control_reattach (uint8_t *ctlkey) {
 }
 
 
+/* Register a callback function for local identity selection with the
+ * LIDENTRY API of the TLS Pool.  This will invoke the callback with zero
+ * or more database entries (marked with flag PIOF_LIDENTRY_DBENTRY) and an
+ * inquiry (without that flag) to enter a local identity.  The callback is
+ * expected to save the database entries in some sort of a menu structure
+ * (or ignore it if it is not interested in them) and use them in the
+ * selection process.  What it does precisely is up to the registered
+ * application.
+ *
+ * The callback behaviour of the API can be influenced in various ways;
+ * see the PIOF_LIDENTRY_xxx flags in <tlspool/commands.h> for details.
+ * Some flags are used during registration and supplied in regflags,
+ * some are used during callback and exchanged in the tlspool_command.
+ *
+ * The registration for callback terminates in the following situations:
+ *  - the TLS Pool file handle is closed
+ *  - the callback returns a wrong type of command, including PIOC_ERROR_xx
+ *  - the callback does not respond fast enough (other apps may overtake)
+ *
+ * The responsetimeout is set to the number of seconds that a callback
+ * may at most take to respond.  The claim on the registration will expire
+ * after this time has passed.
+ *
+ * Note that the service function does not return until the callback
+ * registration is terminated.  This is why it is called xxx_service and
+ * not xxx_callback.  You may want to use a thread if your intention is
+ * to do other things as well.  Note however, that it is usually a good
+ * idea to keep localid handling separate, as a GUI function, from the
+ * other components that interact with the TLS Pool for other purposes,
+ * such as wrapping an application protocol.
+ *
+ * This function returns 0 on success, meaning it has gotten to a stage
+ * where it was registered with the TLS Pool.  Otherwise, it returns -1
+ * and sets errno.
+ */
+typedef void (*lidentry_callback_t) (struct tlspool_command *tc, void *data);
+int tlspool_localid_service (uint32_t regflags, int responsetimeout, lidentry_callback_t lidcb, void *data);
+
+
+
 #endif // TLSPOOL_STARTTLS_H
