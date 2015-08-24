@@ -538,4 +538,3 @@ char *cfg_tls_dhparamfile (void) {
 	return configvars [CFGVAR_TLS_DHPARAMFILE];
 }
 
-

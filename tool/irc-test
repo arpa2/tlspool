@@ -7,7 +7,7 @@ spawn /bin/nc ::1 6667
 
 sleep 5
 send "user somename - - - \r\n"
-sleep 1
+sleep 2
 send "nick testcli-tlspool-arpa2-lab\r\n"
 
 sleep 2

@@ -8,7 +8,7 @@
 #include <stdint.h>
 
 
-#define TLSPOOL_IDENTITY_TMP	"20150401tlspool@tmp.vanrein.org"
+#define TLSPOOL_IDENTITY_TMP	"20150527tlspool@tmp.vanrein.org"
 
 
 /****************************** STRUCTURES *****************************/
@@ -16,6 +16,7 @@
 
 #define TLSPOOL_CTLKEYLEN 16
 #define TLSPOOL_SERVICELEN 32
+#define TLSPOOL_PRNGBUFLEN 350
 #define TLSPOOL_TIMEOUT_DEFAULT 0
 #define TLSPOOL_TIMEOUT_INFINITE (~(uint32_t)0)
 
@@ -123,6 +124,10 @@ struct tlspool_command {
 			uint8_t ctlkey [TLSPOOL_CTLKEYLEN]; // Control key
 			char name [128];	// A name field
 		} pioc_control;
+		struct pioc_prng {
+			int16_t in1_len, in2_len, prng_len;
+			uint8_t buffer [TLSPOOL_PRNGBUFLEN]; // ctlkey, in1, in2
+		} pioc_prng;
 	} pio_data;
 };
 
@@ -231,6 +236,44 @@ typedef struct pioc_starttls starttls_t;
  * remoteid information from the handshake.
  */
 #define PIOC_PLAINTEXT_CONNECT_V2		0x0000002a
+
+
+/* Generate a pseudo-random sequence based on session cryptographic keys.
+ * In the case of TLS, this adheres to RFC 5705; other protocols may or
+ * may not support a similar mechanism, in which case an error is returned.
+ *
+ * This leans on access privileges to an existing connection at a meta-level,
+ * for which we use the customary ctlkey verification mechanism.  Note that
+ * random material may be used for security purposes, such as finding the
+ * same session key for both sides deriving from prior key negotiation; the
+ * protection of a ctlkey for such applications is important.
+ *
+ * This command provides a struct pioc_prng holding the following information:
+ *  - in1_len, in2_len hold lengths < 255 with input strings
+ *  - buffer holds the ctlkey and then in1_len + in2_len bytes of input data
+ *  - negative values in in1_len and/or in2_len suppress that field
+ *  - prng_len holds the requested number of pseudo-random bytes
+ *
+ * If the operation succeeds, a struct_pioc_prng is returned holding:
+ *  - prng_len holds the provided number of pseudo-random bytes
+ *  - buffer holds these bytes (and has overwritten the rest of the buffer)
+ *
+ * The RFC 5705 implementation for TLS specifically uses:
+ *  - in1_len is the length of the exporter label
+ *  - in2_len is negative for no context or it is a context length
+ *
+ * Note a few restrictions to the generality of this operation:
+ *  - it limits the input sizes
+ *  - it limits the retrievable pseuo-random data to a prefix
+ *
+ * The TLS Pool may limit certain TLS PRNG labels, in adherence to the
+ * IANA-maintained TLS Exporter Label Registry.  It additionally supports
+ * the EXPERIMENTAL label prefix specified in RFC 5705.
+ *
+ * Be advised that the size of buffer may increase in future releases.  So,
+ * be sure to use TLSPOOL_PRNGBUFLEN which holds the header-file defined size.
+ */
+#define PIOC_STARTTLS_PRNG_V2			0x0000002b
 
 
 /* Detach the connection decribed by the given ctlkey value.  The value for

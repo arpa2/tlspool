@@ -109,6 +109,7 @@ void cleanup_starttls (void);
 void starttls_pkcs11_provider (char *p11path);
 void starttls_client (struct command *cmd);
 void starttls_server (struct command *cmd);
+void starttls_prng (struct command *cmd);
 
 /* config.c */
 char *cfg_p11pin (void);
@@ -215,6 +216,12 @@ void tlog (unsigned int logmask, int priority, char *format, ...);
 #define TLOG_DAEMON	0x00008000
 
 
+/* The security_layer defines a value for each of the possible secure protocols.
+ */
+enum security_layer {
+	security_tls,
+};
+
 /* The ctlkeynode structure is allocated (possibly on the stack) by each
  * thread that registers, until it unregisters.
  */
@@ -222,6 +229,7 @@ struct ctlkeynode {
 	uint8_t ctlkey [TLSPOOL_CTLKEYLEN];
 	struct ctlkeynode *lessnode, *morenode;
 	int ctlfd;
+	enum security_layer security;
 };
 
 /* The ctlkey_signalling_fd is a file descriptor that can be listened to in
@@ -239,12 +247,40 @@ struct ctlkeynode {
  * not using properly scattered random sources.  The provided *ctlfdp may
  * be -1 to signal it is not valid.
  */
-int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, int ctlfd);
+int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, enum security_layer sec, int ctlfd);
 
 /* Remove a registered cltkey value from th registry.  This is the most
  * complex operation, as it needs to merge the subtrees.
+ *
+ * This function returns non-zero iff it actually removed a node.  This
+ * is useful because there may be other places from which this function
+ * is called automatically.  Generally, the idea is to use a construct
+ *	if (ctlkey_unregister (...)) {
+ *		free (...);
+ *      }
  */
-void ctlkey_unregister (uint8_t *ctlkey);
+int ctlkey_unregister (uint8_t *ctlkey);
+
+/* Find a ctlkeynode based on a ctlkey.  Returns NULL if not found.
+ * 
+ * The value returned is the registered structure, meaning that any context
+ * to the ctlkeynode returned can be relied upon.
+ *
+ * This also brings a responsibility to lock out other uses of the structure,
+ * which means that a non-NULL return value must later be passed to a function
+ * that unlocks the resource, ctlkey_unfind().
+ */
+struct ctlkeynode *ctlkey_find (uint8_t *ctlkey, enum security_layer sec, int clientfd);
+
+/* Free a ctlkeynode that was returned by ctlkey_find().  This function also
+ * accepts a NULL argument, though those need not be passed through this
+ * function as is the case with the non-NULL return values.
+ *
+ * The need for this function arises from the need to lock the structure, in
+ * avoidance of access to structures that are being unregistered in another
+ * thread.
+ */
+void ctlkey_unfind (struct ctlkeynode *ckn);
 
 /* Dattach the given ctlkey, assuming it has clientfd as control connection.
  */

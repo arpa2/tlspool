@@ -84,12 +84,12 @@ void enter_pins (char *pinsocket) {
 			bzero (pwd, strlen (pwd));
 		}
 		tlog (TLOG_PKCS11 | TLOG_USER, LOG_DEBUG, "Offering PIN service to TLS pool with PIN length %d", strlen (pe->pin));
-		if (send (sox, &pio, sizeof (pio), 0) != sizeof (pio)) {
+		if (send (sox, &pio, sizeof (pio), MSG_NOSIGNAL) != sizeof (pio)) {
 			pio.pio_cmd = PIOC_ERROR_V1;
 			pio.pio_data.pioc_error.tlserrno = errno;
 			strcpy (pio.pio_data.pioc_error.message, "Failed to send message to TLS pool");
 		} else {
-			if (recv (sox, &pio, sizeof (pio), 0) != sizeof (pio)) {
+			if (recv (sox, &pio, sizeof (pio), MSG_NOSIGNAL) != sizeof (pio)) {
 				pio.pio_cmd = PIOC_ERROR_V1;
 				pio.pio_data.pioc_error.tlserrno = errno;
 				strcpy (pio.pio_data.pioc_error.message, "Failed to read full message from TLS pool");

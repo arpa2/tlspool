@@ -30,6 +30,10 @@
 # sides have sent one of these commands (as PRIVMSG), the TLS can be further
 # setup, which is done through the TLS Pool.
 #
+# Note that a future TLS extension might implement the same negotiation in TLS,
+# in which case this external negotiation will be deprecated and the argument
+# to STARTTLS may be made optional, or it may be ignored in whole or in part.
+#
 # From: Rick van Rein <rick@openfortress.nl>
 
 
@@ -152,13 +156,18 @@ def nick2nai (nick, dash1map='@'):
 
 #
 # The PrivateChannel is a channel through which TLS-encrypted messages
-# are transferred between peers.  Certain interactions, such as the
+# are transferred between peers.  Specific interactions, such as the
 # PRIVMSG to something that is not a channel (channel names start with
 # a '#' char) pass through this intermediate, and are transformed into
-# other messages.  The PrivateChannel is dedicated to a particular
-# remote peer, and is able to initiate messages, or to swallow them.
+# other messages with privacy protection and/or authentication.
+# Each PrivateChannel object is dedicated to a particular remote peer,
+# and is able to send messages, as well as to swallow them.
 #
-class PrivateChannel (threading.Thread):
+# In later versions, we may decide to split into an abstract level of
+# PrivateChannel and specific mechanisms, such as TLS.  This would
+# enable other transports like GSS-API and SSH to be used as well.
+#
+class PrivateChannel ():
 
 	def __init__ (self, ircprox, localid, remotid):
 		"""Start a new PrivateChannel.  The server can be
@@ -173,7 +182,6 @@ class PrivateChannel (threading.Thread):
 		   each is separately base64-encoded, meaning, each
 		   line has its own "=" sign trailer.
 		"""
-		threading.Thread.__init__ (self)
 		assert (remotid [:1] != '#')
 		self.ircprox = ircprox
 		self.localid = localid
@@ -182,35 +190,24 @@ class PrivateChannel (threading.Thread):
 		self.remotid_nai = nick2nai (remotid)
 		self.localhs = None
 		self.remoths = None
-		self.extsox, self.intsox = socket.socketpair ()
-		print 'Internal socket =', self.intsox
-		print 'External socket =', self.extsox
-		self.poolfd = None
-		self.poolcnx = None
+		self.plaindownbuf = ''
+		self.poolcrypt, self.chancrypt = socket.socketpair ()
+		self.poolplain, self.chanplain = socket.socketpair ()
+		print 'PrivateChannel crypt @pool =', self.poolcrypt, '@chan =', self.chancrypt
+		print 'PrivateChannel plain @pool =', self.poolplain, '@chan =', self.chanplain
 		self.insecure = 0
 		#TODO# Following should not return before done
-		self.starttls ()
+		# self.start ()
+		self.initiate_starttls_handshake ()
 
 	def cleanup (self):
-		if self.poolcnx:
-			self.poolcnx.close ()
-			self.poolcnx = None
-		if self.poolfd:
-			self.poolfd.close ()
-			self.poolfd = None
+		pass
 
-	def plaintext_socket (self):
-		"""Return a plaintext socket over which bidirectional
-		   communication with this PrivateChannel is possible.
-		   The PrivateChannel will do what needs to be done to
-		   transmit the communication securely.
-		   TODO: Incorrect... return plain socket from TLS Pool
-		   TODO: Should listen to extsox for passthru commands
-		"""
-		print 'Returning extsox; counterpart is intsox', self.intsox
-		return self.extsox
+	def handle_upload_plain_cmd (self, (pfix,cmd,args)):
+		#TODO#
+		pass
 
-	def handle_download_cmd (self, (pfix,cmd,args)):
+	def handle_download_crypt_cmd (self, (pfix,cmd,args)):
 		"""Process a command in triple form (pfix,cmd,args) that
 		   arrived from the server, and has been determined to
 		   fit the scope of this PrivateChannel.
@@ -220,23 +217,32 @@ class PrivateChannel (threading.Thread):
 		if 'STARTTLS' in args [1].upper ().split (','):
 			handle_download_starttls_handshake ( (pfix,cmd,args) )
 			return
-		elif args [1].upper () in ['TLS'] and self.poolcnx is not None:
-			realcmd = base64.b64decode (args [1])
-			#
-			# Prefix the *authenticated* remote identity
-			# Ignore pfix, rather use TLS-authenticated remotid
-			# Ignore args [0], which is how they're calling us
-			realcmd = ':' + self.remotid + ' ' + realcmd
-			self.poolcnx.write (realcmd + '\n')
+		elif args [1].upper () in ['TLS'] and self.poolcrypt is not None:
+			tlsdata = base64.b64decode (''.join (args [2:]))
+			self.poolcrypt.write (tlsdata)
+			tmpbuf = self.plaindownbuf
+			while select.select ([self.poolplain], [], [], 0.0) != ([],[],[]):
+				#TODO:TEST# tmpbuf = tmpbuf + self.poolplain.recv (1024)
+				tmpbuf = tmpbuf + self.poolplain.recv (1)
+			(lines, self.plaindownbuf) = irctext2lines (tmpbuf)
+			for req in lines:
+				#
+				# Prefix the *authenticated* remote identity
+				# Ignore pfix, rather use TLS-authenticated remotid
+				# Ignore args [0], which is how they're calling us
+				realcmd = ':' + self.remotid + ' ' + req
+				self.ircprox.cli.write (realcmd + '\r\n')
 			return
 		#
-		# Refuse the attempt to do a non-PRIVMSG exchange
-		self.ircprox.upload_cmd ( (None,
-			'404',	# Cannot send to channel (not without TLS!)
-			[self.localid]) )
+		# TODO:OPTION: Refuse the attempt to do a non-PRIVMSG exchange
+		# self.ircprox.upload_cmd ( (None,
+		# 	'404',	# Cannot send to channel (not without TLS!)
+		# 	[self.localid]) )
+		# Optionally deliver insecurely
 		self.insecure = self.insecure + 1
+		self.ircprox.cli.write (cmd2ircline ( (pfix,cmd,args) ))
 		#
-		# Ensure that STARTTLS handshake is being proposed
+		# Ensure that STARTTLS handshake is being proposed (again)
 		self.starttls_tlspool_attempt ()
 		return
 
@@ -250,7 +256,7 @@ class PrivateChannel (threading.Thread):
 		self.remoths = args [2]
 		self.starttls_tlspool_attempt ()
 
-	def upload_encrypted_cmdline (self, enc_cmdline):
+	def upload_tls_encrypted_cmdline (self, enc_cmdline):
 		"""Process an encrypted IRC command line and forward it to
 		   the IRC server.  Note that the localid is not sent as
 		   part of the command; the receiving end will be better
@@ -260,23 +266,23 @@ class PrivateChannel (threading.Thread):
 		cmdln64 = base64.b64encode (enc_cmdline)
 		cmd = (None,
 			'PRIVMSG',
-			' '.join (
+			# ' '.join (
 				[ self.remotid,
 				'TLS',
 				 cmdln64 ]
-			)
+			# )
 		)
 		ircprox.upload_cmd (cmd)
 
-	def upload_starttls_handshake (self):
+	def initiate_starttls_handshake (self):
 		"""Send a STARTTLS handshake in the upload direction.
 		"""
 		global prng
 		self.localhs = ''.join (prng.sample (string.uppercase, 10))
 		triple = (
+			None,
 			'PRIVMSG',
-			self.remotid,
-			['STARTTLS', self.localhs]
+			[ self.remotid, 'STARTTLS', self.localhs ]
 		)
 		self.ircprox.upload_cmd (triple)
 		self.starttls_tlspool_attempt ()
@@ -289,7 +295,7 @@ class PrivateChannel (threading.Thread):
 		if self.localhs is None:
 			#
 			# Local side has not sent STARTTLS yet
-			self.upload_starttls_handshake ()
+			self.initiate_starttls_handshake ()
 		if self.remoths is None:
 			#
 			# Remote has not sent STARTTLS yet
@@ -300,71 +306,52 @@ class PrivateChannel (threading.Thread):
 			self.ircprox.download_cmd (
 				(':' + self.remotid,
 				'PRIVMSG',
-				['STARTTLS cancelled by remote -- no connection possible']) )
+				[self.localid,
+					'STARTTLS cancelled (you might try again though)']) )
 		#
 		# Now initiate the TLS Pool connection
-		cmd = struct.pack ('HHI' + '136s',
-				666, 0, 0x00000010,
-				'20130710tlspool@openfortress.nl')
-		cmd = struct.pack ('376s', cmd)
-		# print 'Sending command', str (cmd).encode ('hex')
-		fdsend.sendfds (self.poolfd.fileno (), cmd)
-		# print 'Sent'
-		(resp,ranc) = fdsend.recvfds (self.poolfd.fileno (), 376, numfds=32)
-		# print 'Received response', resp.encode ('hex')
-		# print 'Received ancillary', ranc
+		pingstr = tlspool.TLSPOOL_IDENTITY_TMP
+		print 'Sending ping', pingstr
+		pingstr = tlspool.ping (pingstr)
+		print 'Received ping', pingstr
 		if self.server:
-			cmdcode = 0x00000021
+			roles = tlspool.PIOF_STARTTLS_LOCALROLE_SERVER | tlspool.PIOF_STARTTLS_REMOTEROLE_CLIENT | tlspool.PIOF_STARTTLS_DETACH
 		else:
-			cmdcode = 0x00000020
-		cmd = struct.pack ('HHI' + 'IIBH128s128s', 
-				12345, 0, cmdcode,
-				0x00000200,
-				0,
-				socket.IPPROTO_TCP,
-				0,
-				self.localid_nai,
-				self.remotid_nai)
-		cmd = struct.pack ('376s', cmd)
-		anc = [ self.intsox ]
-		# print 'Sending command', str (cmd).encode ('hex')
-		# print 'Sending ancillary', anc
-		fdsend.sendfds (self.poolfd.fileno (), cmd, fds=anc)
-		# print 'Sent'
-		(resp,ranc) = fdsend.recvfds (self.poolfd.fileno (), 376, numfds=1)
-		# print 'Received response', resp.encode ('hex')
-		# print 'Received ancillary', ranc
-		if ranc is None or ranc < 0:
-			#
-			# Failed to obtain a connection socket
+			roles = tlspool.PIOF_STARTTLS_LOCALROLE_CLIENT | tlspool.PIOF_STARTTLS_REMOTEROLE_SERVER | tlspool.PIOF_STARTTLS_SEND_SNI | tlspool.PIOF_STARTTLS_DETACH
+		print 'Requesting STARTTLS'
+		tlsdata = {
+			'flags': roles,
+			'localid': self.localid_nai,
+			'remoteid': self.remotid_nai,
+			'ipproto': socket.IPPROTO_TCP,
+			'plainfd': self.poolplain
+		}
+		privdata = { }
+		print 'DEBUG: Calling starttls with tlsdata =', tlsdata
+		if tlspool.starttls (self.poolcrypt, tlsdata, privdata) != 0:
+			print 'STARTTLS was mutually agreed, but it failed during setup'
 			self.localhs = None
 			self.remoths = None
 			return
+		print 'Successfully returned from STARTTLS; localid =', tlsdata.localid, 'and remoteid =', tlsdata.remoteid
 		#
 		# Success -- we are now protected by TLS
-		self.poolcnx = ranc
-		self.handle_download (ircline2words ('Private chat to ' + self.remotid + ' is now protected by TLS'))
+		self.handle_download_cmd ( (None, 'PRIVMSG', self.localid + ' :This private chat is protected by TLS') )
+		if tlsdata.remoteid != '':
+			self.handle_download_cmd ( (None, 'PRIVMSG', self.localid + ' :Remote party authenticated as ' + tlsdata.remoteid) )
+		else:
+			self.handle_download_cmd ( (None, 'PRIVMSG', self.localid + ' :CAUTION, the remote party was not authenticated') )
+		if tlsdata.localid != '':
+			self.handle_download_cmd ( (None, 'PRIVMSG', self.localid + ' :We identified ourselves to them as ' + tlsdata.localid) )
+		else:
+			self.handle_download_cmd ( (None, 'PRIVMSG', self.localid + ' :NOTE, we did not authenticate to the other side') )
 		if self.insecure > 0:
 			#
 			# Report (undelivered) insecure messages loudly
-			warn = 'WARNING: ' + self.remotid + ' sent ' + str (self.insecure) + ' messages before TLS protection!'
-			self.extsox.send ('PRIVMSG ' + self.remotid + + ' :' + warn + '\r\n')
-			self.handle_download (ircline2words (warn))
+			warn = 'WARNING: ' + self.remotid + ' sent ' + str (self.insecure) + ' messages sent before TLS protection!'
+			self.extsox.send ('PRIVMSG ' + self.remotid + ' :' + warn + '\r\n')
+			self.handle_download_cmd (ircline2words (warn))
 			self.insecure = 0
-
-	def starttls (self):
-		"""Connect to the TLS Pool, and construct the poolfd and
-		   poolcnx variables with the TLS Pool API and the actual
-		   connection from localid_nai to remotid_nai,
-		   respectively.
-		"""
-		self.poolfd = socket.socket (socket.AF_UNIX, socket.SOCK_STREAM, 0)
-		self.poolfd.connect ('/var/run/tlspool.sock')
-		#
-		# Now activate the process of STARTTLS handshake and TLS Pool
-		self.upload_starttls_handshake ()
-		#
-		# Prefer to wait until the connection is setup
 
 	#
 	# Terminate the activities in this object
@@ -383,11 +370,9 @@ class PrivateChannel (threading.Thread):
 class IRCHandler (SocketServer.BaseRequestHandler):
 
 	def __init__ (self, x,y,z):
-		self.poolfd = socket.socket (socket.AF_UNIX, socket.SOCK_STREAM, 0)
-		self.poolfd.connect ('/var/run/tlspool.sock')
 		self.nick = None
 		self.oldnick = None
-		self.tlsmap = { }
+		self.peerprivchan = { }
 		self.srvlock = threading.Lock ()
 		print 'IRC Handler initialised'
 		print 'Calling super...'
@@ -408,16 +393,15 @@ class IRCHandler (SocketServer.BaseRequestHandler):
 		print '<<<', rsp.strip ()
 		self.cli.send (rsp)
 
-	def have_tlsmap (self, rid):
-		if not self.tlsmap.has_key (rid):
+	def have_privchan (self, rid):
+		if not self.peerprivchan.has_key (rid):
 			print 'Initiating TLS via PRIVMSG to', rid
-			privchan = PrivateChannel (self, self.nick, rid)
-			self.tlsmap [rid] = privchan.plaintext_socket ()
+			privchan = PrivateChannel (self, self.nick, rid + '-tlspool-arpa2-lab') #TODO#FIXED#
+			self.peerprivchan [rid] = privchan
 			print 'Initiated  TLS via PRIVMSG to', rid
-		ridsox = self.tlsmap [rid]
-		ridsox.send ('PING irc.arpa2.org\r\n')
-		print 'Returning self.tlsmap ["' + rid + '"] ==', ridsox
-		return ridsox
+		privchan = self.peerprivchan [rid]
+		print 'Returning self.peerprivchan ["' + rid + '"] ==', privchan
+		return privchan
 
 	def handle_upload (self, (pfix,cmd,args) ):
 		if cmd == 'NICK' and len (args) >= 1:
@@ -433,14 +417,12 @@ class IRCHandler (SocketServer.BaseRequestHandler):
 				print 'Sending plaintext PRIVMSG to', ' '.join (dirdst)
 				argsup = [','.join (dirdst)] + args [1:]
 				self.upload_cmd ( (pfix,cmd,argsup) )
+			#DONOTHIDEPLAINTEXT# args = [','.join (tlsdst)] + args [1:]
 			for td in tlsdst:
 				print 'Requiring TLS for PRIVMSG to', td
-				tdsox = self.have_tlsmap (td)
-				print 'tdsox ==', tdsox
-				tdsox.send ('PING irc.arpa2.org\r\n')
-				tdsox.send (cmd2ircline ( (pfix,cmd,args) ))
-				self.have_tlsmap (td).send (
-					cmd2ircline ( (pfix,cmd,args) ))
+				privchan = self.have_privchan (td)
+				print 'privchan ==', privchan
+				privchan.handle_upload_plain_cmd ( (pfix,cmd,args) )
 		else:
 			self.upload_cmd ( (pfix,cmd,args) )
 
@@ -448,12 +430,25 @@ class IRCHandler (SocketServer.BaseRequestHandler):
 		cmdu = cmd.upper ()
 		if cmd in ['432','433','436']:		# NICK disapproved
 			self.nick = self.oldnick
-		elif cmdu == 'PRIVMSG' and len (args) == 3 and args [1] [:1] != '#':
+		elif cmdu == 'PRIVMSG' and len (args) >= 2:
+			alldst = args [0].split (',')
+			dirdst = [ d for d in alldst if d [:1] == '#' ]
+			tlsdst = [ d for d in alldst if d [:1] != '#' and d != '' ]
 			rid = pfix.split ('!') [0]
-			print 'Requiring TLS for PRIVMSG from', rid, '(derived from prefix', pfix + ')'
-			#TODO# Is this right??? socket.handle_download_cmd()
-			self.have_tlsmap (rid).handle_download_cmd (
-				(pfix,cmd,args) )
+			if dirdst != []:
+				print 'Sending plaintext PRIVMSG from', rid
+				argsup = [','.join (dirdst)] + args [1:]
+				self.download_cmd ( (pfix,cmd,argsup) )
+			#DONOTHIDEPLAINTEXT# args = [','.join (tlsdst)] + args [1:]
+			for td in tlsdst:
+				print 'Requiring TLS for PRIVMSG from', rid
+				privchan = self.have_privchan (rid)
+				print 'privchan ==', privchan
+				privchan.handle_download_crypt_cmd ( (pfix,cmd,args) )
+		elif cmdu == 'PRIVMSG':
+			# ALT/OPTION: Permit old-mode PRIVMSG until /STARTTLS or /SECRET
+			print 'Rejecting PRIVMSG without TLS formatting'
+			self.upload_cmd ( (None, '404', 'TODO:CHANNAME :Private chat enforces STARTTLS') )
 		else:
 			self.download_cmd ( (pfix,cmd,args) )
 

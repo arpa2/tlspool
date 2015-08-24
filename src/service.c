@@ -206,7 +206,7 @@ int send_command (struct command *cmd, int passfd) {
 	}
 
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Sending command 0x%08x and fd %d to socket %d", cmd->cmd.pio_cmd, passfd, cmd->clientfd);
-	if (sendmsg (cmd->clientfd, &mh, 0) == -1) {
+	if (sendmsg (cmd->clientfd, &mh, MSG_NOSIGNAL) == -1) {
 		//TODO// Differentiate behaviour based on errno?
 		perror ("Failed to send command");
 		cmd->claimed = 0;
@@ -266,7 +266,7 @@ int receive_command (int sox, struct command *cmd) {
 	mh.msg_control = anc;
 	mh.msg_controllen = sizeof (anc);
 
-	if (recvmsg (sox, &mh, 0) == -1) {
+	if (recvmsg (sox, &mh, MSG_NOSIGNAL) == -1) {
 		//TODO// Differentiate behaviour based on errno?
 		perror ("Failed to receive command");
 		return 0;
@@ -453,6 +453,9 @@ printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
 		return;
 	case PIOC_STARTTLS_V2:
 		starttls (cmd);
+		return;
+	case PIOC_STARTTLS_PRNG_V2:
+		starttls_prng (cmd);
 		return;
 	case PIOC_CONTROL_DETACH_V2:
 		ctlkey_detach (cmd);

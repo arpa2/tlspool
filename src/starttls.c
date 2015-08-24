@@ -87,6 +87,35 @@ static struct credinfo cli_creds [EXPECTED_CLI_CREDCOUNT];
 static int srv_credcount = 0;
 static int cli_credcount = 0;
 
+/* The local variation on the ctlkeynode structure, with TLS-specific fields
+ */
+struct ctlkeynode_tls {
+	struct ctlkeynode regent;	// Structure for ctlkey_register()
+	gnutls_session_t session;	// Additional data specifically for TLS
+};
+
+/* The list of accepted Exporter Label Prefixes for starttls_prng()
+ */
+char *tlsprng_label_prefixes [] = {
+	// Forbidden by RFC 5705: "client finished",
+	// Forbidden by RFC 5705: "server finished",
+	// Forbidden by RFC 5705: "master secret",
+	// Forbidden by RFC 5705: "key expansion",
+	"client EAP encryption",		// not suited for DTLS
+	"ttls keying material",			// not suited for DTLS
+	"ttls challenge",			// not suited for DTLS
+	"EXTRACTOR-dtls_srtp",
+	"EXPORTER_DTLS_OVER_SCTP",
+	"EXPORTER-ETSI-TC-M2M-Bootstrap",
+	"EXPORTER-ETSI-TC-M2M-Connection",
+	"TLS_MK_Extr",
+	"EXPORTER_GBA_Digest",
+	"EXPORTER: teap session key seed",	// not suited for DTLS
+	"EXPORTER-oneM2M-Bootstrap",
+	"EXPORTER-oneM2M-Connection",
+	NULL
+};
+
 
 /* Map a GnuTLS call (usually a function call) to a POSIX errno,
  * optionally reporting an errstr to avoid loosing information.
@@ -499,7 +528,7 @@ void starttls_pkcs11_provider (char *p11path) {
 	}
 	while (gnutls_pkcs11_token_get_url (token_seq, 0, &p11uri) == 0) {
 #ifdef DEBUG
-		printf ("DEBUG: Found token URI %s\n", p11uri);
+		fprintf (stderr, "DEBUG: Found token URI %s\n", p11uri);
 #endif
 		//TODO// if (gnutls_pkcs11_token_get_info (p11uri, GNUTLS_PKCS11_TOKEN_LABEL-of-SERIAL-of-MANUFACTURER-of-MODEL, output, utput_size) == 0) { ... }
 		gnutls_free (p11uri);
@@ -626,7 +655,7 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int client
 		}
 		if (inout [0].revents & POLLIN) {
 			// Read local and encrypt to remote
-			sz = recv (local, buf, sizeof (buf), MSG_DONTWAIT);
+			sz = recv (local, buf, sizeof (buf), MSG_DONTWAIT | MSG_NOSIGNAL);
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat received %d local bytes (or error<0) from %d", (int) sz, local);
 			if (sz == -1) {
 				tlog (TLOG_COPYCAT, LOG_ERR, "Error while receiving: %s", strerror (errno));
@@ -659,7 +688,7 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int client
 				shutdown (remote, SHUT_RD);
 				setsockopt (local, SOL_SOCKET, SO_LINGER, &linger, sizeof (linger));
 				shutdown (local, SHUT_WR);
-			} else if (send (local, buf, sz, MSG_DONTWAIT) != sz) {
+			} else if (send (local, buf, sz, MSG_DONTWAIT | MSG_NOSIGNAL) != sz) {
 				break;	// communication error
 			} else {
 				tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat sent %d bytes to local %d", (int) sz, local);
@@ -1113,7 +1142,7 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 	//
 	// Setup database iterators to map identities to credentials
 	if (lidrole == LID_ROLE_CLIENT) {
-		E_d2e ("Failed to create db_disclse cursor",
+		E_d2e ("Failed to create db_disclose cursor",
 			dbh_disclose->cursor (
 				dbh_disclose,
 				cmd->txn,
@@ -1553,7 +1582,7 @@ static void *starttls_thread (void *cmd_void) {
 	int i;
 	struct credinfo *clisrv_creds;
 	int clisrv_credcount;
-	struct ctlkeynode ctlkeyregent;
+	struct ctlkeynode_tls *ckn;
 	uint32_t tout;
 
 	//
@@ -1759,7 +1788,6 @@ static void *starttls_thread (void *cmd_void) {
 	//
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
 		gnutls_transport_set_int (session, cryptfd);
-		gnutls_handshake_set_timeout (session, GNUTLS_DEFAULT_HANDSHAKE_TIMEOUT);
 	}
 	if (gtls_errno != GNUTLS_E_SUCCESS) {
 		tlog (TLOG_TLS, LOG_ERR, "Failed to prepare for TLS: %s", gnutls_strerror (gtls_errno));
@@ -1771,6 +1799,7 @@ static void *starttls_thread (void *cmd_void) {
 		close (cryptfd);
 		return;
 	}
+	tlog (TLOG_UNIXSOCK | TLOG_TLS, LOG_DEBUG, "TLS handshake started over %d", cryptfd);
 	do {
 		gtls_errno = gnutls_handshake (session);
         } while ((gtls_errno < 0) && (gnutls_error_is_fatal (gtls_errno) == 0));
@@ -1811,8 +1840,13 @@ static void *starttls_thread (void *cmd_void) {
 		gnutls_deinit (session);
 		tlog (TLOG_TLS, LOG_ERR, "TLS handshake failed: %s", gnutls_strerror (gtls_errno));
 		if (cmd->session_errno) {
+			char *errstr;
 			tlog (TLOG_TLS, LOG_ERR, "Underlying cause may be: %s", strerror (cmd->session_errno));
-			send_error (cmd, cmd->session_errno, error_getstring ());
+			errstr = error_getstring ();
+			if (errstr == NULL) {
+				errstr = "TLS handshake failed";
+			}
+			send_error (cmd, cmd->session_errno, errstr);
 		} else {
 			send_error (cmd, EPERM, "TLS handshake failed");
 		}
@@ -1851,14 +1885,30 @@ static void *starttls_thread (void *cmd_void) {
 		return;
 	}
 	cmd->cmd.pio_cmd = oldcmd;
-	send_command (cmd, -1);		// app sent plainfd to us
+	//DEFERRED// send_command (cmd, -1);		// app sent plainfd to us
 
 	//
 	// Copy TLS records until the connection is closed
 	manage_txn_commit (&cmd->txn);
-	if (ctlkey_register (orig_piocdata.ctlkey, &ctlkeyregent, cmd->clientfd) == 0) {
-		copycat (plainfd, cryptfd, session, clientfd);
-		ctlkey_unregister (orig_piocdata.ctlkey);
+	ckn = (struct ctlkeynode_tls *) malloc (sizeof (struct ctlkeynode_tls));
+	if (ckn == NULL) {
+		send_error (cmd, ENOMEM, "Out of memory allocating control key structure");
+	} else {
+		int detach = (orig_piocdata.flags & PIOF_STARTTLS_DETACH) != 0;
+		ckn->session = session;
+//DEBUG// fprintf (stderr, "Registering control key\n");
+		if (ctlkey_register (orig_piocdata.ctlkey, &ckn->regent, security_tls, detach? -1: cmd->clientfd) == 0) {
+			send_command (cmd, -1);		// app sent plainfd to us
+			copycat (plainfd, cryptfd, session, detach? -1: clientfd);
+//DEBUG// fprintf (stderr, "Unregistering control key\n");
+			if (ctlkey_unregister (orig_piocdata.ctlkey)) {
+				free (ckn);
+			}
+			ckn = NULL;
+//DEBUG// fprintf (stderr, "Unregistered  control key\n");
+		} else {
+			send_error (cmd, ENOENT, "Failed to register control key for TLS connection");
+		}
 	}
 	close (plainfd);
 	close (cryptfd);
@@ -1883,6 +1933,96 @@ void starttls (struct command *cmd) {
 		pthread_cancel (cmd->handler);
 		send_error (cmd, ESRCH, "STARTTLS thread detachment refused");
 		return;
+	}
+}
+
+
+/*
+ * Run the PRNG for a TLS connection, identified by its control key.  If the connection
+ * is not a TLS connection, or if the control key is not found, reply with ERROR;
+ * otherwise, the session should help to create pseudo-random bytes.
+ */
+void starttls_prng (struct command *cmd) {
+	uint8_t in1 [TLSPOOL_PRNGBUFLEN];
+	uint8_t in2 [TLSPOOL_PRNGBUFLEN];
+	int16_t in1len, in2len, prnglen;
+	struct ctlkeynode_tls *ckn = NULL;
+	char **prefixes;
+	int err = 0;
+	int gtls_errno = GNUTLS_E_SUCCESS;
+	struct pioc_prng *prng = &cmd->cmd.pio_data.pioc_prng;
+	//
+	// Find arguments and validate them
+	in1len  = prng->in1_len;
+	in2len  = prng->in2_len;
+	prnglen = prng->prng_len;
+	err = err || (in1len <= 0);
+	err = err || (prnglen > TLSPOOL_PRNGBUFLEN);
+	err = err || ((TLSPOOL_CTLKEYLEN + in1len + (in2len >= 0? in2len: 0))
+				> TLSPOOL_PRNGBUFLEN);
+	if (!err) {
+		memcpy (in1, prng->buffer + TLSPOOL_CTLKEYLEN         , in1len);
+		if (in2len > 0) {
+			memcpy (in2, prng->buffer + TLSPOOL_CTLKEYLEN + in1len, in2len);
+		}
+	}
+	//  - check the label string
+	prefixes = tlsprng_label_prefixes;
+	while ((!err) && (*prefixes)) {
+		char *pf = *prefixes++;
+		if (strlen (pf) != in1len) {
+			continue;
+		}
+		if (strcmp (pf, in1) != 0) {
+			continue;
+		}
+	}
+	if (*prefixes == NULL) {
+		// RFC 5705 defines a private-use prefix "EXPERIMENTAL"
+		if ((in1len <= 12) || (strncmp (in1, "EXPERIMENTAL", 12) != 0)) {
+			err = 1;
+		}
+	}
+	//  - check the ctlkey (and ensure it is for TLS)
+	if (!err) {
+//DEBUG// fprintf (stderr, "Hoping to find control key\n");
+		ckn = (struct ctlkeynode_tls *) ctlkey_find (prng->buffer, security_tls, cmd->clientfd);
+	}
+	//
+	// Now wipe the PRNG buffer to get rid of any sensitive bytes
+	memset (prng->buffer, 0, TLSPOOL_PRNGBUFLEN);
+	//
+	// If an error occurrend with the command, report it now
+	if (err) {
+		send_error (cmd, EINVAL, "TLS PRNG request invalid");
+		// ckn is NULL if err != 0, so no need for ctlkey_unfind()
+		return;
+	}
+	if (ckn == NULL) {
+		send_error (cmd, ENOENT, "Invalid control key");
+		return;
+	}
+	//
+	// Now actually invoke the PRNG command in the GnuTLS backend
+	errno = 0;
+	E_g2e ("GnuTLS PRNG based on session master key failed",
+		gnutls_prf_rfc5705 (ckn->session,
+			in1len, in1,
+			//TODO:NIKOS_WILL_DECIDE// (in2len >= 0)? in2len: 0, (in2len >= 0) ? in2: NULL,
+			in2len, (in2len >= 0) ? in2: NULL,
+			prnglen, prng->buffer));
+	err = err || (errno != 0);
+	//
+	// Wipe temporary data / buffers for security reasons
+	memset (in1, 0, sizeof (in1));
+	memset (in2, 0, sizeof (in2));
+	ctlkey_unfind ((struct ctlkeynode *) ckn);
+	//
+	// Return the outcome to the user
+	if (err) {
+		send_error (cmd, errno? errno: EIO, "PRNG in TLS backend failed");
+	} else {
+		send_command (cmd, -1);
 	}
 }
 

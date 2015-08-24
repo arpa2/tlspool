@@ -184,7 +184,7 @@ void register_lidentry_command (struct command *cmd) {
  */
 void lidentry_forget_clientfd (int fd) {
 	assert (pthread_mutex_lock (&lidentry_lock) == 0);
-printf ("DEBUG: forgetting LID entry clientf %d (should be %d)\n", fd, lidentry_client);
+printf ("DEBUG: forgetting LID entry clientfd %d (if it is %d and not -1)\n", fd, lidentry_client);
 	// Only respond when the current client wants to be forgotten
 	if (fd == lidentry_client) {
 		// No response possible.  Service reclaims for cmd pooling

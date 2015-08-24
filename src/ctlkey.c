@@ -27,6 +27,7 @@
  */
 
 
+#include <stdlib.h>
 #include <fcntl.h>
 #include <assert.h>
 #include <errno.h>
@@ -65,6 +66,7 @@ static pthread_mutex_t ctlkey_registry_lock = PTHREAD_MUTEX_INITIALIZER;
  */
 //FORK!=DETACH// int ctlkey_signalling_fd = -1;
 
+
 /* A lock on the signalling_fd variable.
  */
 //FORK!=DETACH// static pthread_mutex_t signalling_fd_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -91,7 +93,7 @@ static pthread_mutex_t ctlkey_registry_lock = PTHREAD_MUTEX_INITIALIZER;
  * not using properly scattered random sources.  The provided ctlfd may
  * be -1 to signal it is not valid.
  */
-int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, int ctlfd) {
+int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, enum security_layer sec, int ctlfd) {
 	int i;
 	int todo;
 	struct ctlkeynode **nodepp;
@@ -112,6 +114,7 @@ int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, int ctlfd) {
 	ckn->lessnode = NULL;
 	ckn->morenode = NULL;
 	memcpy (ckn->ctlkey, ctlkey, sizeof (ckn->ctlkey));
+	ckn->security = sec;
 	ckn->ctlfd = ctlfd;
 	*nodepp = ckn;
 	pthread_mutex_unlock (&ctlkey_registry_lock);
@@ -120,27 +123,43 @@ int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, int ctlfd) {
 
 /* Remove a registered cltkey value from th registry.  This is the most
  * complex operation, as it needs to merge the subtrees.
+ *
+ * This function returns non-zero iff it actually removed a node.  This
+ * is useful because there may be other places from which this function
+ * is called automatically.  Generally, the idea is to use a construct
+ *	if (ctlkey_unregister (...)) {
+ *		free (...);
+ *      }
+ *
  * TODO: Lazy initial implementation, entirely unbalanced; insert the
- * complete morenode under the highest lessnode NULL.
+ * complete morenode under the highest lessnode that is NULL.
  */
-void ctlkey_unregister (uint8_t *ctlkey) {
-	struct ctlkeynode **nodepp;
+void _ctlkey_unregister_nodepp (struct ctlkeynode **nodepp) {
+	// This implementation changes *nodepp and may change child nodes
+	// Higher-up nodes are not changed though
+//DEBUG// fprintf(stderr, "Actually removing node %lx, ctlkey %02x %02x %02x %02x...\n", (long) (intptr_t) *nodepp, (*nodepp)->ctlkey [0], (*nodepp)->ctlkey [1], (*nodepp)->ctlkey [2], (*nodepp)->ctlkey [3]);
 	struct ctlkeynode *subtreeless, *subtreemore;
+	subtreeless = (*nodepp)->lessnode;
+	subtreemore = (*nodepp)->morenode;
+	(*nodepp)->lessnode = NULL;
+	(*nodepp)->morenode = NULL;
+	*nodepp = subtreeless;
+	while (*nodepp) {
+		nodepp = & (*nodepp)->morenode;
+	}
+	*nodepp = subtreemore;
+//DEBUG// fprintf(stderr,"Node removal succeeded\n");
+}
+int ctlkey_unregister (uint8_t *ctlkey) {
+	struct ctlkeynode **nodepp;
+	int cmp = 1;
 	assert (pthread_mutex_lock (&ctlkey_registry_lock) == 0);
 	nodepp = &rootnode;
 	while (*nodepp != NULL) {
-		int cmp = memcmp (ctlkey, (*nodepp)->ctlkey, TLSPOOL_CTLKEYLEN);
+		cmp = memcmp (ctlkey, (*nodepp)->ctlkey, TLSPOOL_CTLKEYLEN);
 		if (cmp == 0) {
 			/* Found the right node */
-			subtreeless = (*nodepp)->lessnode;
-			subtreemore = (*nodepp)->morenode;
-			(*nodepp)->lessnode = NULL;
-			(*nodepp)->morenode = NULL;
-			*nodepp = subtreeless;
-			while (*nodepp) {
-				nodepp = & (*nodepp)->morenode;
-			}
-			*nodepp = subtreemore;
+			_ctlkey_unregister_nodepp (nodepp);
 			break;
 		} else if (cmp < 0) {
 			nodepp = & (*nodepp)->lessnode;
@@ -150,10 +169,76 @@ void ctlkey_unregister (uint8_t *ctlkey) {
 	}
 	/* If not found, simply ignore */
 	pthread_mutex_unlock (&ctlkey_registry_lock);
+	return (cmp == 0);
+}
+
+/* Find a ctlkeynode based on a ctlkey.  Returns NULL if not found.
+ * 
+ * The value returned is the registered structure, meaning that any context
+ * to the ctlkeynode returned can be relied upon.
+ *
+ * This also brings a responsibility to lock out other uses of the structure,
+ * which means that a non-NULL return value must later be passed to a function
+ * that unlocks the resource, ctlkey_unfind().
+ */
+struct ctlkeynode *ctlkey_find (uint8_t *ctlkey, enum security_layer sec, int clientfd) {
+	struct ctlkeynode *ckn;
+	//
+	// Claim unique access; this lock survives until cltkey_unfind()
+	// if a non-NULL ctlkeynode is returned
+	assert (pthread_mutex_lock (&ctlkey_registry_lock) == 0);
+	//
+	// Search through the tree of registered ctlkeynode structures
+	ckn = rootnode;
+	while (ckn != NULL) {
+		int cmp = memcmp (ctlkey, ckn->ctlkey, TLSPOOL_CTLKEYLEN);
+		if (cmp == 0) {
+			/* Found the right node */
+			if (ckn->ctlfd < 0) {
+				ckn = NULL;	// Connection not under control
+			} else if (ckn->ctlfd != clientfd) {
+				ckn = NULL;	// Connection is not yours to find
+			} else if (ckn->security != sec) {
+				ckn = NULL;	// Connection is not of right type
+			} else {
+				break;		// Found, so terminate loop
+			}
+			break;		 // Final result, so terminate loop
+		} else if (cmp < 0) {
+			ckn = ckn->lessnode;
+		} else {
+			ckn = ckn->morenode;
+		}
+	}
+	//
+	// Return the final node in ckn; hold the lock if it is non-NULL
+	if (ckn == NULL) {
+		pthread_mutex_unlock (&ctlkey_registry_lock);
+	}
+	return ckn;
+}
+
+/* Free a ctlkeynode that was returned by ctlkey_find().  This function also
+ * accepts a NULL argument, though those need not be passed through this
+ * function as is the case with the non-NULL return values.
+ *
+ * The need for this function arises from the need to lock the structure, in
+ * avoidance of access to structures that are being unregistered in another
+ * thread.
+ */
+void ctlkey_unfind (struct ctlkeynode *ckn) {
+	//
+	// Free the lock held after ctlkey_find() -- which is not locked when
+	// the function returned NULL (we explicitly support that return value
+	// here because it can help to simplify code using these functions,
+	// and lead to better readable code with less oversights of unlocking
+	if (ckn != NULL) {
+		pthread_mutex_unlock (&ctlkey_registry_lock);
+	}
 }
 
 
-/* Dattach the given ctlkey, assuming it has clientfd as control connection.
+/* Detach the given ctlkey, assuming it has clientfd as control connection.
  */
 void ctlkey_detach (struct command *cmd) {
 	uint8_t *ctlkey = cmd->cmd.pio_data.pioc_control.ctlkey;
@@ -233,27 +318,43 @@ void ctlkey_reattach (struct command *cmd) {
 	send_error (cmd, tlserrno, errstr);
 }
 
-/* Look through the ctlkey registry, to find forked sessions; that is, sessions
- * that reference a control connection but that are not dependent on them for
- * survival; those entries will be detached; this is used when a client socket
- * closes the link to the TLS Pool.
+/* Look through the ctlkey registry, to find sessions that depend on a closing
+ * control connection meaning that they cannot survive it being closed;
+ * those entries will be unregistered and deallocated ; this is used when a
+ * client socket closes its link to the TLS Pool.
  *
- * This implementation changes all entries whose ctlfd matches; sessions that
- * are not forked will terminate soon afterwards anyway.
+ * This implementation closes all entries whose ctlfd matches; this is needed
+ * for detached nodes that have been reattached.  Nodes that are attached
+ * will usually be removed before they hit this routine, which is also good.
+ *
+ * Note that detached keys are (by definition) protected against this cleanup
+ * procedure; however, when their TLS connection breaks down, they too will
+ * be cleaned up.  Note that detaching is not done before the TLS handshake
+ * is complete.
  */
-static void ctlkey_close_clientfd_recurse (int clisox, struct ctlkeynode *node) {
+static void _ctlkey_close_clientfd_recurse (int clisox, struct ctlkeynode **nodepp) {
+	struct ctlkeynode *node = *nodepp;
 	if (node == NULL) {
 		return;
 	}
+	_ctlkey_close_clientfd_recurse (clisox, &node->lessnode);
+	_ctlkey_close_clientfd_recurse (clisox, &node->morenode);
 	if (node->ctlfd == clisox) {
-		node->ctlfd = -1;
+		// At this point, subnodes may be removed and juggled,
+		// but we can still rely on unchanged (*nodepp) == node
+		assert (*nodepp == node);
+//DEBUG// fprintf(stderr,"Unregistering control key (automatically, as controlling fd closes)\n");
+		_ctlkey_unregister_nodepp (nodepp);
+		// Now we know that *nodepp has changed, it is no longer
+		// pointing to node (so we may remove it).
+		// No changes have been made higher up though, so recursion
+		// assumptions are still valid; see _ctlkey_unregister_nodepp()
+		free (node);
 	}
-	ctlkey_close_clientfd_recurse (clisox, node->lessnode);
-	ctlkey_close_clientfd_recurse (clisox, node->morenode);
 }
 void ctlkey_close_clientfd (int clisox) {
 	assert (pthread_mutex_lock (&ctlkey_registry_lock) == 0);
-	ctlkey_close_clientfd_recurse (clisox, rootnode);
+	_ctlkey_close_clientfd_recurse (clisox, &rootnode);
 	pthread_mutex_unlock (&ctlkey_registry_lock);
 }
 

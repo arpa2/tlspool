@@ -99,6 +99,9 @@ int main (int argc, char *argv []) {
 			if (sigaction (SIGHUP, &hupaction, NULL) != 0) {
 				perror ("Failed to setup HUP signal handler");
 			}
+			if (signal (SIGPIPE, SIG_IGN) == SIG_ERR) {
+				perror ("Failed to protect daemon from SIGPIPE");
+			}
 			//UNDO// // Block SIGINT, which is used between copycat() threads
 			//UNDO// sigemptyset (&sigblockmask);
 			//UNDO// sigaddset (&sigblockmask, SIGINT);
