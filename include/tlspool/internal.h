@@ -32,12 +32,13 @@ struct command {
 	pthread_t handler;
 	struct tlspool_command cmd;
 	//TODO// TLS-agnostic data would be a (void *) to a driver stack item:
-	struct pioc_starttls *orig_piocdata;
+	struct pioc_starttls *orig_starttls;
 	DB_TXN *txn;
 	pool_datum_t lids [EXPECTED_LID_TYPE_COUNT];
 	int session_errno;
 	intptr_t session_certificate;
 	intptr_t session_privatekey;
+	int anonpre;
 };
 
 
@@ -120,6 +121,7 @@ char *cfg_dbenv_dir (void);
 char *cfg_db_localid (void);
 char *cfg_db_disclose (void);
 char *cfg_tls_dhparamfile (void);
+unsigned int cfg_tls_maxpreauth (void);
 
 
 
@@ -229,6 +231,7 @@ struct ctlkeynode {
 	uint8_t ctlkey [TLSPOOL_CTLKEYLEN];
 	struct ctlkeynode *lessnode, *morenode;
 	int ctlfd;
+	int forked;
 	enum security_layer security;
 };
 
@@ -245,9 +248,10 @@ struct ctlkeynode {
  * only reason for failure would be that the ctlkey is already registered,
  * which signifies an extremely unlikely clash -- or a program error by
  * not using properly scattered random sources.  The provided *ctlfdp may
- * be -1 to signal it is not valid.
+ * be -1 to signal it is detached.  The forked flag should be non-zero
+ * to indicate that this is a forked connection.
  */
-int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, enum security_layer sec, int ctlfd);
+int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, enum security_layer sec, int ctlfd, int forked);
 
 /* Remove a registered cltkey value from th registry.  This is the most
  * complex operation, as it needs to merge the subtrees.
@@ -270,7 +274,7 @@ int ctlkey_unregister (uint8_t *ctlkey);
  * which means that a non-NULL return value must later be passed to a function
  * that unlocks the resource, ctlkey_unfind().
  */
-struct ctlkeynode *ctlkey_find (uint8_t *ctlkey, enum security_layer sec, int clientfd);
+struct ctlkeynode *ctlkey_find (uint8_t *ctlkey, enum security_layer sec, int ctlfd);
 
 /* Free a ctlkeynode that was returned by ctlkey_find().  This function also
  * accepts a NULL argument, though those need not be passed through this

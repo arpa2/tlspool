@@ -91,9 +91,10 @@ static pthread_mutex_t ctlkey_registry_lock = PTHREAD_MUTEX_INITIALIZER;
  * only reason for failure would be that the ctlkey is already registered,
  * which signifies an extremely unlikely clash -- or a program error by
  * not using properly scattered random sources.  The provided ctlfd may
- * be -1 to signal it is not valid.
+ * be -1 to signal it is detached.  The forked flag should be non-zero
+ * to indicate that this is a forked connection.
  */
-int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, enum security_layer sec, int ctlfd) {
+int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, enum security_layer sec, int ctlfd, int forked) {
 	int i;
 	int todo;
 	struct ctlkeynode **nodepp;
@@ -116,6 +117,7 @@ int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, enum security_laye
 	memcpy (ckn->ctlkey, ctlkey, sizeof (ckn->ctlkey));
 	ckn->security = sec;
 	ckn->ctlfd = ctlfd;
+	ckn->forked = forked? 1: 0;
 	*nodepp = ckn;
 	pthread_mutex_unlock (&ctlkey_registry_lock);
 	return 0;
@@ -181,7 +183,7 @@ int ctlkey_unregister (uint8_t *ctlkey) {
  * which means that a non-NULL return value must later be passed to a function
  * that unlocks the resource, ctlkey_unfind().
  */
-struct ctlkeynode *ctlkey_find (uint8_t *ctlkey, enum security_layer sec, int clientfd) {
+struct ctlkeynode *ctlkey_find (uint8_t *ctlkey, enum security_layer sec, int ctlfd) {
 	struct ctlkeynode *ckn;
 	//
 	// Claim unique access; this lock survives until cltkey_unfind()
@@ -196,7 +198,7 @@ struct ctlkeynode *ctlkey_find (uint8_t *ctlkey, enum security_layer sec, int cl
 			/* Found the right node */
 			if (ckn->ctlfd < 0) {
 				ckn = NULL;	// Connection not under control
-			} else if (ckn->ctlfd != clientfd) {
+			} else if (ckn->ctlfd != ctlfd) {
 				ckn = NULL;	// Connection is not yours to find
 			} else if (ckn->security != sec) {
 				ckn = NULL;	// Connection is not of right type
@@ -332,29 +334,34 @@ void ctlkey_reattach (struct command *cmd) {
  * be cleaned up.  Note that detaching is not done before the TLS handshake
  * is complete.
  */
-static void _ctlkey_close_clientfd_recurse (int clisox, struct ctlkeynode **nodepp) {
+static void _ctlkey_close_ctlfd_recurse (int clisox, struct ctlkeynode **nodepp) {
 	struct ctlkeynode *node = *nodepp;
 	if (node == NULL) {
 		return;
 	}
-	_ctlkey_close_clientfd_recurse (clisox, &node->lessnode);
-	_ctlkey_close_clientfd_recurse (clisox, &node->morenode);
+	_ctlkey_close_ctlfd_recurse (clisox, &node->lessnode);
+	_ctlkey_close_ctlfd_recurse (clisox, &node->morenode);
 	if (node->ctlfd == clisox) {
 		// At this point, subnodes may be removed and juggled,
 		// but we can still rely on unchanged (*nodepp) == node
 		assert (*nodepp == node);
 //DEBUG// fprintf(stderr,"Unregistering control key (automatically, as controlling fd closes)\n");
-		_ctlkey_unregister_nodepp (nodepp);
-		// Now we know that *nodepp has changed, it is no longer
-		// pointing to node (so we may remove it).
-		// No changes have been made higher up though, so recursion
-		// assumptions are still valid; see _ctlkey_unregister_nodepp()
-		free (node);
+		if (node->forked) {
+			node->ctlfd = -1;
+		} else {
+			_ctlkey_unregister_nodepp (nodepp);
+			// Now we know that *nodepp has changed, it is no longer
+			// pointing to node (so we may remove it).
+			// No changes have been made higher up though, so
+			// recursion assumptions are still valid; see
+			// _ctlkey_unregister_nodepp() for this assumption.
+			free (node);
+		}
 	}
 }
-void ctlkey_close_clientfd (int clisox) {
+void ctlkey_close_ctlfd (int clisox) {
 	assert (pthread_mutex_lock (&ctlkey_registry_lock) == 0);
-	_ctlkey_close_clientfd_recurse (clisox, &rootnode);
+	_ctlkey_close_ctlfd_recurse (clisox, &rootnode);
 	pthread_mutex_unlock (&ctlkey_registry_lock);
 }
 

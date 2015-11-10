@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <ctype.h>
 #include <string.h>
+#include <limits.h>
 
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -60,6 +61,9 @@ enum VARS {
 	CFGVAR_DB_LOCALID,
 	CFGVAR_DB_DISCLOSE,
 	CFGVAR_TLS_DHPARAMFILE,
+	CFGVAR_TLS_MAXPREAUTH,
+	CFGVAR_TLS_ONTHEFLY_SIGNCERT,
+	CFGVAR_TLS_ONTHEFLY_SIGNKEY,
 	//
 	CFGVAR_LENGTH,
 	CFGVAR_NONE = -1
@@ -103,6 +107,9 @@ struct cfgopt config_options [] = {
 	"db_localid",		cfg_setvar,	CFGVAR_DB_LOCALID,
 	"db_disclose",		cfg_setvar,	CFGVAR_DB_DISCLOSE,
 	"tls_dhparamfile",	cfg_setvar,	CFGVAR_TLS_DHPARAMFILE,
+	"tls_maxpreauth",	cfg_setvar,	CFGVAR_TLS_MAXPREAUTH,
+	"tls_onthefly_signcert",cfg_setvar,	CFGVAR_TLS_ONTHEFLY_SIGNCERT,
+	"tls_onthefly_signkey",	cfg_setvar,	CFGVAR_TLS_ONTHEFLY_SIGNKEY,
 	//
 	NULL,			NULL,		CFGVAR_NONE
 };
@@ -536,5 +543,33 @@ char *cfg_db_disclose (void) {
 
 char *cfg_tls_dhparamfile (void) {
 	return configvars [CFGVAR_TLS_DHPARAMFILE];
+}
+
+unsigned int cfg_tls_maxpreauth (void) {
+	char *mps = configvars [CFGVAR_TLS_MAXPREAUTH];
+	unsigned long mpi = 32768;
+	if (mps != NULL) {
+		mpi = strtoul (mps, &mps, 10);
+		if (mpi > UINT_MAX) {
+			mpi = 32768;
+		}
+	}
+	return (unsigned int) mpi;
+}
+
+char *cfg_tls_onthefly_signcert (void) {
+	if (configvars [CFGVAR_TLS_ONTHEFLY_SIGNKEY]) {
+		return configvars [CFGVAR_TLS_ONTHEFLY_SIGNCERT];
+	} else {
+		return NULL;
+	}
+}
+
+char *cfg_tls_onthefly_signkey (void) {
+	if (configvars [CFGVAR_TLS_ONTHEFLY_SIGNCERT]) {
+		return configvars [CFGVAR_TLS_ONTHEFLY_SIGNKEY];
+	} else {
+		return NULL;
+	}
 }
 

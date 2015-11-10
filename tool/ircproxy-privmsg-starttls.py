@@ -317,7 +317,7 @@ class PrivateChannel ():
 		if self.server:
 			roles = tlspool.PIOF_STARTTLS_LOCALROLE_SERVER | tlspool.PIOF_STARTTLS_REMOTEROLE_CLIENT | tlspool.PIOF_STARTTLS_DETACH
 		else:
-			roles = tlspool.PIOF_STARTTLS_LOCALROLE_CLIENT | tlspool.PIOF_STARTTLS_REMOTEROLE_SERVER | tlspool.PIOF_STARTTLS_SEND_SNI | tlspool.PIOF_STARTTLS_DETACH
+			roles = tlspool.PIOF_STARTTLS_LOCALROLE_CLIENT | tlspool.PIOF_STARTTLS_REMOTEROLE_SERVER | tlspool.PIOF_STARTTLS_DETACH
 		print 'Requesting STARTTLS'
 		tlsdata = {
 			'flags': roles,

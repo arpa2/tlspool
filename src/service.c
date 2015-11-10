@@ -118,6 +118,9 @@ static struct command *allocate_command_for_clientfd (int fd) {
  */
 static void free_commands_by_clientfd (int clientfd) {
 	int i;
+	if (cmdpool == NULL) {
+		return;
+	}
 	for (i=0; i<cmdpool_len; i++) {
 		if (cmdpool [i].claimed) {
 			if (cmdpool [i].clientfd == clientfd) {
@@ -171,7 +174,7 @@ static void unregister_client_socket_byindex (int soxidx) {
 	free_commands_by_clientfd (sox);
 	pinentry_forget_clientfd (sox);
 	lidentry_forget_clientfd (sox);
-	ctlkey_close_clientfd (sox);
+	ctlkey_close_ctlfd (sox);
 	num_sox--;
 	if (soxidx < num_sox) {
 		memcpy (&soxinfo [soxidx], &soxinfo [num_sox], sizeof (*soxinfo));
@@ -187,6 +190,9 @@ int send_command (struct command *cmd, int passfd) {
 	struct msghdr mh;
 	struct cmsghdr *cmsg;
 
+	if (cmd == NULL) {
+		return 1;	// Success guaranteed when nobody is listening
+	}
 	assert (passfd == -1);	// Working passfd code retained but not used
 	bzero (anc, sizeof (anc));
 	bzero (&iov, sizeof (iov));
@@ -221,8 +227,19 @@ int send_command (struct command *cmd, int passfd) {
 
 /* Report success to the user.  Note that this function does not terminate
  * actions, but it should be the last response to the client.
+ *
+ * We accept the situation where cmd==NULL to accommodate code that deals
+ * with re-run commands that were internally stored.  This saves massively
+ * in re-coding such code.
+ *
+ * We accept the situation where cmd==NULL to accommodate code that deals
+ * with re-run commands that were internally stored.  This saves massively
+ * in re-coding such code.
  */
 void send_success (struct command *cmd) {
+	if (cmd == NULL) {
+		return;
+	}
 	cmd->cmd.pio_cmd = PIOC_SUCCESS_V1;
 	cmd->cmd.pio_cbid = 0;
 	if (!send_command (cmd, -1)) {
@@ -234,8 +251,15 @@ void send_success (struct command *cmd) {
 /* Report an error response to the user.  Report with the given errno and msg.
  * Note that this function does not terminate actions, but it should be the
  * last response to the client.
+ *
+ * We accept the situation where cmd==NULL to accommodate code that deals
+ * with re-run commands that were internally stored.  This saves massively
+ * in re-coding such code.
  */
 void send_error (struct command *cmd, int tlserrno, char *msg) {
+	if (cmd == NULL) {
+		return;
+	}
 	if (tlserrno == 0) {
 		send_success (cmd);
 		return;

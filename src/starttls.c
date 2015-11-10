@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <memory.h>
+#include <string.h>
 #include <pthread.h>
 #include <assert.h>
 
@@ -81,7 +82,7 @@ struct credinfo {
 };
 
 #define EXPECTED_SRV_CREDCOUNT 3
-#define EXPECTED_CLI_CREDCOUNT 2
+#define EXPECTED_CLI_CREDCOUNT 3
 static struct credinfo srv_creds [EXPECTED_SRV_CREDCOUNT];
 static struct credinfo cli_creds [EXPECTED_CLI_CREDCOUNT];
 static int srv_credcount = 0;
@@ -92,6 +93,9 @@ static int cli_credcount = 0;
 struct ctlkeynode_tls {
 	struct ctlkeynode regent;	// Structure for ctlkey_register()
 	gnutls_session_t session;	// Additional data specifically for TLS
+	pthread_t owner;		// For interruption of copycat()
+	int plainfd;			// Plain-side connection
+	int cryptfd;			// Crypt-side connection
 };
 
 /* The list of accepted Exporter Label Prefixes for starttls_prng()
@@ -115,6 +119,73 @@ char *tlsprng_label_prefixes [] = {
 	"EXPORTER-oneM2M-Connection",
 	NULL
 };
+
+/* The registry with the service names that are deemed safe for an
+ * anonymous precursor phase; that is, the service names that may offer
+ * ANON-DH initially, and immediately renegotiate an authenticated
+ * connection.  See doc/anonymising-precursor.* for more information.
+ *
+ * The registry is ordered by case-independent service name, so it can
+ * be searched in 2log time.  Service names are as defined by IANA in the
+ * "Service Name and Transport Protocol Port Number Registry".
+ *
+ * The entries in the registry depend on the role played; either as a
+ * client or as a server.  This refers to the local node, and depends on
+ * uncertainty of the remote party's TLS implementation and whether or
+ * not the protocol could lead to the remote sending information that
+ * requires authentication before the secure renogiation into an
+ * authenticated connection has been completed by this side.  This is
+ * a protocol-dependent matter and the registry provided here serves to
+ * encapsulate this knowledge inside the TLS Pool instead of bothering
+ * application designers with it.  Entries that are not found in the
+ * registry are interpreted as not allowing an anonymising precursor.
+ *
+ * Note that ANONPRE_EXTEND_MASTER_SECRET cannot be verified before
+ * GnuTLS version 3.4.0; see "imap" below for the resulting impact.  This
+ * also impacts dynamic linking, because 3.4.0 introduces the new function
+ * gnutls_ext_get_data() that is used for this requirement.
+ */
+#define ANONPRE_FORBID 0x00
+#define ANONPRE_CLIENT 0x01
+#define ANONPRE_SERVER 0x02
+#define ANONPRE_EITHER (ANONPRE_CLIENT | ANONPRE_SERVER)
+#define ANONPRE_EXTEND_MASTER_SECRET 0x10
+struct anonpre_regentry {
+	char *service;
+	uint8_t flags;
+};
+struct anonpre_regentry anonpre_registry [] = {
+/* This registry is commented out for now, although the code to use it seems
+ * to work fine.  GnuTLS however, does not seem to support making the switch
+ * from ANON-ECDH to an authenticated handshake.  Details:
+ * http://lists.gnutls.org/pipermail/gnutls-help/2015-November/003998.html
+ *
+	{ "generic_anonpre", ANONPRE_EITHER },	// Name invalid as per RFC 6335
+	{ "http", ANONPRE_CLIENT },	// Server also if it ignores client ID
+#if GNUTLS_VERSION_NUMBER < 0x030400
+	{ "imap", ANONPRE_SERVER },
+#else
+	{ "imap", ANONPRE_EITHER | ANONPRE_EXTEND_MASTER_SECRET },
+#endif
+	{ "pop3", ANONPRE_EITHER },
+	{ "smtp", ANONPRE_EITHER },
+ *
+ * End of commenting out the registry
+ */
+};
+const int anonpre_registry_size = sizeof (anonpre_registry) / sizeof (struct anonpre_regentry);
+
+/* The maximum number of bytes that can be passed over a TLS connection before
+ * the authentication is complete in case of a anonymous precursor within a
+ * protocol that ensures that this cannot be a problem.
+ */
+int maxpreauth;
+
+/* The priorities cache for "NORMAL" -- used to preconfigure the server,
+ * actually to overcome its unwillingness to perform the handshake, and
+ * leave it to srv_clienthello() to setup the priority string.
+ */
+gnutls_priority_t priority_normal;
 
 
 /* Map a GnuTLS call (usually a function call) to a POSIX errno,
@@ -547,6 +618,9 @@ void setup_starttls (void) {
 	const char *curver;
 	int gtls_errno = GNUTLS_E_SUCCESS;
 	//
+	// Setup configuration variables
+	maxpreauth = cfg_tls_maxpreauth ();
+	//
 	// Basic library actions
 	tlog (TLOG_TLS, LOG_DEBUG, "Compiled against GnuTLS version %s", GNUTLS_VERSION);
 	curver = gnutls_check_version (GNUTLS_VERSION);
@@ -561,7 +635,7 @@ void setup_starttls (void) {
 	// Setup logging / debugging
 	if (cfg_log_level () == LOG_DEBUG) {
 		gnutls_global_set_log_function (log_gnutls);
-		gnutls_global_set_log_level (2);
+		gnutls_global_set_log_level (9);
 	}
 	//
 	// Setup callbacks for user communication
@@ -575,6 +649,13 @@ void setup_starttls (void) {
 	// Setup shared credentials for all client server processes
 	E_g2e ("Failed to setup GnuTLS callback credentials",
 		setup_starttls_credentials ());
+	//
+	// Parse the default priority string
+	E_g2e ("Failed to setup NORMAL priority cache",
+		gnutls_priority_init (&priority_normal, "NONE:+VERS-TLS-ALL:+VERS-DTLS-ALL:+COMP-NULL:+CIPHER-ALL:+CURVE-ALL:+SIGN-ALL:+MAC-ALL:+ANON-ECDH:+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:+CTYPE-X.509:+CTYPE-OPENPGP:+SRP:+SRP-RSA:+SRP-DSS", NULL));
+		// gnutls_priority_init (&priority_normal, "NORMAL:-RSA:+ANON-ECDH:+RSA:+CTYPE-X.509:+CTYPE-OPENPGP:+SRP:+SRP-RSA:+SRP-DSS", NULL));
+	//
+	// Finally, check whether there was any error setting up GnuTLS
 	if (gtls_errno != GNUTLS_E_SUCCESS) {
 		tlog (TLOG_TLS, LOG_CRIT, "FATAL: GnuTLS setup failed: %s", gnutls_strerror (gtls_errno));
 		exit (1);
@@ -600,6 +681,7 @@ void cleanup_starttls (void) {
 	gnutls_pkcs11_set_pin_function (NULL, NULL);
 	gnutls_pkcs11_set_token_function (NULL, NULL);
 	gnutls_pkcs11_deinit ();
+	gnutls_priority_deinit (priority_normal);
 	gnutls_global_deinit ();
 }
 
@@ -628,13 +710,26 @@ void cleanup_starttls (void) {
  * page clearly stated yes.  However, these articles offer much more detail:
  * http://blog.netherlabs.nl/articles/2009/01/18/the-ultimate-so_linger-page-or-why-is-my-tcp-not-reliable
  * http://www.greenend.org.uk/rjk/tech/poll.html
+ *
+ * This function blocks during its call to poll(), in a state that can easily
+ * be restarted.  This is when thread cancellation is temporarily enabled.
+ * Other threads may use this to cancel the thread and have it joined with that
+ * thread which will subsume its tasks and restart the handshake.  We might
+ * later make this more advanced, by using a cancel stack push/pull mechanisms
+ * to ensure that recv() always results in send() in spite of cancellation.
+ *
+ * The return value of copycat is a GNUTLS_E_ code, usually GNUTLS_E_SUCCESS.
+ * For the moment, only one special value is of concern, namely
+ * GNUTLS_E_REHANDSHAKE which client or server side may receive when an
+ * attempt is made to renegotiate the security of the connection.
  */
-static void copycat (int local, int remote, gnutls_session_t wrapped, int client) {
+static int copycat (int local, int remote, gnutls_session_t wrapped, int client) {
 	char buf [1024];
 	struct pollfd inout [3];
 	ssize_t sz;
 	struct linger linger = { 1, 10 };
 	int have_client;
+	int retval = GNUTLS_E_SUCCESS;
 
 	inout [0].fd = local;
 	inout [1].fd = remote;
@@ -649,7 +744,12 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int client
 	inout [2].events = 0;	// error events only
 	tlog (TLOG_COPYCAT, LOG_DEBUG, "Starting copycat cycle for local=%d, remote=%d, control=%d", local, remote, client);
 	while (((inout [0].events | inout [1].events) & POLLIN) != 0) {
-		if (poll (inout, have_client? 3: 2, -1) == -1) {
+		int polled;
+		assert (pthread_setcancelstate (PTHREAD_CANCEL_ENABLE,  NULL) == 0);
+		pthread_testcancel ();	// Efficiency & Certainty
+		polled = poll (inout, have_client? 3: 2, -1);
+		assert (pthread_setcancelstate (PTHREAD_CANCEL_DISABLE, NULL) == 0);
+		if (polled == -1) {
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat polling returned an error");
 			break;	// Polling sees an error
 		}
@@ -677,7 +777,12 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int client
 			sz = gnutls_record_recv (wrapped, buf, sizeof (buf));
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat received %d remote bytes from %d (or error if <0)", (int) sz, remote);
 			if (sz < 0) {
-				if (gnutls_error_is_fatal (sz)) {
+				//TODO// Process GNUTLS_E_REHANDSHAKE
+				if (sz == GNUTLS_E_REHANDSHAKE) {
+					tlog (TLOG_TLS, LOG_INFO, "Received renegotiation request over TLS handle %d", remote);
+					retval = GNUTLS_E_REHANDSHAKE;
+					break;
+				} else if (gnutls_error_is_fatal (sz)) {
 					tlog (TLOG_TLS, LOG_ERR, "GnuTLS fatal error: %s", gnutls_strerror (sz));
 					break;	// stream error
 				} else {
@@ -718,7 +823,7 @@ static void copycat (int local, int remote, gnutls_session_t wrapped, int client
 		}
 	}
 	tlog (TLOG_COPYCAT, LOG_DEBUG, "Ending copycat cycle for local=%d, remote=%d", local, remote);
-	gnutls_deinit (wrapped);
+	return retval;
 }
 
 
@@ -791,7 +896,13 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 			return gtls_errno;
 		}
 		if (*lid != '\0') {
-			if (strncmp (sni, lid, snilen) != 0) {
+			int atidx;
+			for (atidx=128; atidx > 0; atidx--) {
+				if (lid [atidx-1] == '@') {
+					break;
+				}
+			}
+			if (strncmp (sni, lid + atidx, sizeof (sni)-atidx) != 0) {
 				tlog (TLOG_TLS, LOG_ERR, "SNI %s does not match preset local identity %s", sni, lid);
 				E_g2e ("Requested SNI does not match local identity",
 					GNUTLS_E_NO_CERTIFICATE_FOUND);
@@ -843,7 +954,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 		// Note: This is only of interest for client operation
 		if (lidrole == LID_ROLE_CLIENT) {
 			selector_t newrid = donai_from_stable_string (rid, strlen (rid));
-			donai_t oldrid = donai_from_stable_string (cmd->orig_piocdata->remoteid, strlen (cmd->orig_piocdata->remoteid));
+			donai_t oldrid = donai_from_stable_string (cmd->orig_starttls->remoteid, strlen (cmd->orig_starttls->remoteid));
 			if (!donai_matches_selector (&oldrid, &newrid)) {
 				return GNUTLS_E_NO_CERTIFICATE_FOUND;
 			}
@@ -854,6 +965,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 			fetch_local_credentials (cmd));
 	}
 	if (cmd->lids [lidtype - LID_TYPE_MIN].data == NULL) {
+printf ("DEBUG: Missing certificate for local ID %s and remote ID %s\n", lid, rid);
 		E_g2e ("Missing certificate for local ID",
 			GNUTLS_E_NO_CERTIFICATE_FOUND);
 		return gtls_errno;
@@ -938,6 +1050,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 	//
 	// Return the overral error code, hopefully GNUTLS_E_SUCCESS
 	tlog (TLOG_TLS, LOG_DEBUG, "Returning %d / %s from clisrv_cert_retrieve()", gtls_errno, gnutls_strerror (gtls_errno));
+printf ("DEBUG: clisrv_cert_retrieve() sets *pcert to 0x%xl (length %d)... {pubkey = 0x%lx, cert= {data = 0x%lx, size=%ld}, type=%ld}\n", (long) *pcert, *pcert_length, (long) (*pcert)->pubkey, (long) (*pcert)->cert.data, (long) (*pcert)->cert.size, (long) (*pcert)->type);
 	return gtls_errno;
 }
 
@@ -1242,6 +1355,83 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 }
 
 
+/*
+ * Check if a given cmd has the given LID_TYPE setup.
+ * Return 1 for yes or 0 for no; this is used in priority strings.
+ */
+static inline int lidtpsup (struct command *cmd, int lidtp) {
+	return 1;	//TODO// Can we decide if we needn't authenticate?
+	return cmd->lids [lidtp - LID_TYPE_MIN].data != NULL;
+}
+
+/* Configure the GnuTLS session with suitable credentials and priority string.
+ * The anonpre_ok flag should be non-zero to permit Anonymous Precursor.
+ *
+ * The credential setup is optional; when creds is NULL, no changes will
+ * be made.
+ */
+static int configure_session (struct command *cmd,
+			gnutls_session_t session,
+			struct credinfo *creds,
+			int credcount,
+			int anonpre_ok) {
+	int i;
+	int gtls_errno = GNUTLS_E_SUCCESS;
+	//
+	// Install the shared credentials for the client or server role
+	if (creds != NULL) {
+		gnutls_credentials_clear (session);
+		for (i=0; i<credcount; i++) {
+			E_g2e ("Failed to install credentials into TLS session",
+				gnutls_credentials_set (
+					session,
+					creds [i].credtp,
+					creds [i].cred  ));
+		}
+	}
+	//
+	// Setup the priority string for this session; this avoids future
+	// credential callbacks that ask for something impossible or
+	// undesired.
+	//
+	// Variation factors:
+	//  - starting configuration (can it be empty?)
+	//  - Configured security parameters (database? variable?)
+	//  - CTYPEs, SRP, ANON-or-not --> fill in as + or - characters
+	if (gtls_errno == GNUTLS_E_SUCCESS) {
+		char priostr [256];
+		snprintf (priostr, sizeof (priostr)-1,
+			// "NORMAL:-RSA:" -- also ECDH-RSA, ECDHE-RSA, ...DSA...
+			"NONE:"
+			"+VERS-TLS-ALL:+VERS-DTLS-ALL:"
+			"+COMP-NULL:"
+			"+CIPHER-ALL:+CURVE-ALL:+SIGN-ALL:+MAC-ALL:"
+			"%cANON-ECDH:"
+			"+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:" //TODO//
+			"%cCTYPE-X.509:"
+			"%cCTYPE-OPENPGP:"
+			"%cSRP:%cSRP-RSA:%cSRP-DSS",
+			anonpre_ok				?'+':'-',
+			lidtpsup (cmd, LID_TYPE_X509)		?'+':'-',
+			lidtpsup (cmd, LID_TYPE_PGP)		?'+':'-',
+			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
+			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
+			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-');
+// strcpy (priostr, "NONE:+VERS-TLS-ALL:+MAC-ALL:+RSA:+AES-128-CBC:+SIGN-ALL:+COMP-NULL");  //TODO:TEST//
+// strcpy (priostr, "NONE:+VERS-TLS-ALL:+VERS-DTLS-ALL:+MAC-ALL:+RSA:+AES-128-CBC:+SIGN-ALL:+COMP-NULL");  //TODO:TEST//
+		tlog (TLOG_TLS, LOG_DEBUG, "Constructed priority string %s for local ID %s",
+			priostr, cmd->cmd.pio_data.pioc_starttls.localid);
+		E_g2e ("Failed to set GnuTLS priority string",
+			gnutls_priority_set_direct (
+			session,
+			priostr,
+			NULL));
+	}
+	//
+	// Return the application GNUTLS_E_ code including _SUCCESS
+	return gtls_errno;
+}
+
 /* The callback functions retrieve various bits of information for the client
  * or server in the course of the handshake procedure.
  *
@@ -1258,6 +1448,9 @@ int srv_clienthello (gnutls_session_t session) {
 	int gtls_errno = GNUTLS_E_SUCCESS;
 	char *lid;
 
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
+errno = 0;
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 	//
 	// Setup a number of common references
 	cmd = (struct command *) gnutls_session_get_ptr (session);
@@ -1267,9 +1460,45 @@ int srv_clienthello (gnutls_session_t session) {
 	lid = cmd->cmd.pio_data.pioc_starttls.localid;
 
 	//
+	// Setup server-specific credentials and priority string
+	//TODO// get anonpre value here
+fprintf (stderr, "DEBUG: Got gtls_errno = %d at %d\n", gtls_errno, __LINE__);
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
+	E_g2e ("Failed to reconfigure GnuTLS as a server",
+		configure_session (cmd,
+			session,
+			srv_creds, srv_credcount, 
+			cmd->anonpre & ANONPRE_SERVER));
+fprintf (stderr, "DEBUG: Got gtls_errno = %d at %d\n", gtls_errno, __LINE__);
+
+	//
+	// Setup to ignore/request/require remote identity (from client)
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
+	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_IGNORE_REMOTEID) {
+		// Neither Request nor Require remoteid; ignore it
+		;
+	} else if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_REQUEST_REMOTEID) {
+		// Use Request instead of Require for remoteid
+		( //RETURNS_VOID// E_g2e ("Failed to request remote identity",
+			gnutls_certificate_server_set_request (
+				session,
+				GNUTLS_CERT_REQUEST));
+fprintf (stderr, "DEBUG: Got gtls_errno = %d at %d\n", gtls_errno, __LINE__);
+	} else {
+		// Require a remoteid from the client (default)
+		( //RETURNS_VOID// E_g2e ("Failed to require remote identity (the default)",
+			gnutls_certificate_server_set_request (
+				session,
+				GNUTLS_CERT_REQUIRE));
+fprintf (stderr, "DEBUG: Got gtls_errno = %d at %d\n", gtls_errno, __LINE__);
+	}
+
+	//
 	// Find the client-helloed ServerNameIndication, or the service name
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 	sni [0] = '\0';
 	if (gnutls_server_name_get (session, sni, &snilen, &snitype, 0) == 0) {
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 		switch (snitype) {
 		case GNUTLS_NAME_DNS:
 			break;
@@ -1279,32 +1508,47 @@ int srv_clienthello (gnutls_session_t session) {
 		default:
 			sni [0] = '\0';
 			tlog (TLOG_TLS, LOG_ERR, "Received an unexpected SNI type; that is possible but uncommon; skipping SNI");
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 			break;
 		}
 	}
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 	if (sni [0] != '\0') {
 		if (*lid != '\0') {
-			if (strncmp (sni, lid, sizeof (sni)) != 0) {
+			int atidx;
+			for (atidx=128; atidx > 0; atidx--) {
+				if (lid [atidx-1] == '@') {
+					break;
+				}
+			}
+			if (strncmp (sni, lid + atidx, sizeof (sni)-atidx) != 0) {
 				tlog (TLOG_USER | TLOG_TLS, LOG_ERR, "Mismatch between client-sent SNI %s and local identity %s", sni, lid);
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 				return GNUTLS_E_UNEXPECTED_HANDSHAKE_PACKET;
 			}
 		} else {
 			memcpy (lid, sni, sizeof (sni));
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 		}
 	} else {
 		memcpy (sni, lid, sizeof (sni)-1);
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 		sni [sizeof (sni) - 1] = '\0';
 	}
+fprintf (stderr, "DEBUG: Got gtls_errno = %d at %d\n", gtls_errno, __LINE__);
 
 	//
 	// Lap up any unnoticed POSIX error messages
 	if (errno != 0) {
 		cmd->session_errno = errno;
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 		gtls_errno = GNUTLS_E_NO_CIPHER_SUITES;	/* Vaguely matching */
+fprintf (stderr, "DEBUG: Got gtls_errno = %d at %d\n", gtls_errno, __LINE__);
 	}
 
 	//
 	// Round off with an overal judgement
+fprintf (stderr, "DEBUG: Returning glts_errno = %d or \"%s\" from srv_clihello()\n", gtls_errno, gnutls_strerror (gtls_errno));
 	return gtls_errno;
 }
 
@@ -1313,7 +1557,7 @@ int cli_srpcreds_retrieve (gnutls_session_t session,
 				char **username,
 				char **password) {
 	//TODO:FIXED//
-	tlog (TLOG_CRYPTO, LOG_DEBUG, "DEBUG: Picking up SRP credentials");
+	tlog (TLOG_CRYPTO, LOG_DEBUG, "Picking up SRP credentials");
 	*username = strdup ("tester");
 	*password = strdup ("test");
 	return GNUTLS_E_SUCCESS;
@@ -1337,7 +1581,48 @@ int setup_starttls_credentials (void) {
 	int gtls_errno_stack0;
 
 	//
+	// Construct anonymous server credentials
+	E_g2e ("Failed to allocate ANON-DH server credentials",
+		gnutls_anon_allocate_server_credentials (
+			&srv_anoncred));
+	if (!have_error_codes ()) /* E_g2e (...) */ gnutls_anon_set_server_dh_params (
+		srv_anoncred,
+		dh_params);
+	if (gtls_errno == GNUTLS_E_SUCCESS) {
+		tlog (TLOG_CRYPTO, LOG_INFO, "Setting server anonymous credentials");
+		srv_creds [srv_credcount].credtp = GNUTLS_CRD_ANON;
+		srv_creds [srv_credcount].cred   = (void *) srv_anoncred;
+		srv_credcount++;
+	} else if (srv_anoncred != NULL) {
+		gnutls_anon_free_server_credentials (srv_anoncred);
+		srv_anoncred = NULL;
+	}
+
+	//
+	// Construct anonymous client credentials
+	gtls_errno = gtls_errno_stack0;	// Don't pop, just forget last failures
+	E_g2e ("Failed to allocate ANON-DH client credentials",
+		gnutls_anon_allocate_client_credentials (
+			&cli_anoncred));
+#ifdef MIRROR_IMAGE_OF_SERVER_ANONYMOUS_CREDENTIALS
+	// NOTE: This is not done under TLS; server always provides DH params
+	if (!have_error_codes ()) gnutls_anon_set_client_dh_params (
+		cli_anoncred,
+		dh_params);
+#endif
+	if (gtls_errno == GNUTLS_E_SUCCESS) {
+		tlog (TLOG_CRYPTO, LOG_INFO, "Setting client anonymous credentials");
+		cli_creds [cli_credcount].credtp = GNUTLS_CRD_ANON;
+		cli_creds [cli_credcount].cred   = (void *) cli_anoncred;
+		cli_credcount++;
+	} else if (cli_anoncred != NULL) {
+		gnutls_anon_free_client_credentials (cli_anoncred);
+		cli_anoncred = NULL;
+	}
+
+	//
 	// Construct certificate credentials for X.509 and OpenPGP cli/srv
+	gtls_errno = gtls_errno_stack0;	// Don't pop, just forget last failures
 	E_g2e ("Failed to allocate certificate credentials",
 		gnutls_certificate_allocate_credentials (
 			&clisrv_certcred));
@@ -1371,46 +1656,6 @@ int setup_starttls_credentials (void) {
 		gnutls_certificate_free_credentials (clisrv_certcred);
 		clisrv_certcred = NULL;
 	}
-
-	//
-	// Construct anonymous server credentials
-	gtls_errno = gtls_errno_stack0;	// Don't pop, just forget last failures
-	E_g2e ("Failed to allocate ANON-DH server credentials",
-		gnutls_anon_allocate_server_credentials (
-			&srv_anoncred));
-	if (!have_error_codes ()) /* E_g2e (...) */ gnutls_anon_set_server_dh_params (
-		srv_anoncred,
-		dh_params);
-	if (gtls_errno == GNUTLS_E_SUCCESS) {
-		tlog (TLOG_CRYPTO, LOG_INFO, "Setting server anonymous credentials");
-		srv_creds [srv_credcount].credtp = GNUTLS_CRD_ANON;
-		srv_creds [srv_credcount].cred   = (void *) srv_anoncred;
-		srv_credcount++;
-	} else if (srv_anoncred != NULL) {
-		gnutls_anon_free_server_credentials (srv_anoncred);
-		srv_anoncred = NULL;
-	}
-
-#ifdef MIRROR_IMAGE_OF_SERVER_ANONYMOUS_CREDENTIALS
-	//
-	// Construct anonymous client credentials
-	gtls_errno = gtls_errno_stack0;	// Don't pop, just forget last failures
-	E_g2e ("Failed to allocate ANON-DH client credentials",
-		gnutls_anon_allocate_client_credentials (
-			&cli_anoncred));
-	if (!have_error_codes ()) gnutls_anon_set_client_dh_params (
-		cli_anoncred,
-		dh_params);
-	if (gtls_errno == GNUTLS_E_SUCCESS) {
-		tlog (TLOG_CRYPTO, LOG_INFO, "Setting client anonymous credentials");
-		cli_creds [cli_credcount].credtp = GNUTLS_CRD_ANON;
-		cli_creds [cli_credcount].cred   = (void *) cli_anoncred;
-		cli_credcount++;
-	} else if (cli_anoncred != NULL) {
-		gnutls_anon_free_client_credentials (cli_anoncred);
-		cli_anoncred = NULL;
-	}
-#endif
 
 	//
 	// Construct server credentials for SRP authentication
@@ -1552,14 +1797,6 @@ void cleanup_starttls_credentials (void) {
 
 
 /*
- * Check if a given cmd has the given LID_TYPE setup.
- * Return 1 for yes or 0 for no; this is used in priority strings.
- */
-static inline int lidtpsup (struct command *cmd, int lidtp) {
-	return cmd->lids [lidtp - LID_TYPE_MIN].data != NULL;
-}
-
-/*
  * The starttls_thread is a main program for the setup of a TLS connection,
  * either in client mode or server mode.  Note that the distinction between
  * client and server mode is only a TLS concern, but not of interest to the
@@ -1568,75 +1805,361 @@ static inline int lidtpsup (struct command *cmd, int lidtp) {
  * If the STARTTLS operation succeeds, this will be reported back to the
  * application, but the TLS pool will continue to be active in a copycat
  * procedure: encrypting outgoing traffic and decrypting incoming traffic.
- * TODO: Are client and server routines different?
+ *
+ * A new handshake may be initiated with a STARTTLS command with the special
+ * flag PIOF_STARTTLS_RENEGOTIATE and the ctlkey set to a previously setup
+ * TLS connection.  This command runs in a new thread, that cancels the old
+ * one (which it can only do while it is waiting in copycat) and then join
+ * that thread (and its data) with the current one.  This is based on the
+ * ctlkey, which serves to lookup the old thread's data.  When the
+ * connection ends for other reasons than a permitted cancel by another
+ * thread, will the thread cleanup its own resources.  In these situations,
+ * the new command determines the negotiation parameters, and returns identity
+ * information.
+ *
+ * In addition, the remote side may initiate renegotiation.  This is accepted
+ * without further ado (although future versions of the TLS Pool may add a
+ * callback mechanism to get it approved).  The renegotiation now runs under
+ * the originally supplied negotiation parameters.  In case it needs a new
+ * local identity, it may also perform callbacks.  Possibly repeating what
+ * happened before -- but most often, a server will start processing a
+ * protocol and determine that it requires more for the requested level of
+ * service, and then renegotiate.  This is common, for example, with HTTPS
+ * connections that decide they need a client certificate for certain URLs.
+ * The implementation of this facility is currently as unstructured as the
+ * facility itself, namely through a goto.  We may come to the conclusion
+ * that a loop is in fact a warranted alternative, but we're not yet
+ * convinced that this would match with other "structures" in TLS.
+ *
+ * In conclusion, there are three possible ways of running this code:
+ *  1. For a new connection.  Many variables are not known and build up
+ *     in the course of running the function.
+ *  2. After a command requesting renegotiation.  This overtakes the prior
+ *     connection's thread, and copies its data from the ctlkeynode_tls.
+ *     The resulting code has a number of variables filled in already at
+ *     an earlier stage.
+ *  3. After a remote request for renegotiation.  This loops back to an
+ *     earlier phase, but after the thread takeover and ctlkeynode_tls copy
+ *     of the explicit command for renegotation.  Its behaviour is subtly
+ *     different in that it has no command to act on, and so it cannot
+ *     send responses or error codes.  It will however log and shutdown
+ *     as the command-driven options would.  It will not perform callbacks
+ *     for PIOC_STARTTLS_LOCALID_V2 or PIOC_PLAINTEXT_CONNECT_V2.  It will
+ *     however trigger the PIOC_LIDENTRY_CALLBACK_V2 through the separate
+ *     callback command, if one is registered.
+ * Yeah, it's great fun, coding TLS and keeping it both flexible and secure.
  */
 static void *starttls_thread (void *cmd_void) {
-	struct command *cmd;
-	struct pioc_starttls orig_piocdata;
-	uint32_t orig_cmd;
+	struct command *cmd, *replycmd;
+	struct command cmd_copy; // for relooping during renegotiation
+	struct pioc_starttls orig_starttls;
+	uint32_t orig_cmdcode;
 	int plainfd = -1;
 	int cryptfd = -1;
-	int clientfd;
 	gnutls_session_t session;
+	int got_session = 0;
 	int gtls_errno = GNUTLS_E_SUCCESS;
 	int i;
-	struct credinfo *clisrv_creds;
-	int clisrv_credcount;
-	struct ctlkeynode_tls *ckn;
+	struct ctlkeynode_tls *ckn = NULL;
 	uint32_t tout;
+	int forked = 0;
+	int want_remoteid = 1;
+	int got_remoteid = 0;
+	int renegotiating = 0;
+	char *preauth = NULL;
+	unsigned int preauthlen = 0;
+	int taking_over = 0;
+	int my_maxpreauth = 0;
+	int anonpost = 0;
+
+	//
+	// Block thread cancellation -- and re-enable it in copycat()
+	assert (pthread_setcancelstate (PTHREAD_CANCEL_DISABLE, NULL) == 0);
 
 	//
 	// General thread setup
-	cmd = (struct command *) cmd_void;
+	replycmd = cmd = (struct command *) cmd_void;
 	if (cmd == NULL) {
-		send_error (cmd, EINVAL, "Command structure not received");
+		send_error (replycmd, EINVAL, "Command structure not received");
+		assert (pthread_detach (pthread_self ()) == 0);
 		return;
 	}
 	cmd->session_errno = 0;
-	orig_cmd = cmd->cmd.pio_cmd;
-	memcpy (&orig_piocdata, &cmd->cmd.pio_data.pioc_starttls, sizeof (orig_piocdata));
-	cmd->orig_piocdata = &orig_piocdata;
+	cmd->anonpre = 0;
+	orig_cmdcode = cmd->cmd.pio_cmd;
+	memcpy (&orig_starttls, &cmd->cmd.pio_data.pioc_starttls, sizeof (orig_starttls));
+	cmd->orig_starttls = &orig_starttls;
 	cryptfd = cmd->passfd;
 	cmd->passfd = -1;
+//TODO:TEST Removed here because it is tested below
+/*
 	if (cryptfd < 0) {
 		tlog (TLOG_UNIXSOCK, LOG_ERR, "No ciphertext file descriptor supplied to TLS Pool");
-		send_error (cmd, EINVAL, "No ciphertext file descriptor supplied to TLS Pool");
+		send_error (replycmd, EINVAL, "No ciphertext file descriptor supplied to TLS Pool");
+		assert (pthread_detach (pthread_self ()) == 0);
 		return;
 	}
-	clientfd = cmd->clientfd;
+*/
 	cmd->session_certificate = (intptr_t) (void *) NULL;
-	cmd->session_privatekey = (intptr_t) (void *) NULL;
+	cmd->session_privatekey  = (intptr_t) (void *) NULL;
 
 	//
-	// Potentially decouple the controlling fd (ctlkey is in orig_piocdata)
+	// In case of renegotiation, lookup the previous ctlkeynode by its
+	// ctlkey.  The fact that we have ckn != NULL indicates that we are
+	// renegotiating in the code below; it will supply information as
+	// we continue to run the TLS process.
+	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_RENEGOTIATE) {
+fprintf (stderr, "DEBUG: Got a request to renegotiate existing TLS connection\n");
+		//
+		// Check that no FD was passed (and ended up in cryptfd)
+		if (cryptfd >= 0) {
+			tlog (TLOG_UNIXSOCK, LOG_ERR, "Renegotiation started with extraneous file descriptor");
+			send_error (replycmd, EPROTO, "File handle supplied for renegotiation");
+			close (cryptfd);
+			assert (pthread_detach (pthread_self ()) == 0);
+			return;
+		}
+		//
+		// First find the ctlkeynode_tls
+		ckn = (struct ctlkeynode_tls *) ctlkey_find (cmd->cmd.pio_data.pioc_starttls.ctlkey, security_tls, cmd->clientfd);
+fprintf (stderr, "DEBUG: Got ckn == 0x%0x\n", (intptr_t) ckn);
+		if (ckn == NULL) {
+			tlog (TLOG_UNIXSOCK, LOG_ERR, "Failed to find TLS connection for renegotiation by its ctlkey");
+			send_error (replycmd, ESRCH, "Cannot find TLS connection for renegotiation");
+			assert (pthread_detach (pthread_self ()) == 0);
+			return;
+		}
+		//
+		// Now cancel the pthread for this process
+		errno = pthread_cancel (ckn->owner);
+fprintf (stderr, "DEBUG: pthread_cancel returned %d\n", errno);
+		if (errno == 0) {
+			void *retval;
+			errno = pthread_join (ckn->owner, &retval);
+fprintf (stderr, "DEBUG: pthread_join returned %d\n", errno);
+		}
+		if (errno != 0) {
+			tlog (TLOG_UNIXSOCK, LOG_ERR, "Failed to interrupt TLS connection for renegotiation");
+			send_error (replycmd, errno, "Cannot interrupt TLS connection for renegotiation");
+			ctlkey_unfind (&ckn->regent);
+			assert (pthread_detach (pthread_self ()) == 0);
+			// Do not free the ckn, as the other thread still runs
+			return;
+		}
+		//
+		// We are in control!  Assimilate the TLS connection data.
+		renegotiating = 1;
+		plainfd = ckn->plainfd;
+		cryptfd = ckn->cryptfd;
+		session = ckn->session;
+		got_session = 1;
+		taking_over = 1;
+		ctlkey_unfind (&ckn->regent);
+	}
+
+	// Then follows the unstructured entry point for the unstructured
+	// request to a TLS connection to renegotiate its security parameters.
+	// Doing this in any other way than with goto would add a lot of
+	// make-belief structure that only existed to make this looping
+	// possible.  We'd rather be honest and admit the lack of structure
+	// that TLS has in this respect.  Maybe we'll capture it one giant loop
+	// at some point, but for now that does not seem to add any relief.
+	renegotiate:
+printf ("DEBUG: Renegotiating = %d, anonpost = %d, plainfd = %d, cryptfd = %d, flags = 0x%x, session = 0x%x, got_session = %d, lid = \"%s\", rid = \"%s\"\n", renegotiating, anonpost, plainfd, cryptfd, cmd->cmd.pio_data.pioc_starttls.flags, session, got_session, cmd->cmd.pio_data.pioc_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid);
+
+	//
+	// If this is server renegotiating, send a request to that end
+	//TODO// Only invoke gnutls_rehandshake() on the server
+	if (renegotiating && (taking_over || anonpost) && (gtls_errno == GNUTLS_E_SUCCESS)) {
+printf ("DEBUG: Invoking gnutls_rehandshake in renegotiation loop\n");
+		gtls_errno = gnutls_rehandshake (session);
+		if (gtls_errno == GNUTLS_E_INVALID_REQUEST) {
+			// Clients should not do this; be forgiving
+			gtls_errno = GNUTLS_E_SUCCESS;
+printf ("DEBUG: Client-side invocation flagged as wrong; compensated error\n");
+		}
+	}
+
+	//
+	// When renegotiating TLS security, ensure that it is done securely
+	if (renegotiating && (gnutls_safe_renegotiation_status (session) == 0)) {
+		send_error (replycmd, EPROTO, "Renegotiation requested while secure renegotiation is unavailable on remote");
+		if (cryptfd >= 0) {
+			close (cryptfd);
+			cryptfd = -1;
+		}
+		if (plainfd >= 0) {
+			close (plainfd);
+			plainfd = -1;
+		}
+		if (ckn != NULL) {
+			if (ctlkey_unregister (ckn->regent.ctlkey)) {
+				free (ckn);
+				ckn = NULL;
+			}
+		}
+		assert (pthread_detach (pthread_self ()) == 0);
+		return;
+	}
+
+	//
+	// Potentially decouple the controlling fd (ctlkey is in orig_starttls)
 	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_FORK) {
 		cmd->cmd.pio_data.pioc_starttls.flags &= ~PIOF_STARTTLS_FORK;
-		clientfd = -1;
+		forked = 1;
 	}
 
 	//
 	// Setup BDB transactions and reset credential datum fields
-	bzero (&cmd->lids, sizeof (cmd->lids));	//TODO: Probably double work?
-	manage_txn_begin (&cmd->txn);
+	if (!anonpost) {
+		bzero (&cmd->lids, sizeof (cmd->lids));
+		manage_txn_begin (&cmd->txn);
+	}
 
 	//
 	// Permit cancellation of this thread -- TODO: Cleanup?
+//TODO:TEST// Defer setcancelstate untill copycat() activity
+/*
 	errno = pthread_setcancelstate (PTHREAD_CANCEL_ENABLE, NULL);
 	if (errno != 0) {
-		send_error (cmd, ESRCH, "STARTTLS handler thread cancellability refused");
+		send_error (replycmd, ESRCH, "STARTTLS handler thread cancellability refused");
+		if (cryptfd >= 0) {
+			close (cryptfd);
+			cryptfd = -1;
+		}
+		if (plainfd >= 0) {
+			close (plainfd);
+			plainfd = -1;
+		}
+		if (ckn != NULL) {
+			if (ctlkey_unregister (ckn->regent.ctlkey)) {
+				free (ckn);
+				ckn = NULL;
+			}
+		}
+		manage_txn_rollback (&cmd->txn);
+		assert (pthread_detach (pthread_self ()) == 0);
 		return;
 	}
+*/
 	//
 	// Check and setup the plaintext file handle
-	if (cryptfd == -1) {
-		send_error (cmd, EPROTO, "You must supply a TLS-protected socket");
+	if (cryptfd < 0) {
+		send_error (replycmd, EPROTO, "You must supply a TLS-protected socket");
+		if (plainfd >= 0) {
+			close (plainfd);
+			plainfd = -1;
+		}
+fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
+		if (ckn != NULL) {	/* TODO: CHECK NEEDED? */
+			if (ctlkey_unregister (ckn->regent.ctlkey)) {
+				free (ckn);
+				ckn = NULL;
+			}
+		}
+		manage_txn_rollback (&cmd->txn);
+		assert (pthread_detach (pthread_self ()) == 0);
 		return;
 	}
 
 	//
-	// Negotiate TLS; split client/server mode setup
-	// Note: GnuTLS cannot yet setup p2p connections
+	// Decide on support for the Anonymous Precursor, based on the
+	// service name and its appearance in the anonpre_registry.
+	// If the remoteid is not interesting to the client then also
+	// support an Anonymous Precursor; we have nothing to loose.
+	cmd->anonpre &= ~ANONPRE_EITHER;
+	if (renegotiating) {
+		; // Indeed, during renegotiation we always disable ANON-DH
+	} else if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_IGNORE_REMOTEID) {
+		cmd->anonpre = ANONPRE_EITHER;
+		want_remoteid = 0;
+	} else {
+		int anonpre_regidx =  anonpre_registry_size      >> 1;
+		int anonpre_regjmp = (anonpre_registry_size + 1) >> 1;
+		int cmp;
+		while (anonpre_regjmp > 0) {
+			anonpre_regjmp = anonpre_regjmp >> 1;
+			cmp = strncasecmp (anonpre_registry [anonpre_regidx].service,
+				cmd->cmd.pio_data.pioc_starttls.service,
+				TLSPOOL_SERVICELEN);
+printf ("DEBUG: anonpre_determination, comparing [%d] %s to %s, found cmp==%d\n", anonpre_regidx, anonpre_registry [anonpre_regidx].service, cmd->cmd.pio_data.pioc_starttls.service, cmp);
+			if (cmp == 0) {
+				// anonpre_regent matches
+				cmd->anonpre = anonpre_registry [anonpre_regidx].flags;
+				break;
+			} else if (cmp > 0) {
+				// anonpre_regent too high
+				anonpre_regidx -= 1 + anonpre_regjmp;
+				if (anonpre_regidx < 0) {
+					anonpre_regidx = 0;
+				}
+			} else {
+				// anonpre_regent too low
+				anonpre_regidx += 1 + anonpre_regjmp;
+				if (anonpre_regidx >= anonpre_registry_size) {
+					anonpre_regidx = anonpre_registry_size - 1;
+				}
+			}
+		}
+	}
+
+	//
+	// Setup flags for client and/or server roles (make sure there is one)
+	if ((!renegotiating) && ((cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_REMOTEROLE_CLIENT) == 0)) {
+		cmd->cmd.pio_data.pioc_starttls.flags &= ~PIOF_STARTTLS_LOCALROLE_SERVER;
+	}
+	if ((!renegotiating) && ((cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_REMOTEROLE_SERVER) == 0)) {
+		cmd->cmd.pio_data.pioc_starttls.flags &= ~PIOF_STARTTLS_LOCALROLE_CLIENT;
+	}
+	if ((cmd->cmd.pio_data.pioc_starttls.flags & (PIOF_STARTTLS_LOCALROLE_CLIENT | PIOF_STARTTLS_LOCALROLE_SERVER)) == 0) {
+		//
+		// Neither a TLS client nor a TLS server
+		//
+		send_error (replycmd, ENOTSUP, "Command not supported");
+		close (cryptfd);
+		if (plainfd >= 0) {
+			close (plainfd);
+			plainfd = -1;
+		}
+fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
+		if (ckn != NULL) { /* TODO: CHECK NEEDED? */
+			if (ctlkey_unregister (ckn->regent.ctlkey)) {
+				free (ckn);
+				ckn = NULL;
+			}
+		}
+		manage_txn_rollback (&cmd->txn);
+		assert (pthread_detach (pthread_self ()) == 0);
+		return;
+	}
+
+	//
+	// Setup the TLS session.  Also see doc/p2p-tls.*
+	//
+	// TODO: GnuTLS cannot yet setup p2p connections
+	if (ckn != NULL) {
+		gnutls_session_set_ptr (
+			session,
+			cmd);
+		//TODO:DONE?// Clear various settings... creds, flags, modes? CLI/SRV?
+	} else {
+		E_g2e ("Failed to initialise GnuTLS peer session",
+			gnutls_init (
+				&session,
+				(((cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_CLIENT)? GNUTLS_CLIENT: 0) |
+				 ((cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_SERVER)? GNUTLS_SERVER: 0))
+				));
+		if (gtls_errno == GNUTLS_E_SUCCESS) {
+			got_session = 1;
+			gnutls_session_set_ptr (
+				session,
+				cmd);
+		}
+	}
+	//
+	// Setup client-specific behaviour if needed
 	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_CLIENT) {
+if (!renegotiating) {	//TODO:TEST//
 		//
 		// Setup as a TLS client
 		//
@@ -1649,120 +2172,85 @@ static void *starttls_thread (void *cmd_void) {
 			//TODO:CRASH// srpbits);
 		//
 		// Setup as a TLS client
-		E_g2e ("Failed to initialise GnuTLS client session",
-			gnutls_init (
-				&session,
-				GNUTLS_CLIENT));
-		if (gtls_errno == GNUTLS_E_SUCCESS) {
-			gnutls_session_set_ptr (
-				session,
-				cmd);
-		}
 		//
 		// Setup for potential sending of SNI
-		if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_SEND_SNI) {
+		if ((cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_WITHOUT_SNI) == 0) {
 			char *str = cmd->cmd.pio_data.pioc_starttls.remoteid;
+			int ofs = 0;
 			int len = 0;
 			while (str [len] && (len < 128)) {
+				if (str [len] == '@') {
+					ofs = len + 1;
+				}
 				len++;
 			}
-			if (len == 128) {
-				send_error (cmd, EINVAL, "Remote ID is not set");
-				close (cryptfd);
-				return;
+			// If no usable remoteid was setup, ignore it
+			if ((len + ofs > 0) && (len < 128)) {
+				cmd->cmd.pio_data.pioc_starttls.remoteid [sizeof (cmd->cmd.pio_data.pioc_starttls.remoteid)-1] = '\0';
+				E_g2e ("Client failed to setup SNI",
+					gnutls_server_name_set (
+						session,
+						GNUTLS_NAME_DNS,
+						str + ofs,
+						len - ofs));
 			}
-			cmd->cmd.pio_data.pioc_starttls.remoteid [sizeof (cmd->cmd.pio_data.pioc_starttls.remoteid)-1] = '\0';
-			E_g2e ("Client failed to setup SNI",
-				gnutls_server_name_set (
-					session,
-					GNUTLS_NAME_DNS,
-					str,
-					len));
 		}
+} //TODO:TEST//
 		//
 		// Setup for client credential installation in this session
-		clisrv_creds     = cli_creds;
-		clisrv_credcount = cli_credcount;
-
-	} else if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_SERVER) {
 		//
-		// Setup as a TLS server
-		//
-		E_g2e ("Failed to initialise GnuTLS server session",
-			gnutls_init (
-				&session,
-				GNUTLS_SERVER));
+		// Setup client-specific credentials and priority string
+printf ("DEBUG: Configuring client credentials\n");
+		E_g2e ("Failed to configure GnuTLS as a client",
+			configure_session (cmd,
+				session,
+				anonpost? NULL: cli_creds,
+				anonpost?    0: cli_credcount, 
+				cmd->anonpre & ANONPRE_CLIENT));
+	}
+	//
+	// Setup callback to server-specific behaviour if needed
+	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_SERVER) {
+printf ("DEBUG: Configuring for server credentials callback if %d==0\n", gtls_errno);
+if (!renegotiating) {	//TODO:TEST//
 		if (gtls_errno == GNUTLS_E_SUCCESS) {
-			gnutls_session_set_ptr (session, cmd);
 			gnutls_handshake_set_post_client_hello_function (
 				session,
 				srv_clienthello);
 		}
+} //TODO:TEST//
+		//TODO:TEST// configure_session _if_ not setup as a client (too)
 		//
 		// Setup for server credential installation in this session
-		clisrv_creds     = srv_creds;
-		clisrv_credcount = srv_credcount;
-
-	} else {
 		//
-		// Neither a TLS client nor a TLS server
-		//
-		send_error (cmd, ENOTSUP, "Command not supported");
-		close (cryptfd);
-		return;
-	}
-
-	//
-	// Install the shared credentials for the client or server role
-	for (i=0; i<clisrv_credcount; i++) {
-		E_g2e ("Failed to install credentials into TLS session",
-			gnutls_credentials_set (
-				session,
-				clisrv_creds [i].credtp,
-				clisrv_creds [i].cred  ));
+		// Setup server-specific credentials and priority string
+#if 0
+		if (! (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_CLIENT)) {
+printf ("DEBUG: Configuring server credentials (because it is not a client)\n");
+			E_g2e ("Failed to configure GnuTLS as a server",
+				configure_session (cmd,
+					session,
+					anonpost? NULL: srv_creds,
+					anonpost?    0: srv_credcount, 
+					cmd->anonpre & ANONPRE_SERVER));
+		}
+#endif
 	}
 
 	//
 	// Prefetch local identities that might be used in this session
-	E_g2e ("Failed to fetch local credentials",
-		fetch_local_credentials (cmd));
+	if (!anonpost) {
+		E_g2e ("Failed to fetch local credentials",
+			fetch_local_credentials (cmd));
+	}
 
 	//
-	// Setup the priority string for this session; this avoids future
-	// credential callbacks that ask for something impossible or
-	// undesired.
-	//
-	// Variation factors:
-	//  - starting configuration (can it be empty?)
-	//  - Configured security parameters (database? variable?)
-	//  - CTYPEs, SRP, ANON-or-not --> fill in as + or - characters
-	//TODO// Support for ANON-DH where appropriate
-	if (gtls_errno == GNUTLS_E_SUCCESS) {
-		char priostr [256];
-		snprintf (priostr, sizeof (priostr)-1,
-			"NORMAL:"
-			"%cCTYPE-X.509:"
-			"%cCTYPE-OPENPGP:"
-			"%cSRP:%cSRP-RSA:%cSRP-DSS:"
-			"%cANON-ECDH:%cANON-DH",
-			lidtpsup (cmd, LID_TYPE_X509)		?'+':'-',
-			lidtpsup (cmd, LID_TYPE_PGP)		?'+':'-',
-			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
-			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
-			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
-			0 /* TODO: ANON-DH */			?'+':'-',
-			0 /* TODO: ANON-DH */			?'+':'-');
-		tlog (TLOG_TLS, LOG_DEBUG, "Constructed priority string %s for local ID %s",
-			priostr, cmd->cmd.pio_data.pioc_starttls.localid);
-		E_g2e ("Failed to set GnuTLS priority string",
-			gnutls_priority_set_direct (
-			session,
-			// "NORMAL:-KX-ALL:+SRP:+SRP-RSA:+SRP-DSS",
-			// "NORMAL:+CTYPE-X.509:-CTYPE-OPENPGP:+CTYPE-X.509",
-			// "NORMAL:-CTYPE-X.509:+CTYPE-OPENPGP:-CTYPE-X.509",
-			// "NORMAL:+ANON-ECDH:+ANON-DH",
-			priostr,
-			NULL));
+	// Setup a temporary priority string so handshaking can start
+	if ((cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_CLIENT) == 0) {
+		E_g2e ("Failed to preconfigure server token priority string",
+				gnutls_priority_set (
+					session,
+					priority_normal));
 	}
 
 	//
@@ -1775,6 +2263,9 @@ static void *starttls_thread (void *cmd_void) {
 	// Setup a timeout value as specified in the command, where TLS Pool
 	// defines 0 as default and ~0 as infinite (GnuTLS has 0 as infinite).
 	tout = cmd->cmd.pio_data.pioc_starttls.timeout;
+if (renegotiating) {
+; // Do not set timeout
+} else
 	if (tout == TLSPOOL_TIMEOUT_DEFAULT) {
 		gnutls_handshake_set_timeout (session, GNUTLS_DEFAULT_HANDSHAKE_TIMEOUT);
 	} else if (tout == TLSPOOL_TIMEOUT_INFINITE) {
@@ -1786,26 +2277,168 @@ static void *starttls_thread (void *cmd_void) {
 	//
 	// Now setup for the GnuTLS handshake
 	//
+if (renegotiating) {
+; // Do not setup cryptfd
+} else
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
 		gnutls_transport_set_int (session, cryptfd);
 	}
 	if (gtls_errno != GNUTLS_E_SUCCESS) {
 		tlog (TLOG_TLS, LOG_ERR, "Failed to prepare for TLS: %s", gnutls_strerror (gtls_errno));
 		if (cmd->session_errno) {
-			send_error (cmd, cmd->session_errno, error_getstring ());
+			send_error (replycmd, cmd->session_errno, error_getstring ());
 		} else {
-			send_error (cmd, EIO, "Failed to prepare for TLS");
+			send_error (replycmd, EIO, "Failed to prepare for TLS");
+		}
+		if (got_session) {
+fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
+			gnutls_deinit (session);
+			got_session = 0;
 		}
 		close (cryptfd);
+		if (plainfd >= 0) {
+			close (plainfd);
+			plainfd = -1;
+		}
+fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
+		if (ckn != NULL) {	/* TODO: CHECK NEEDED? */
+			if (ctlkey_unregister (ckn->regent.ctlkey)) {
+				free (ckn);
+				ckn = NULL;
+			}
+		}
+		manage_txn_rollback (&cmd->txn);
+		assert (pthread_detach (pthread_self ()) == 0);
 		return;
 	}
 	tlog (TLOG_UNIXSOCK | TLOG_TLS, LOG_DEBUG, "TLS handshake started over %d", cryptfd);
 	do {
+		//
+		// Take a rehandshaking step forward.
+		//
 		gtls_errno = gnutls_handshake (session);
-        } while ((gtls_errno < 0) && (gnutls_error_is_fatal (gtls_errno) == 0));
+		//
+		// When data is sent before completing
+		// the rehandshake, then it's something
+		// harmless, given the criteria for the
+		// anonpre_registry.  We pass it on and
+		// don't worry about it.  We do report
+		// it though!
+		//
+		// Note: Applications should be willing
+		// to buffer or process such early data
+		// before the handshake is over or else
+		// the handshake will bail out in error.
+		//
+		if (gtls_errno == GNUTLS_E_GOT_APPLICATION_DATA) {
+			if (my_maxpreauth <= 0) {
+				tlog (TLOG_COPYCAT, LOG_ERR, "Received unwanted early data before authentication is complete");
+				break; // Terminate the handshake
+			} else if (preauth == NULL) {
+				preauth = malloc (my_maxpreauth);
+				if (preauth == NULL) {
+					gtls_errno = GNUTLS_E_MEMORY_ERROR;
+					break; // Terminate the handshake
+				}
+			}
+		}
+		if (gtls_errno == GNUTLS_E_GOT_APPLICATION_DATA) {
+			if (preauthlen >= my_maxpreauth) {
+				tlog (TLOG_COPYCAT, LOG_ERR, "Received more early data than willing to receive (%d bytes)", my_maxpreauth);
+				break; // Terminate the handshake
+			}
+		}
+		if (gtls_errno == GNUTLS_E_GOT_APPLICATION_DATA) {
+			ssize_t sz;
+			sz = gnutls_record_recv (session, preauth + preauthlen, my_maxpreauth - preauthlen);
+			tlog (TLOG_COPYCAT, LOG_DEBUG, "Received %d remote bytes (or error if <0) from %d during anonymous precursor\n", (int) sz, cryptfd);
+			if (sz > 0) {
+				preauthlen += sz;
+				gtls_errno = GNUTLS_E_SUCCESS;
+			} else {
+				gtls_errno = sz; // It's actually an error code
+			}
+		}
+	} while ((gtls_errno < 0) &&
+		//DROPPED// (gtls_errno != GNUTLS_E_GOT_APPLICATION_DATA) &&
+		//DROPPED// (gtls_errno != GNUTLS_E_WARNING_ALERT_RECEIVED) &&
+		(gnutls_error_is_fatal (gtls_errno) == 0));
+	if (gtls_errno == 0) {
+		const gnutls_datum_t *certs;
+		unsigned int num_certs;
+		got_remoteid = 0;
+		switch (gnutls_auth_get_type (session)) { // Peer's cred type
+		case GNUTLS_CRD_CERTIFICATE:
+			certs = gnutls_certificate_get_peers (session, &num_certs);
+			if ((certs != NULL) && (num_certs >= 1)) {
+				got_remoteid = 1;
+			}
+			// "certs" points into GnuTLS' internal data structures
+			break;
+		case GNUTLS_CRD_PSK:
+			// Difficult... what did the history say about this?
+			got_remoteid = 0;
+			break;
+		case GNUTLS_CRD_SRP:
+			// Got a credential, validation follows later on
+			//TODO// SRP does not really auth the server
+			got_remoteid = 1;
+			break;
+		case GNUTLS_CRD_ANON:
+			// Did not get a credential, perhaps due to anonpre
+			got_remoteid = 0;
+			break;
+		case GNUTLS_CRD_IA:
+			// Inner Application extension is no true credential
+			// Should we compare the client-requested service?
+			// Should we renegotiate into the ALPN protocol?
+			got_remoteid = 0;
+			break;
+		default:
+			// Unknown creds cautiously considered unauthentitcated
+			got_remoteid = 0;
+			break;
+		}
+		//
+		// Now recognise and handle the Anonymous Precursor
+		if (((cmd->anonpre & ANONPRE_EITHER) != 0)
+					&& want_remoteid && !got_remoteid) {
+			assert (anonpost == 0);
+			// Disable ANON-protocols but keep creds from before
+			//TODO:ELSEWHERE// tlog (TLOG_TLS, LOG_DEBUG, "Reconfiguring TLS over %d without Anonymous Precursor\n", cryptfd);
+			//TODO:ELSEWHERE// E_g2e ("Failed to reconfigure GnuTLS without anonymous precursor",
+				//TODO:ELSEWHERE// configure_session (cmd,
+					//TODO:ELSEWHERE// session,
+					//TODO:ELSEWHERE// NULL, 0, 
+					//TODO:ELSEWHERE// 0));
+			// We do not want to use ANON-DH if the flag
+			// ANONPRE_EXTEND_MASTER_SECRET is set for the protocol
+			// but the remote peer does not support it.  Only if
+			// this problem cannot possibly occur, permit
+			// my_maxpreauth > 0 for early data acceptance.
+			my_maxpreauth = 0;
+			if (cmd->anonpre & ANONPRE_EXTEND_MASTER_SECRET) {
+#if GNUTLS_VERSION_NUMBER >= 0x030400
+				gnutls_ext_priv_data_t ext;
+				if (!gnutls_ext_get_data (session, 23, &ext)) {
+					my_maxpreauth = maxpreauth;
+				}
+#endif
+			} else {
+				my_maxpreauth = maxpreauth;
+			}
+			if (gtls_errno == 0) {
+				tlog (TLOG_UNIXSOCK | TLOG_TLS, LOG_DEBUG, "TLS handshake continued over %d after anonymous precursor", cryptfd);
+				renegotiating = 1; // (de)selects steps
+				anonpost = 1;      // (de)selects steps
+				goto renegotiate;
+			}
+		}
+	}
 	if ((gtls_errno == GNUTLS_E_SUCCESS) && cmd->session_errno) {
 		gtls_errno = GNUTLS_E_USER_ERROR;
 	}
+	taking_over = 0;
 
 	//
 	// Cleanup any prefetched identities
@@ -1815,6 +2448,15 @@ static void *starttls_thread (void *cmd_void) {
 		}
 	}
 	bzero (cmd->lids, sizeof (cmd->lids));
+
+#if 0
+/* This is not proper.  gnutls_certificate_set_key() suggests that these are
+ * automatically cleaned up, and although this is not repeated in
+ * gnutls_certificate_set_retrieve_function2() it is likely to be related.
+ * Plus, renegotiation with this code in place bogged down on failed pcerts;
+ * they were detected in _gnutls_selected_cert_supported_kx() but their
+ * key exchange algorithm was never found.
+ */
 	if (NULL != (void *) cmd->session_privatekey) {
 		gnutls_privkey_deinit ((void *) cmd->session_privatekey);
 		cmd->session_privatekey = (intptr_t) (void *) NULL;
@@ -1824,20 +2466,20 @@ static void *starttls_thread (void *cmd_void) {
 		free ((void *) cmd->session_certificate);
 		cmd->session_certificate = (intptr_t) (void *) NULL;
 	}
+#endif
 
 	//
-	// From here, assume nothing about the cmd structure; as part of the
-	// handshake, it may have passed through the client's control, as
+	// From here, assume nothing about the cmd->cmd structure; as part of
+	// the handshake, it may have passed through the client's control, as
 	// part of a callback.  So, reinitialise the entire return structure.
 	//TODO// Or backup the (struct pioc_starttls) before handshaking
-	cmd->cmd.pio_cmd = orig_cmd;
+	cmd->cmd.pio_cmd = orig_cmdcode;
 	cmd->cmd.pio_data.pioc_starttls.localid  [0] =
 	cmd->cmd.pio_data.pioc_starttls.remoteid [0] = 0;
 
 	//
 	// Respond to positive or negative outcome of the handshake
 	if (gtls_errno != GNUTLS_E_SUCCESS) {
-		gnutls_deinit (session);
 		tlog (TLOG_TLS, LOG_ERR, "TLS handshake failed: %s", gnutls_strerror (gtls_errno));
 		if (cmd->session_errno) {
 			char *errstr;
@@ -1846,12 +2488,32 @@ static void *starttls_thread (void *cmd_void) {
 			if (errstr == NULL) {
 				errstr = "TLS handshake failed";
 			}
-			send_error (cmd, cmd->session_errno, errstr);
+			send_error (replycmd, cmd->session_errno, errstr);
 		} else {
-			send_error (cmd, EPERM, "TLS handshake failed");
+			send_error (replycmd, EPERM, "TLS handshake failed");
+		}
+		if (preauth) {
+			free (preauth);
+		}
+		if (got_session) {
+fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
+			gnutls_deinit (session);
+			got_session = 0;
+		}
+		close (cryptfd);
+		if (plainfd >= 0) {
+			close (plainfd);
+			plainfd = -1;
+		}
+fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
+		if (ckn != NULL) {	/* TODO: CHECK NEEDED? */
+			if (ctlkey_unregister (ckn->regent.ctlkey)) {
+				free (ckn);
+				ckn = NULL;
+			}
 		}
 		manage_txn_rollback (&cmd->txn);
-		close (cryptfd);
+		assert (pthread_detach (pthread_self ()) == 0);
 		return;
         } else {
 		tlog (TLOG_UNIXSOCK | TLOG_TLS, LOG_INFO, "TLS handshake succeeded over %d", cryptfd);
@@ -1860,58 +2522,166 @@ static void *starttls_thread (void *cmd_void) {
 
 	//
 	// Request the plaintext file descriptor with a callback
-	uint32_t oldcmd = cmd->cmd.pio_cmd;
-	struct command *resp;
-	cmd->cmd.pio_cmd = PIOC_PLAINTEXT_CONNECT_V2;
-	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response with PIOC_PLAINTEXT_CONNECT_V2");
-	resp = send_callback_and_await_response (cmd, 0);
-	assert (resp != NULL);	// No timeout, should be non-NULL
-	if (resp->cmd.pio_cmd != PIOC_PLAINTEXT_CONNECT_V2) {
-		tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has unexpected command code");
-		send_error (cmd, EINVAL, "Callback response has bad command code");
-		manage_txn_rollback (&cmd->txn);
-		close (cryptfd);
-		close (plainfd);
-		return;
+	if (plainfd < 0) {
+		uint32_t oldcmd = cmd->cmd.pio_cmd;
+		struct command *resp;
+		cmd->cmd.pio_cmd = PIOC_PLAINTEXT_CONNECT_V2;
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response with PIOC_PLAINTEXT_CONNECT_V2");
+		resp = send_callback_and_await_response (replycmd, 0);
+		assert (resp != NULL);	// No timeout, should be non-NULL
+		if (resp->cmd.pio_cmd != PIOC_PLAINTEXT_CONNECT_V2) {
+			tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has unexpected command code");
+			send_error (replycmd, EINVAL, "Callback response has bad command code");
+			if (preauth) {
+				free (preauth);
+			}
+			if (got_session) {
+fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
+				gnutls_deinit (session);
+				got_session = 0;
+			}
+			close (cryptfd);
+fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
+			if (ckn) {	/* TODO: CHECK NEEDED? PRACTICE=>YES */
+				if (ctlkey_unregister (ckn->regent.ctlkey)) {
+					free (ckn);
+					ckn = NULL;
+				}
+			}
+			manage_txn_rollback (&cmd->txn);
+			assert (pthread_detach (pthread_self ()) == 0);
+			return;
+		}
+		cmd->cmd.pio_cmd = oldcmd;
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that set plainfd:=%d for lid==\"%s\" and rid==\"%s\"", cmd->passfd, cmd->cmd.pio_data.pioc_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid);
+		plainfd = resp->passfd;
+		resp->passfd = -1;
 	}
-	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that set plainfd:=%d for lid==\"%s\" and rid==\"%s\"", cmd->passfd, cmd->cmd.pio_data.pioc_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid);
-	plainfd = resp->passfd;
-	resp->passfd = -1;
 	if (plainfd < 0) {
 		tlog (TLOG_UNIXSOCK, LOG_ERR, "No plaintext file descriptor supplied to TLS Pool");
-		send_error (cmd, EINVAL, "No plaintext file descriptor supplied to TLS Pool");
-		manage_txn_rollback (&cmd->txn);
+		send_error (replycmd, EINVAL, "No plaintext file descriptor supplied to TLS Pool");
+		if (preauth) {
+			free (preauth);
+		}
+		if (got_session) {
+fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
+			gnutls_deinit (session);
+			got_session = 0;
+		}
 		close (cryptfd);
+fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
+		if (ckn != NULL) {	/* TODO: CHECK NEEDED? */
+			if (ctlkey_unregister (ckn->regent.ctlkey)) {
+				free (ckn);
+				ckn = NULL;
+			}
+		}
+		manage_txn_rollback (&cmd->txn);
+		assert (pthread_detach (pthread_self ()) == 0);
 		return;
 	}
-	cmd->cmd.pio_cmd = oldcmd;
-	//DEFERRED// send_command (cmd, -1);		// app sent plainfd to us
+	//DEFERRED// send_command (replycmd, -1);		// app sent plainfd to us
 
 	//
 	// Copy TLS records until the connection is closed
 	manage_txn_commit (&cmd->txn);
-	ckn = (struct ctlkeynode_tls *) malloc (sizeof (struct ctlkeynode_tls));
+	if (!renegotiating) {
+		ckn = (struct ctlkeynode_tls *) malloc (sizeof (struct ctlkeynode_tls));
+	}
 	if (ckn == NULL) {
-		send_error (cmd, ENOMEM, "Out of memory allocating control key structure");
+		send_error (replycmd, ENOMEM, "Out of memory allocating control key structure");
 	} else {
-		int detach = (orig_piocdata.flags & PIOF_STARTTLS_DETACH) != 0;
+		int detach = (orig_starttls.flags & PIOF_STARTTLS_DETACH) != 0;
 		ckn->session = session;
+		ckn->owner = pthread_self ();
+		ckn->cryptfd = cryptfd;
+		ckn->plainfd = plainfd;
 //DEBUG// fprintf (stderr, "Registering control key\n");
-		if (ctlkey_register (orig_piocdata.ctlkey, &ckn->regent, security_tls, detach? -1: cmd->clientfd) == 0) {
-			send_command (cmd, -1);		// app sent plainfd to us
-			copycat (plainfd, cryptfd, session, detach? -1: clientfd);
+		if (renegotiating || (ctlkey_register (orig_starttls.ctlkey, &ckn->regent, security_tls, detach? -1: cmd->clientfd, forked) == 0)) {
+			int copied = GNUTLS_E_SUCCESS;
+			send_command (replycmd, -1);		// app sent plainfd to us
+			if (preauth) {
+
+				//
+				// Check on extended master secret if desired
+				if (cmd->anonpre & ANONPRE_EXTEND_MASTER_SECRET) {
+#if GNUTLS_VERSION_NUMBER >= 0x030400
+					gnutls_ext_priv_data_t ext;
+					if (!gnutls_ext_get_data (session, 23, &ext)) {
+						cmd->anonpre &= ~ANONPRE_EXTEND_MASTER_SECRET;
+					}
+#endif
+				}
+				if (cmd->anonpre & ANONPRE_EXTEND_MASTER_SECRET) {
+					tlog (TLOG_COPYCAT, LOG_ERR, "Received %d remote bytes from anonymous precursor but lacking %s-required authentication through extended master secret", orig_starttls.service);
+					gtls_errno = GNUTLS_E_LARGE_PACKET;
+					copied = 0;
+
+				} else if (write (plainfd, preauth, preauthlen) == preauthlen) {
+					tlog (TLOG_COPYCAT, LOG_DEBUG, "Passed on %d remote bytes from anonymous precursor to %d\n", preauthlen, plainfd);
+					free (preauth);
+					preauth = NULL;
+					copied = copycat (plainfd, cryptfd, session, detach? -1: cmd->clientfd);
+				} else {
+					tlog (TLOG_COPYCAT, LOG_DEBUG, "Failed to pass on %d remote bytes from anonymous precursor to %d\n", preauthlen, plainfd);
+				}
+			} else {
+				copied = copycat (plainfd, cryptfd, session, detach? -1: cmd->clientfd);
+			}
+			// Renegotiate if copycat asked us to
+			if (copied == GNUTLS_E_REHANDSHAKE) {
+				// Yes, goto is a dirty technique.  On the
+				// other hand, so is forcing unstructured
+				// code flows into a make-belief structure
+				// that needs changing over and over again.
+				// I fear goto is the most reasonable way
+				// of handling this rather obtuse structure
+				// of renegotiation of security in TLS :(
+				//TODO// Ensure secure renegotiation!!!
+				renegotiating = 1;
+				replycmd = NULL; // Bypass all send_XXX()
+				memcpy (&cmd_copy, cmd, sizeof (cmd_copy));
+				cmd = &cmd_copy;
+				memcpy (cmd->cmd.pio_data.pioc_starttls.localid, orig_starttls.localid, sizeof (cmd->cmd.pio_data.pioc_starttls.localid));
+				memcpy (cmd->cmd.pio_data.pioc_starttls.remoteid, orig_starttls.remoteid, sizeof (cmd->cmd.pio_data.pioc_starttls.remoteid));
+				cmd->cmd.pio_data.pioc_starttls.flags = orig_starttls.flags & ~PIOF_STARTTLS_LOCALID_CHECK;
+				// Disabling the flag causing LOCALID_CHECK
+				// ...and plainfd >= 0 so no PLAINTEXT_CONNECT
+				// ...so there will be no callbacks to cmd
+printf ("DEBUG: Goto renegotiate with cmd.lid = \"%s\" and orig_cmd.lid = \"%s\" and cmd.rid = \"%s\" and orig_cmd.rid = \"%s\" and cmd.flags = 0x%x and orig_cmd.flags = 0x%x\n", cmd->cmd.pio_data.pioc_starttls.localid, orig_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid, orig_starttls.remoteid, cmd->cmd.pio_data.pioc_starttls.flags, orig_starttls.flags);
+				goto renegotiate;
+			}
 //DEBUG// fprintf (stderr, "Unregistering control key\n");
-			if (ctlkey_unregister (orig_piocdata.ctlkey)) {
+			// Unregister by ctlkey, which should always succeed
+			// if the TLS connection hadn't been closed down yet;
+			// and if it does, the memory can be freed.  Note that
+			// the ctlkey is not taken from the ckn, which may
+			// already have been freed if the ctlfd was closed
+			// and the connection could not continue detached
+			// (such as after forking it).
+fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
+			if (ctlkey_unregister (orig_starttls.ctlkey)) {
 				free (ckn);
 			}
 			ckn = NULL;
 //DEBUG// fprintf (stderr, "Unregistered  control key\n");
 		} else {
-			send_error (cmd, ENOENT, "Failed to register control key for TLS connection");
+			send_error (replycmd, ENOENT, "Failed to register control key for TLS connection");
 		}
+	}
+	if (preauth) {
+		free (preauth);
+		preauth = NULL;
 	}
 	close (plainfd);
 	close (cryptfd);
+	if (got_session) {
+fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
+		gnutls_deinit (session);
+		got_session = 0;
+	}
+	assert (pthread_detach (pthread_self ()) == 0);
+	return;
 }
 
 
@@ -1928,12 +2698,15 @@ void starttls (struct command *cmd) {
 		send_error (cmd, ESRCH, "STARTTLS thread refused");
 		return;
 	}
+//TODO:TEST// Thread detaches itself before terminating w/o followup
+/*
 	errno = pthread_detach (cmd->handler);
 	if (errno != 0) {
 		pthread_cancel (cmd->handler);
 		send_error (cmd, ESRCH, "STARTTLS thread detachment refused");
 		return;
 	}
+*/
 }
 
 

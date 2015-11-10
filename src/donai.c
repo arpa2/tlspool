@@ -158,23 +158,20 @@ db_error dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_loca
 			// Got the selector pattern!
 			at_root = (remotesel->domlen == 1) && (*remotesel->domain == '.');
 			// Return immediately, IF no need for lidentry callbacks
-			if (db_errno == 0) {
-				if (lidentry_database_mayskip (levels_up, at_root)) {
-					// Simply set & return the first localid
-					db_errno = crs_localid->get (
-							crs_localid,
-							keydata,
-							creddata,
-							DB_SET);
-				} else {
-					// Use LIDENTRY's DB callbacks, so fall through
-					lid_callback = 1;
-				}
-			}
 			if (db_errno != 0) {
 				return db_errno;
+			}
+			if (lidentry_database_mayskip (levels_up, at_root)) {
+				// Simply set & return the first localid
+				db_errno = crs_localid->get (
+						crs_localid,
+						keydata,
+						creddata,
+						DB_SET);
+				return db_errno;
 			} else {
-				break;
+				// Use LIDENTRY's DB callbacks, so fall through
+				lid_callback = 1;
 			}
 		} else if (fnd != DB_NOTFOUND) {
 			E_d2e ("Failed while searching with remote ID selector", fnd);
@@ -232,6 +229,20 @@ printf ("DEBUG: Generated  LID-entry menu for %s.\n", remoteid);
 		// The inquiry returned an error; indicate that no entry
 		// was found and, by sheer necessity, cause the downfall of
 		// anything that requires a localid value.
+		return DB_NOTFOUND;
+	}
+	//
+	// PIOF_LIDENTRY_NEW is unimplemented, and immediately reports
+	// what it may always fall back to -- DB_NOTFOUND
+	if (lidcbflags & PIOF_LIDENTRY_NEW) {
+		tlog (TLOG_UNIXSOCK, LOG_ERR, "Request to wait for new credential; not implemented so falling back to reporting DB_NOTFOUND");
+		return DB_NOTFOUND;
+	}
+	//
+	// PIOF_LIDENTRY_ONTHEFLY is unimplemented, and reports what it
+	// does in lieau of configured root key / cert -- DB_NOTFOUND
+	if (lidcbflags & PIOF_LIDENTRY_ONTHEFLY) {
+		tlog (TLOG_UNIXSOCK, LOG_ERR, "Request to generate certificate on the fly; not implemented so falling back to to reporting DB_NOTFOUND");
 		return DB_NOTFOUND;
 	}
 	//

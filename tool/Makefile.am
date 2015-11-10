@@ -1,6 +1,6 @@
 AM_CFLAGS = -I$(srcdir)/../include -pthread
 AM_LDFLAGS = -L$(srcdir)/../lib
-bin_PROGRAMS = tlstunnel testcli testsrv lidsel
+bin_PROGRAMS = tlstunnel testcli testsrv testpeer lidsel
 dist_bin_SCRIPTS = set_disclose set_localid get_localid
 tlstunnel_SOURCES = tlstunnel.c tlstunnel-chat.c
 tlstunnel_LDADD = ../lib/libtlspool.la
@@ -8,5 +8,7 @@ testcli_SOURCES = testcli.c
 testcli_LDADD = ../lib/libtlspool.la
 testsrv_SOURCES = testsrv.c
 testsrv_LDADD = ../lib/libtlspool.la
+testpeer_SOURCES = testpeer.c
+testpeer_LDADD = ../lib/libtlspool.la
 lidsel_SOURCES = lidsel.c
 lidsel_LDADD = ../lib/libtlspool.la

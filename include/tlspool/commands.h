@@ -8,14 +8,14 @@
 #include <stdint.h>
 
 
-#define TLSPOOL_IDENTITY_TMP	"20150527tlspool@tmp.vanrein.org"
+#define TLSPOOL_IDENTITY_TMP	"20150824tlspool@tmp.vanrein.org"
 
 
 /****************************** STRUCTURES *****************************/
 
 
 #define TLSPOOL_CTLKEYLEN 16
-#define TLSPOOL_SERVICELEN 32
+#define TLSPOOL_SERVICELEN 16
 #define TLSPOOL_PRNGBUFLEN 350
 #define TLSPOOL_TIMEOUT_DEFAULT 0
 #define TLSPOOL_TIMEOUT_INFINITE (~(uint32_t)0)
@@ -207,9 +207,6 @@ typedef struct pioc_starttls starttls_t;
 #define PIOC_STARTTLS_LOCALID_V2		0x00000028
 
 
-/* TODO: Possibly support renegotiation, like for explicit authn */
-
-
 /* The PIN entry command.  The data stored in tlscmd_pinentry determines
  * what happens exactly.  When sent to the TLS Pool it can provide a
  * non-empty PIN, which only makes sense in response to a PIOC_PINENTRY_V1
@@ -366,66 +363,24 @@ typedef struct pioc_starttls starttls_t;
 #define PIOF_STARTTLS_REMOTEROLE_PEER		0x0000000c
 
 
-#if 0 /* WILL NOT IMPLEMENT -- WILL REMOVE SOON */
-
-/* PIOF_STARTTLS_REQUIRE_DNSSEC tells the TLS Pool that DNSSEC must be
- * used for all information in DNS; so, a self-acclaimed I-can-do-without
- * domain is no longer permitted to connect over TLS.  The TLS Pool may
- * rely on an external resolver to properly set the AD bits.
- */
-#define PIOF_STARTTLS_REQUIRE_DNSSEC		0x00000010
-
-
-/* PIOF_STARTTLS_TIGHTEN_LDAP tells the TLS Pool that LDAP connections must
- * be secured through TLS.  In addition, the certificate used by LDAP will
- * be verified as is normally done for domain certificates.  Normally, that
- * means it must be acknowledged in a TLSA record.  Users and domains from
- * LDAP servers that do not live up to this are no longer trusted as peers
- * on grounds of their occurrence in LDAP alone.
- */
-#define PIOF_STARTTLS_REQUIRE_LDAP_CERT		0x00000020
-#define PIOF_STARTTLS_REQUIRE_LDAP_DANE		0x00000040
-#define PIOF_STARTTLS_REQUIRE_LDAP_SECURITY	0x00000060
-
-
-/* PIOF_STARTTLS_SKIP_EXT_AUTHN tells the TLS Pool that no external
- * authentication is needed on top of the normal operations of the
- * TLS Pool.  Usually, if an external authentication source is configured,
- * it will be RADIUS.  If it is not even configured, then this flag is of
- * no consequence.
- */
-#define PIOF_STARTTLS_SKIP_EXT_AUTHN		0x00000080
-
-
-/* PIOF_STARTTLS_SKIP_EXT_AUTHZ tells the TLS Pool that no external
- * authorization is needed on top of the normal operations of the
- * TLS Pool.  Usually, if an external authorization source is configured,
- * it will be RADIUS.  If it is not even configured, then this flag is of
- * no consequence.
- */
-#define PIOF_STARTTLS_BYPASS_EXT_AUTHZ		0x00000100
-
-#endif
-
-
 /* PIOF_STARTTLS_DTLS requests to setup DTLS instead of TLS.
  */
 #define PIOF_STARTTLS_DTLS			0x00000100
 
 
-/* PIOF_STARTTLS_SEND_SNI can be used for client-side STARTTLS as an
- * indication that the remotid is present and its domain should be
- * passed over to the other side as a Server Name Indication.  This
- * is not a common structure for all protocols, but it is harmless
+/* PIOF_STARTTLS_WITHOUT_SNI can be used for client-side STARTTLS as an
+ * indication that if the remotid is present then its domain should not
+ * be passed over to the other side as a Server Name Indication.  This
+ * is not a common structure for all protocols, but is sent by default
  * because it is an indicative TLS option.  Note that it is useful
- * of xxxxs: protocols, which immediately start TLS, but usually not
+ * for xxxxs: protocols, which immediately start TLS, but usually not
  * needed for protocols that issue a STARTTLS command during a normal
  * exchange.  Anyhow, this is application-determined. 
  * If the remoteid contains a user@ part, it is not sent as part of
- * the SNI information, because that would violate the format.  It
+ * the SNI information, because that would violate the format.  That
  * is a missed opportunity though.
  */
-#define PIOF_STARTTLS_SEND_SNI			0x00000200
+#define PIOF_STARTTLS_WITHOUT_SNI		0x00000200
 
 
 /* PIOF_STARTTLS_IGNORE_CACHES requires the TLS Pool to perform the
@@ -447,9 +402,12 @@ typedef struct pioc_starttls starttls_t;
  * to authenticate with, and should still be able to access the service
  * over TLS.  It is also useful to permit anonymous TLS connections to
  * remote clients or servers if both sides agree to that.
+ *
  * Note that a bidirectionally unauthenticated TLS connection is not
- * protected from man in the middle attacks, although it does warrant
- * against passive observers.
+ * protected from man in the middle attacks, although its encryption
+ * may protect against passive observers.
+ *
+ * This flag is overridden by PIOF_STARTTLS_IGNORE_REMOTEID.
  */
 #define PIOF_STARTTLS_REQUEST_REMOTEID		0x00000800
 
@@ -460,9 +418,12 @@ typedef struct pioc_starttls starttls_t;
  * remote identity in any useful way.  It is also useful to permit
  * anonymous TLS connections to remote clients or servers if both sides
  * agree to that.
+ *
  * Note that a bidirectionally unauthenticated TLS connection is not
  * protected from man in the middle attacks, although it does warrant
  * against passive observers.
+ *
+ * This flag overrides PIOF_STARTTLS_REQUEST_REMOTEID.
  */
 #define PIOF_STARTTLS_IGNORE_REMOTEID		0x00001000
 
@@ -506,6 +467,19 @@ typedef struct pioc_starttls starttls_t;
 #define PIOF_STARTTLS_FORK			0x00004000
 
 
+/* PIOF_STARTTLS_DOMAIN_REPRESENTS_USER indicates that the remote identity
+ * need not be the expected user@domain, but that the domain is acceptable
+ * as well.  This is a common flag on protocols such as SMTP, where a
+ * server represents all users under its domain, and authenticates as the
+ * domain instead of as the user.  Note that the flag applies equally well
+ * to clients as it does to servers.  If an application does not supply
+ * this flag, it must supply any remote_id field for a STARTTLS exchange in
+ * the exact format as it is supported by the server.  The returned remote_id
+ * will always be the exact identity as provided by the server.
+ */
+#define PIOF_STARTTLS_DOMAIN_REPRESENTS_USER	0x00008000
+
+
 /* PIOF_STARTTLS_LOCALID_CHECK requests that a local identity is provided
  * to the application before it is accepted; this mechanism allows the
  * application to check such things as its list of virtual host names, and
@@ -515,6 +489,16 @@ typedef struct pioc_starttls starttls_t;
  * with possible extensions by a registered LIDENTRY extension.
  */
 #define PIOF_STARTTLS_LOCALID_CHECK		0x00010000
+
+
+/* PIOF_STARTTLS_RENEGOTIATE takes a previously agreed TLS connection and
+ * renegotiates identities as specified in this STARTTLS request.  The
+ * ctlkey field indicates an attached TLS connection that is to be
+ * renegotiated; this field will not be modified in the course of this
+ * run of the STARTTLS command.
+ */
+#define PIOF_STARTTLS_RENEGOTIATE		0x00020000
+
 
 
 /*************************** PIOF_LIDENTRY_xxx FLAGS **************************/
@@ -639,8 +623,9 @@ typedef struct pioc_starttls starttls_t;
  * identities embedded in an infrastructure.
  *
  * TODO: This is unimplemented behaviour; the flag is merely allocated.
+ * The result of using this is currently immediate return of DB_NOTFOUND.
  */
-// #define PIOF_LIDENTRY_NEW			0x00100000
+#define PIOF_LIDENTRY_NEW			0x00100000
 
 
 /* PIOF_LIDENTRY_ONTHEFLY indicates in a response to callback that the selected
@@ -663,8 +648,10 @@ typedef struct pioc_starttls starttls_t;
  * such as off-the-shelve browsers that require a HTTPS proxy.
  *
  * TODO: This is unimplemented behaviour; the flag is merely allocated.
+ * For now, the response is the same as in lieu of configuration of a
+ * root key and cert, namely to return DB_NOTFOUND.
  */
-// #define PIOF_LIDENTRY_ONTHEFLY		0x00300000
+#define PIOF_LIDENTRY_ONTHEFLY			0x00200000
 
 
 #endif //TLSPOOL_COMMANDS_H

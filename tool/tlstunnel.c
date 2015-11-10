@@ -565,7 +565,7 @@ int main (int argc, char *argv []) {
 	}
 	tlsdata.flags |= (sctpdtls? PIOF_STARTTLS_DTLS: 0);	//TODO// Later
 	if (role == 'c') {
-		tlsdata.flags |= PIOF_STARTTLS_SEND_SNI;
+		//DO-SEND-SNI// tlsdata.flags |= PIOF_STARTTLS_WITHOUT_SNI;
 	}
 	if (tlsfork) {
 		tlsdata.flags |= PIOF_STARTTLS_FORK;

@@ -308,6 +308,9 @@ static void *master_thread (void *path) {
 			//NOT-USED// mh.msg_control = anc;
 			//NOT-USED// mh.msg_controllen = sizeof (anc);
 			retval = recvmsg (poolfd, &mh, MSG_NOSIGNAL);
+			if ((retval == -1) && (errno = EINTR)) {
+				continue;	// Badly masked user signal
+			}
 			if (retval == 0) {
 				errno = EPIPE;
 				retval = -1;
@@ -431,6 +434,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 	struct cmsghdr *cmsg;
 	struct msghdr mh = { 0 };
 	int processing;
+	int renegotiate = 0 != (tlsdata->flags & PIOF_STARTTLS_RENEGOTIATE);
 
 	/* Prepare command structure */
 	poolfd = tlspool_socket (NULL);
@@ -462,16 +466,18 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 #  error "Failure on assumption of 16 bytes per ctlkey"
 #endif
 
-	assert (pthread_mutex_lock (&prng_lock) == 0);
-	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 0] = random ();
-	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 2] = random ();
-	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 4] = random ();
-	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 6] = random ();
-	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 8] = random ();
-	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [10] = random ();
-	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [12] = random ();
-	* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [14] = random ();
-	pthread_mutex_unlock (&prng_lock);
+	if (!renegotiate) {
+		assert (pthread_mutex_lock (&prng_lock) == 0);
+		* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 0] = random ();
+		* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 2] = random ();
+		* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 4] = random ();
+		* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 6] = random ();
+		* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 8] = random ();
+		* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [10] = random ();
+		* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [12] = random ();
+		* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [14] = random ();
+		pthread_mutex_unlock (&prng_lock);
+	}
 // printf ("DEBUG: ctlkey =");
 // {int i; for (i=0;i<16;i++) printf (" %02x", cmd.pio_data.pioc_starttls.ctlkey [i]);}
 // printf ("\n");
@@ -481,13 +487,15 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 	iov.iov_len = sizeof (cmd);
 	mh.msg_iov = &iov;
 	mh.msg_iovlen = 1;
-	mh.msg_control = anc;
-	mh.msg_controllen = sizeof (anc);
-	cmsg = CMSG_FIRSTHDR (&mh);
-	cmsg->cmsg_level = SOL_SOCKET;
-	cmsg->cmsg_type = SCM_RIGHTS;
-	* (int *) CMSG_DATA (cmsg) = cryptfd;	/* cannot close it yet */
-	cmsg->cmsg_len = CMSG_LEN (sizeof (int));
+	if (!renegotiate) {
+		mh.msg_control = anc;
+		mh.msg_controllen = sizeof (anc);
+		cmsg = CMSG_FIRSTHDR (&mh);
+		cmsg->cmsg_level = SOL_SOCKET;
+		cmsg->cmsg_type = SCM_RIGHTS;
+		* (int *) CMSG_DATA (cmsg) = cryptfd;	/* cannot close it yet */
+		cmsg->cmsg_len = CMSG_LEN (sizeof (int));
+	}
 	if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
 		// Let SIGPIPE be reported as EPIPE
 		close (cryptfd);

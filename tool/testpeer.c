@@ -1,4 +1,4 @@
-/* tlspool/testcli.c -- Exchange plaintext stdio over the network */
+/* tlspool/testpeer.c -- Exchange plaintext stdio over the network */
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -15,12 +15,14 @@
 
 
 static starttls_t tlsdata_cli = {
-	.flags =  PIOF_STARTTLS_LOCALROLE_CLIENT
-		| PIOF_STARTTLS_REMOTEROLE_SERVER,
+	.flags =  PIOF_STARTTLS_LOCALROLE_PEER
+		| PIOF_STARTTLS_REMOTEROLE_PEER,
 	.local = 0,
 	.ipproto = IPPROTO_TCP,
-	.localid = "testcli@tlspool.arpa2.lab",
-	.remoteid = "testsrv@tlspool.arpa2.lab",
+	.localid = "",
+	.remoteid = "",
+	// .localid = "testcli@tlspool.arpa2.lab",
+	// .remoteid = "testsrv@tlspool.arpa2.lab",
 	.service = "generic_anonpre",
 };
 
@@ -44,10 +46,7 @@ void runterminal (int chanio) {
 		if (sigcont) {
 			sigcont = 0;
 			printf ("Received SIGCONT, will now initiate TLS handshake renegotiation\n");
-			tlsdata_cli.flags =  PIOF_STARTTLS_LOCALROLE_CLIENT
-					| PIOF_STARTTLS_REMOTEROLE_SERVER
-					| PIOF_STARTTLS_RENEGOTIATE;
-			strcpy (tlsdata_cli.localid, "testcli@tlspool.arpa2.lab");
+			tlsdata_cli.flags |= PIOF_STARTTLS_RENEGOTIATE;
 			strcpy (tlsdata_cli.remoteid, "testsrv@tlspool.arpa2.lab");
 			if (-1 == tlspool_starttls (-1, &tlsdata_cli, NULL, NULL)) {
 				printf ("TLS handshake renegotiation failed, terminating\n");
@@ -108,14 +107,15 @@ int main (int argc, char *argv) {
 	struct sockaddr_in6 sin6;
 	sigset_t sigcontset;
 
+	fprintf (stderr, "FATAL: This code is untested due to TLS Pool and GnuTLS readiness\n");
+	exit (1);
+
 	if (sigemptyset (&sigcontset) ||
 	    sigaddset (&sigcontset, SIGCONT) ||
 	    pthread_sigmask (SIG_BLOCK, &sigcontset, NULL)) {
 		perror ("Failed to block SIGCONT in worker threads");
 		exit (1);
 	}
-
-reconnect:
 	sox = socket (AF_INET6, SOCK_STREAM, 0);
 	if (sox == -1) {
 		perror ("Failed to create socket on testcli");
@@ -127,11 +127,6 @@ reconnect:
 	memcpy (&sin6.sin6_addr, &in6addr_loopback, 16);
 	if (connect (sox, (struct sockaddr *) &sin6, sizeof (sin6)) == -1) {
 		perror ("Socket failed to connect on testcli");
-		if (errno == ECONNREFUSED) {
-			close (sox);
-			sleep (1);
-			goto reconnect;
-		}
 		exit (1);
 	}
 	plainfd = -1;
