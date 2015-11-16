@@ -84,22 +84,29 @@ search for them.  To facilitate that, certain expectations need to be
 fulfilled.
 
 Most protocols need to access objects based on their name, which usually
-is a NAI [RFC 4282].  The NAI may either be a domain name, such as
+is a DoNAI_.  The DoNAI may either be a domain name, such as
 ``example.com``, or it may prefix a username and an at symbol, as in
 ``john@example.com``.
+
+.. _DoNAI : http://donai.arpa2.net
+
+Note however, that we have up to now been able to insert explicit references
+to PKCS #11 objects using the `PKCS #11 URI`_ format.
+
+.. _`PKCS #11 URI` : https://tools.ietf.org/html/rfc7512
 
 Extracting identity mappings
 ----------------------------
 
 Since PKCS #11 does not have API methods to search for patterns, but only
 to search for exact matches, the format of several of the identities
-should represent the NAI as directly as possible.  At the same time, they
+should represent the DoNAI as directly as possible.  At the same time, they
 need to be true to the nature of a given certificate type, which is often
 very specific about representation.
 
 These conflicts can only be overcome by iterating over the full contents
 of the PKCS #11 store, and collecting an index of search results.  The
-key of such an index would be the NAI, and the values stored would reveal
+key of such an index would be the DoNAI, and the values stored would reveal
 the various certificate forms and their ``CKA_LABEL`` and ``CKA_ID``
 fields.
 
@@ -115,9 +122,9 @@ to refresh a PKCS #11 application.
 
 The local identity mapping comes down to:
 
-*  The NAI serves as a key, mapped to lowercase where parts are
-   case-insensitive; this means that the entire NAI is mapped to lowercase,
-   since usernames are also case-insensitive under ARPA2.  The NAI is derived
+*  The DoNAI serves as a key, mapped to lowercase where parts are
+   case-insensitive; this means that the entire DoNAI is mapped to lowercase,
+   since usernames are also case-insensitive under ARPA2.  The DoNAI is derived
    from the available attributes as specified below.
 *  The value is basically a search structure fit for PKCS #11.  Part of it
    is the ``CKA_ID`` attribute that is also used to locate the private or
@@ -182,10 +189,10 @@ To find a certificate, the following attributes are combined:
 
 * ``CKA_CLASS`` must be set to ``CKO_CERTIFICATE``
 * ``CKA_CERTIFICATE_TYPE`` must be set to ``CKC_X_509``
-* ``CKA_SUBJECT`` must be set to ``cn=<NAI>`` where ``<NAI>`` represents
-  the NAI syntax as a ``commonName`` attribute.
+* ``CKA_SUBJECT`` must be set to ``cn=<DoNAI>`` where ``<DoNAI>`` represents
+  the DoNAI syntax as a ``commonName`` attribute.
 
-**TODO:** The NAI is incompatible with the PKCS #11 text, "DER-encoding of the
+**TODO:** The DoNAI is incompatible with the PKCS #11 text, "DER-encoding of the
 certificate subject name", so we will need a translation.  Regex or DB, or both?
 
 For all certificate objects that match, the following attributes are
@@ -240,12 +247,12 @@ to one private object.
 
 The UserID for OpenPGP keys are informally defined, and usually hold a
 form like ``John Smith <john@example.com>`` and that is difficult to match
-accurately with a PKCS #11 search if we only have a NAI [RFC 4282] available.
+accurately with a PKCS #11 search if we only have a DoNAI_ available.
 For that reason, the TLS Pool assumes that the name is absent, and it will
 simply look for ``<john@example.com>`` or ``<@example.com>`` if only a domain
 name is defined.  Note that the ``@`` is retained in the latter form.
 
-**TODO:** As with X.509, we could consider a mapping from a NAI to a
+**TODO:** As with X.509, we could consider a mapping from a DoNAI to a
 UserID (of any form) and possible to a ``KEY_ID``.
 
 

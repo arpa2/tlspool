@@ -64,6 +64,8 @@ enum VARS {
 	CFGVAR_TLS_MAXPREAUTH,
 	CFGVAR_TLS_ONTHEFLY_SIGNCERT,
 	CFGVAR_TLS_ONTHEFLY_SIGNKEY,
+	CFGVAR_FACILITIES_DENY,
+	CFGVAR_FACILITIES_ALLOW,
 	//
 	CFGVAR_LENGTH,
 	CFGVAR_NONE = -1
@@ -110,6 +112,8 @@ struct cfgopt config_options [] = {
 	"tls_maxpreauth",	cfg_setvar,	CFGVAR_TLS_MAXPREAUTH,
 	"tls_onthefly_signcert",cfg_setvar,	CFGVAR_TLS_ONTHEFLY_SIGNCERT,
 	"tls_onthefly_signkey",	cfg_setvar,	CFGVAR_TLS_ONTHEFLY_SIGNKEY,
+	"deny_facilities",	cfg_setvar,	CFGVAR_FACILITIES_DENY,
+	"allow_facilities",	cfg_setvar,	CFGVAR_FACILITIES_ALLOW,
 	//
 	NULL,			NULL,		CFGVAR_NONE
 };
@@ -162,6 +166,14 @@ struct var2val v2v_log_perror [] = {
 	{ NULL, 0 }
 };
 
+struct var2val v2v_facility_flag [] = {
+	{ "starttls", PIOF_FACILITY_STARTTLS },
+	{ "startgss", PIOF_FACILITY_STARTGSS },
+	{ "startssh", PIOF_FACILITY_STARTSSH },
+	{ "*",        PIOF_FACILITY_ALL_CURRENT },
+	{ NULL, 0 }
+};
+
 
 
 static unsigned int parse_var2val (char *word, int wlen, struct var2val *patterns, unsigned int defaultvalue) {
@@ -185,13 +197,16 @@ static unsigned int parse_var2val (char *word, int wlen, struct var2val *pattern
 static unsigned int parse_var2val_list (char *wordlist, struct var2val *patterns, unsigned int defaultvalue) {
 	int comma;
 	unsigned int retval = 0;
-	if ((wordlist == NULL) || (*wordlist == '\0')) {
+	if (wordlist == NULL) {
 		return defaultvalue;
 	}
 	while (*wordlist) {
 		comma = strcspn (wordlist, ",");
 		retval |= parse_var2val (wordlist, comma, patterns, 0);
-		wordlist += comma + 1;
+		wordlist += comma;
+		if (*wordlist == ',') {
+			wordlist++;
+		}
 	}
 	return retval;
 }
@@ -571,5 +586,18 @@ char *cfg_tls_onthefly_signkey (void) {
 	} else {
 		return NULL;
 	}
+}
+
+uint32_t cfg_facilities (void) {
+	uint32_t deny, allow;
+	deny  = parse_var2val_list (
+			configvars [CFGVAR_FACILITIES_DENY ],
+			v2v_facility_flag,
+			0);
+	allow = parse_var2val_list (
+			configvars [CFGVAR_FACILITIES_ALLOW],
+			v2v_facility_flag,
+			PIOF_FACILITY_ALL_CURRENT);
+	return PIOF_FACILITY_ALL_CURRENT & allow & ~deny;
 }
 

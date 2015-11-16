@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 #include <poll.h>
 #include <errno.h>
@@ -107,6 +108,7 @@ int main (int argc, char *argv) {
 	int sox;
 	struct sockaddr_in6 sin6;
 	sigset_t sigcontset;
+	uint8_t rndbuf [16];
 
 	if (sigemptyset (&sigcontset) ||
 	    sigaddset (&sigcontset, SIGCONT) ||
@@ -142,7 +144,6 @@ reconnect:
 		}
 		exit (1);
 	}
-	printf ("DEBUG: STARTTLS succeeded on testcli\n");
 	// Play around, just for fun, with the control key
 	if (tlspool_control_reattach (tlsdata_cli.ctlkey) != -1) {
 		printf ("ERROR: Could reattach before detaching the control?!?\n");
@@ -159,6 +160,16 @@ reconnect:
 	if (tlspool_control_reattach (tlsdata_cli.ctlkey) != -1) {
 		printf ("ERROR: Could reattach the control twice?!?\n");
 	}
+	if (tlspool_prng ("EXPERIMENTAL-tlspool-test", NULL, 16, rndbuf, tlsdata_cli.ctlkey) == -1) {
+		printf ("ERROR: Could not extract data with PRNG function\n");
+	} else {
+		printf ("PRNG bytes: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+			rndbuf [ 0], rndbuf [ 1], rndbuf [ 2], rndbuf [ 3],
+			rndbuf [ 4], rndbuf [ 5], rndbuf [ 6], rndbuf [ 7],
+			rndbuf [ 8], rndbuf [ 9], rndbuf [10], rndbuf [11],
+			rndbuf [12], rndbuf [13], rndbuf [14], rndbuf [15]);
+	}
+	printf ("DEBUG: STARTTLS succeeded on testcli\n");
 	if (-1 == sigaction (SIGCONT, &sigcont_action, NULL)) {
 		perror ("Failed to install signal handler for SIGCONT");
 		close (plainfd);

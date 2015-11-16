@@ -61,7 +61,7 @@ class TLSconnection (threading.Thread):
 	# Client and server both run the starttls() command
 	#
 	def run (self):
-		pingstr = tlspool.TLSPOOL_IDENTITY_TMP
+		pingstr = tlspool.TLSPOOL_IDENTITY_V2
 		print 'Sending ping', pingstr
 		pingstr = tlspool.ping (pingstr)
 		print 'Received ping', pingstr

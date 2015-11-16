@@ -16,7 +16,7 @@ Runtime dependencies are:
  * libtasn1 for parsing of BER and DER data structures
  * NOT-YET: libldns for DNS lookups
  * NOT-YET: libldap for LDAP lookups
- * NOT-YETlibmemcached for caching of intermediate results
+ * NOT-YET: libmemcached for caching of intermediate results
  * NOT-YET: libradius to do additional authn / authz [/acct]
  * the PKCS #11 implementation of your choice (for easy entrance: softhsm)
 
@@ -56,6 +56,7 @@ There are three sub-targets with their own Makefiles:
     - "testcli" and "testsrv" test/demo apps, for line-based chat
     - "tlstunnel" as a plaintext-to-TLS or TLS-to-plaintext passthrough
     - "webclientdemo.py" and "webserverdemo.py" are Python demonstrations
+    - "lidsel" and "pinentry" plug into the TLS Pool's localid and PIN services
 
 The main directory "make" will also make all these subdirectory projects.
 

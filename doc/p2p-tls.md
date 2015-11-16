@@ -1,8 +1,11 @@
 Peer-to-Peer TLS
 ================
 
->   *The TLS Pool is prepared for support for peer-to-peer TLS.  This is a new
->   idea, so it needs some guidance.*
+>   *The TLS Pool is ready to support peer-to-peer TLS.  This is a new
+>   idea, so it needs some explanation.*
+
+**Note:** This is a preview; until we have it implemented in the backbone
+TLS stack (namely, GnuTLS) we are not able to fully test the functionality.
 
 Many network protocols know which side acts as a server and which as a client,
 in terms of setting up the connection.  TLS needs this information.  There are
@@ -13,7 +16,7 @@ that TLS needs to know this information is not helpful in such circumstances.
 
 One might argue that TCP connections are client-server connections, but this
 would overlook two facts.  UDP connections are not necessarily client-server
-connections and in fact TCP has always supported two active sides getting
+connections and in fact TCP has always supported two initiating sides getting
 together.  This principle is embedded in NAT routers, which are founded on the
 TCP state diagrams.  Finally, SCTP has also been designed to permit two active
 sides contacting each other at the same time.  Clearly, the stringent
@@ -27,7 +30,8 @@ The active participant in a TLS connection starts off by sending a ClientHello
 record.  This is normally answered by a ServerHello.  In case of peer-to-peer
 TLS connection, an additional form is allowed, namely one where both sides send
 a ClientHello, and one of these is discarded as if it was never sent.  The
-discarding recipient then responds with a ServerHello.
+discarded recipient then switches to a server role, and responds with a
+ServerHello message.
 
 The tie-breaker that helps to decide which party should continue in the role of
 a client and which should continue as a server is an extension that is included
@@ -55,7 +59,7 @@ this is turned into a policy option under the TLS Pool.  The application does
 not require such properties from the TLS Pool.
 
 One thing that is truly important however, is whether the remote identity was
-authenticated, and whether or not a local identity may be shared.  This
+authenticated, and whether or not a local identity may be disclosed.  This
 information is mirrorred, and is therefore suitable for the more flexible setup
 of a p2p TLS protocol.  The requirements to this end are setup in flags during
 STARTTLS; this is done in terms of local and remote properties, rather than in
@@ -81,7 +85,9 @@ the reception of a ClientHello:
 	starttls () {
 		...
 		if (tlsmodes & CLIENT) {
+			...
 			...setup GnuTLS session as a client...
+			...
 		}
 		if (tlsmodes & SERVER) {
 			gnutls_handshake_set_post_client_hello_function (

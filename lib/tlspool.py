@@ -20,17 +20,20 @@ import random
 import threading
 
 
-TLSPOOL_IDENTITY_TMP	= '20150824tlspool@tmp.vanrein.org'
+TLSPOOL_IDENTITY_V2	= '20151111api@tlspool.arpa2.net'
 
 
+#
+# Command codes, documented in <tlspool/commands.h>
+#
 PIOC_SUCCESS_V2           = 0x00000000
 PIOC_ERROR_V2             = 0x00000001
-PIOC_PING_V1		  = 0x00000010
+PIOC_PING_V2		  = 0x00000010
 PIOC_STARTTLS_V2	  = 0x00000024
 PIOC_STARTTLS_LOCALID_V2  = 0x00000028
-PIOC_PINENTRY_V1	  = 0x00000029
+PIOC_PINENTRY_V2	  = 0x00000029
 PIOC_PLAINTEXT_CONNECT_V2 = 0x0000002a
-PIOC_STARTTLS_PRNG_V2	  = 0x0000002b
+PIOC_PRNG_V2		  = 0x0000002b
 PIOC_CONTROL_DETACH_V2	  = 0x00000100
 PIOC_CONTROL_REATTACH_V2  = 0x00000101
 PIOC_LIDENTRY_REGISTER_V2 = 0x00000200
@@ -38,6 +41,14 @@ PIOC_LIDENTRY_CALLBACK_V2 = 0x00000201
 
 PIOC_LOCAL		  = 0x80000000
 
+
+#
+# Command flags, documented in <tlspool/commands.h>
+#
+PIOF_FACILITY_ALL_CURRENT		= 0x00000001
+PIOF_FACILITY_STARTTLS			= 0x00000001
+PIOF_FACILITY_STARTGSS			= 0x00000002
+PIOF_FACILITY_STARTSSH			= 0x00000004
 
 PIOF_STARTTLS_LOCALROLE_CLIENT		= 0x00000001
 PIOF_STARTTLS_LOCALROLE_SERVER		= 0x00000002
@@ -47,12 +58,16 @@ PIOF_STARTTLS_REMOTEROLE_CLIENT		= 0x00000004
 PIOF_STARTTLS_REMOTEROLE_SERVER		= 0x00000008
 PIOF_STARTTLS_REMOTEROLE_PEER		= 0x0000000c
 
+PIOF_STARTTLS_DTLS			= 0x00000100
 PIOF_STARTTLS_WITHOUT_SNI		= 0x00000200
-
+PIOF_STARTTLS_IGNORE_CACHES		= 0x00000400
+PIOF_STARTTLS_REQUEST_REMOTEID		= 0x00000800
+PIOF_STARTTLS_IGNORE_REMOTEID		= 0x00001000
 PIOF_STARTTLS_DETACH			= 0x00002000
-# PIOF_STARTTLS_FORK			= 0x00004000
+PIOF_STARTTLS_FORK			= 0x00004000
 PIOF_STARTTLS_DOMAIN_REPRESENTS_USER	= 0x00008000
 PIOF_STARTTLS_LOCALID_CHECK		= 0x00010000
+PIOF_STARTTLS_RENEGOTIATE		= 0x00020000
 
 PIOF_LIDENTRY_SKIP_DBENTRY		= 0x00000080	# in all _SKIP_
 PIOF_LIDENTRY_SKIP_USER			= 0x00000081
@@ -61,12 +76,14 @@ PIOF_LIDENTRY_SKIP_DOMAIN_ONEUP		= 0x00000084
 PIOF_LIDENTRY_SKIP_DOMAIN_SUB		= 0x00000086	# _SAME | _ONEUP
 PIOF_LIDENTRY_SKIP_NOTROOT		= 0x00000088
 
-PIOF_LIDENTRY_DBENTRY			= 0x00000100
-PIOF_LIDENTRY_DBINSERT			= 0x00000200
-PIOF_LIDENTRY_DBAPPEND			= 0x00000400
-PIOF_LIDENTRY_DBREORDER			= 0x00000800
-# PIOF_LIDENTRY_NEW = 0x00010000
-# PIOF_LIDENTRY_ONTHEFLY = 0x00030000
+PIOF_LIDENTRY_WANT_DBENTRY		= 0x00000100
+PIOF_LIDENTRY_REGFLAGS			= 0x00000fff
+PIOF_LIDENTRY_DBENTRY			= 0x00001000
+PIOF_LIDENTRY_DBINSERT			= 0x00002000
+PIOF_LIDENTRY_DBAPPEND			= 0x00004000
+PIOF_LIDENTRY_DBREORDER			= 0x00008000
+PIOF_LIDENTRY_NEW			= 0x00010000
+PIOF_LIDENTRY_ONTHEFLY			= 0x00020000
 
 
 # Global variable shared by all callers
@@ -155,23 +172,27 @@ def socket (path='/var/run/tlspool.sock'):
 	return poolfd
 
 
-def ping (my_id_str):
-	"""Send the my_id_str to the TLS Pool, and return its result string.
+def ping (my_id_str, facilities=PIOF_FACILITY_ALL_CURRENT):
+	"""Send the my_id_str to the TLS Pool, and return its result as a
+	   tuple formed of the YYYYMMMDDuser@domain string and the
+	   facilities that are supported by both the TLS Pool and its client.
 	""" """
 	   When an error occurs, None is returned instead of the ping reply.
 	"""
 	pfd = socket (None)
 	try:
-		cmd = struct.pack ('HHI' + '136s', 
-					01234, 0, PIOC_PING_V1,
-					my_id_str
+		cmd = struct.pack ('HHI' + '136sI', 
+					01234, 0, PIOC_PING_V2,
+					my_id_str,
+					facilities
 				)
 		cmd = struct.pack ('376s', cmd)
 		pfd.sendmsg ([cmd])
 		([msg], _, _, _) = pfd.recvmsg (376)
 		(reqid, cbid, cmdcode2,
-			ping_resp_str
-			) = struct.unpack ('HHI' + '136s', msg [:144])
+			ping_resp_str,
+			ping_resp_facil
+			) = struct.unpack ('HHI' + '136sI', msg [:148])
 		if cmdcode2 == PIOC_ERROR_V2:
 			(reqid, cbid, cmdcode2,
 				tlserrno,
@@ -180,8 +201,8 @@ def ping (my_id_str):
 			message = message.split ('\x00') [0]
 			syslog.syslog (syslog.LOG_INFO, 'TLS Pool error to tlspool.ping(): ' + message)
 			raise Exception ()
-		elif cmdcode2 == PIOC_PING_V1:
-			return ping_resp_str.split ('\x00') [0]
+		elif cmdcode2 == PIOC_PING_V2:
+			return (ping_resp_str.split ('\x00') [0], ping_resp_facil)
 		else:
 			syslog.syslog (syslog.LOG_ERR, 'Invalid response to tlspool.ping()')
 			raise Exception ()
@@ -474,7 +495,7 @@ def pinentry (pinentry_cb, flags_reg, timeout_usec=60000000):
 	"""
 	pfd = socket (None)
 	try:
-		cmdcode = PIOC_PINENTRY_V1
+		cmdcode = PIOC_PINENTRY_V2
 		cmd = struct.pack ('HHI' + 'III128s128s33s17s17s33s', 
 					23456, 0, cmdcode,
 					flags_reg,
@@ -516,7 +537,7 @@ def pinentry (pinentry_cb, flags_reg, timeout_usec=60000000):
 				message = message.split ('\x00') [0]
 				syslog.syslog (syslog.LOG_INFO, 'TLS Pool error to tlspool.pinentry(): ' + message)
 				raise Exception ()
-			elif cmdcode == PIOC_PINENTRY_V1:
+			elif cmdcode == PIOC_PINENTRY_V2:
 				# We should invoke lidentry_cb
 				pinentry ['pin'] = ''
 				pinentry = pinentry_cb (pinentry)

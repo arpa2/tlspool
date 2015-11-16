@@ -1,27 +1,26 @@
-NAME
-
-tlspool - A daemon program that concentrates TLS connectivity.
-
-SYNOPSIS
-
-tlspool [-k] [-c configfile]
-tlspool [-p]
-
-DESCRIPTION
-
-The tlspool program runs as a local daemon that listens to a UNIX domain
+.TH TLSPOOL 8 "November 2015" "ARPA2.net" "System Management Commands"
+.SH NAME
+tlspool \- A daemon program that centralises TLS knowledge.
+.SH SYNOPSIS
+.B tlspool
+[\fI-k\fR] [\fI-c configfile\fR]
+.SH DESCRIPTION
+.PP
+The
+.B tlspool
+program normally runs as a local daemon that listens to a UNIX domain
 socket where TLS can be requested for existing file descriptors.  It acts
 as a central point for controlling TLS activities, including privileges
 and certificate/key handling.  It implements TLS for TCP, and DTLS for
 UDP and SCTP.
-
-The tlspool functions as a TLS-application overlay over an industry-standard
-PKCS #11 API over which key material can be looked up and used.  It will
+.PP
+The TLS Pool functions as a TLS-application overlay over an industry-standard
+PKCS #11 API through which key material can be looked up and used.  It will
 select a local certificate and key based on a name provided by an application
 program, and handle all authentication and, if so configured, authorization
 as part of the TLS connection setup.
-
-The tlspool will negotiate certificates in either X.509 or OpenPGP format,
+.PP
+The TLS Pool will negotiate certificates in either X.509 or OpenPGP format,
 with a preference for the latter.  It will perform validation by looking
 up information online, rather than relying on a signature that some
 authority once made to state that it (hopefully) performed a similar
@@ -30,40 +29,96 @@ such authorities and establishing if their certification signatures still
 hold have grown to such a level of complexity that one might just as well
 perform the validation live, at the time the information is useful.  Note
 that this approach will only work for online processes.
-
+.PP
 The mechanisms supported to establish authenticity of a remote peer are
 LDAP and DANE.  LDAP is available for domain and user certificates in
 X.509 or OpenPGP format, DANE is only available for domain certificates
 in X.509 format because it has not been defined for other applications.
 LDAP connections themselves should be based on a DANE-protected server
 certificate.
-
+.PP
 The remote information retrieved by the TLS Pool can slow down the
-connection setup, and for that reason caching can be configured.  The
+connection setup, and for that reason caching may be configured.  The
 caching mechanism used is memcache, with a configurable timeout for
 all data cached.  It is possible to bypass the cache for the most
 sensitive operations.
-
+.PP
 TLS in itself is not overly private; the exchange of certificates
 can be passively observed.  For this reason, the TLS Pool can implement
 a more expensive and therefore optional two-phase approach, where a first
 connection is setup under an anonymous Diffie-Hellman key exchange, and
 immediately a secure re-negotiation is performed to exchange the actual
 certificates.  This is possible if both client and server are willing to
-accept an initial anonymous connection.  TODO:It will be seen as an error
-when either party sends vital information over the anonymous connection yet.
-
-When not called with the -p option, the TLS Pool daemon is started in the
-background, optionally reading the file dictated by the -c option.  When
-the -p option is present, a running TLS Pool daemon is assumed and a PIN
-is requested on the terminal, and submitted to the daemon.  The -k option
-is used to kill any already running daemon detected through the PID file,
-instread of refusing to start a second daemon.
-
-
-
-SEE ALSO
-
-starttls_client
-starttls_server
-tlstunnel
+accept an initial anonymous connection.  Whether this is safe, especially
+when the remote party may be running any TLS stack, depends on the
+actual service being run.  The TLS Pool is made aware of this information,
+which helps to dael with this properly.
+.TP
+\fB\-c configfile\fR
+points the
+.B tlspool
+program to a configuration file.  The format of the file is not documented
+here, instead the documentation is written as part of the example
+configuration file, and it is suggested to not remove it there.
+.TP
+\fB\-k\fR
+kills any previously started
+.B tlspool
+program running at the UNIX domain socket for the TLS Pool.  An exchange
+will be initiated to stop the previous
+.B tlspool
+daemon and then the current one will continue to be setup.
+.SH AUTHOR
+.PP
+Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
+.SH "REPORTING BUGS"
+.PP
+For any discussion, including about bugs, please use the mailing list
+found on
+.IR http://lists.arpa2.org/mailman/listinfo/tls-pool .
+.PP
+Please read the software distribution's
+.IR README ", " INSTALL " and " TODO " files"
+for information about the
+.B tlspool
+implementation status.
+.SH COPYRIGHT
+.PP
+Copyright \(co 2015 Rick van Rein, ARPA2.net.
+.PP
+ARPA2 is funded from InternetWide.org, which in turns receives donations
+from various funding sources with an interest in a private and secure
+Internet that gives users control over their online presence.  This particular
+project has been sponsored in part by NCSC.
+.SH "SEE ALSO"
+.IR tlstunnel "(8), " tlspool_socket "(3), " tlspool_starttls "(3), "
+.IR tlspool_control_detach "(3), " tlspool_control_reattach "(3), "
+.IR tlspool_prng "(3), " tlspool_ping "(3), "
+.IR tlspool_localid_service "(3), " tlspool_pin_service "(3)."
+.PP
+The configuration file has a lot of useful documentation inline, including:
+.TP 3
+ -
+.IR socket_user ", " socket_group ", " socket_mode ", " socket_name ", " daemon_user " and " daemon_group
+to setup access to the TLS Pool;
+.TP 3
+ -
+.IR log_level ", " log_filter ", " log_stderr
+to setup logging levels and facilities;
+.TP 3
+ -
+.IR dbenv_dir ", " db_localid " and " db_disclose
+to describe where the local databases are stored for the dynamically
+configurable behaviour of the TLS Pool.
+.PP
+The documentation in the TLS Pool software package adds more detail and
+refinement to this manual page.
+.PP
+The TLS Pool API is documented in the include file
+.IR <tlspool/commands.h> " and " <tlspool/starttls.h>
+for C, and the
+.I tlspool.py
+module for Python.
+.PP
+Online resources may be found on the project home page,
+.IR http://tlspool.arpa2.net .

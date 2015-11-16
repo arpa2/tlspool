@@ -2781,8 +2781,7 @@ void starttls_prng (struct command *cmd) {
 	E_g2e ("GnuTLS PRNG based on session master key failed",
 		gnutls_prf_rfc5705 (ckn->session,
 			in1len, in1,
-			//TODO:NIKOS_WILL_DECIDE// (in2len >= 0)? in2len: 0, (in2len >= 0) ? in2: NULL,
-			in2len, (in2len >= 0) ? in2: NULL,
+			(in2len >= 0)? in2len: 0, (in2len >= 0) ? in2: NULL,
 			prnglen, prng->buffer));
 	err = err || (errno != 0);
 	//

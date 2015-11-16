@@ -36,7 +36,7 @@ struct data {
  * and stores them for future reference.  It also requests entry of the
  * local identity or the index number of the database entries printed.
  */
-void lidcb (struct tlspool_command *tc, void *data) {
+void lidcb (lidentry_t *entry, void *data) {
 	//
 	// Declare & initialise
 	struct data *d = (struct data *) data;
@@ -44,28 +44,17 @@ void lidcb (struct tlspool_command *tc, void *data) {
 	char input [128+1];
 	char *inpastnum;
 	long entryindex;
-printf ("DEBUG: lidsel.c lidcb() called with localid %s\n", tc->pio_data.pioc_lidentry.localid);
-
-	//
-	// Sanity checking
-	if (tc->pio_cmd != PIOC_LIDENTRY_CALLBACK_V2) {
-		tc->pio_cmd = PIOC_ERROR_V1;
-		tc->pio_data.pioc_error.tlserrno = EINVAL;
-		strcpy (tc->pio_data.pioc_error.message,
-			"Local identity callback did not recognise command");
-printf ("DEBUG: lidsel.c lidcb() returns on command error\n");
-		return;
-	}
+printf ("DEBUG: lidsel.c lidcb() called with localid %s\n", entry->localid);
 
 	//
 	// Handle database entries
-	if (tc->pio_data.pioc_lidentry.flags & PIOF_LIDENTRY_DBENTRY) {
-		tc->pio_data.pioc_lidentry.localid [127] = '\0';
+	if (entry->flags & PIOF_LIDENTRY_DBENTRY) {
+		entry->localid [127] = '\0';
 		if (d->dblidctr < MAXNUM_DB_LIDS) {
 			memcpy (d->dblids [d->dblidctr],
-				tc->pio_data.pioc_lidentry.localid, 128);
+				entry->localid, 128);
 			printf ("[%d] %s\n", d->dblidctr,
-				tc->pio_data.pioc_lidentry.localid);
+				entry->localid);
 		}
 		d->dblidctr++;
 printf ("DEBUG: lidsel.c lidcb() returns after processing database entry\n");
@@ -79,8 +68,8 @@ printf ("DEBUG: lidsel.c lidcb() returns after processing database entry\n");
 				d->dblidctr, MAXNUM_DB_LIDS);
 		d->dblidctr = MAXNUM_DB_LIDS;
 	}
-	tc->pio_data.pioc_lidentry.remoteid [127] = '\0';
-	printf ("Remote identity: %s\n", tc->pio_data.pioc_lidentry.remoteid);
+	entry->remoteid [127] = '\0';
+	printf ("Remote identity: %s\n", entry->remoteid);
 	do {
 		error = 0;
 		printf ("Please enter a local identity as a string, or by index:\n> ");
@@ -95,7 +84,7 @@ printf ("DEBUG: lidsel.c lidcb() returns after processing database entry\n");
 			input [strlen (input) -1] = '\0';
 		}
 		if (input [0] == '\0') {
-			memset (tc->pio_data.pioc_lidentry.localid, 0, 128);
+			memset (entry->localid, 0, 128);
 			continue;	/* to loop end, return no entry */
 		}
 		entryindex = strtol (input, &inpastnum, 10);
@@ -104,16 +93,16 @@ printf ("DEBUG: lidsel.c lidcb() returns after processing database entry\n");
 			error = error || (entryindex >= d->dblidctr);
 			error = error || (entryindex >= MAXNUM_DB_LIDS);
 			if (!error) {
-				memcpy (tc->pio_data.pioc_lidentry.localid,
+				memcpy (entry->localid,
 					d->dblids [entryindex], 128);
 			}
 		} else {
-			memcpy (tc->pio_data.pioc_lidentry.localid,
+			memcpy (entry->localid,
 				input, 128);
 		}
 	} while (error);
 	d->dblidctr = 0;
-printf ("DEBUG: lidsel.c lidcb() returns after setting localid to %s and flags to 0x%08lx\n", tc->pio_data.pioc_lidentry.localid, tc->pio_data.pioc_lidentry.flags);
+printf ("DEBUG: lidsel.c lidcb() returns after setting localid to %s and flags to 0x%08lx\n", entry->localid, entry->flags);
 	return;
 }
 
@@ -125,6 +114,7 @@ int main (int argc, char *argv []) {
 	data.dblidctr = 0;
 	uint32_t regflags = PIOF_LIDENTRY_WANT_DBENTRY;
 	int responsetime_sec = 300;
+	int exitval;
 
 	//
 	// Parse cmdline args
@@ -138,14 +128,16 @@ int main (int argc, char *argv []) {
 
 	//
 	// Service the TLS Pool
-	tlspool_localid_service (regflags, responsetime_sec, lidcb, &data);
-	fprintf (stderr, "The local identity callback registration was ended\n");
+	exitval = -tlspool_localid_service (NULL, regflags, responsetime_sec, lidcb, &data);
+	if (exitval == 1) {
+		perror ("localid entry service terminated");
+	}
 
 	//
 	// Close the log facility
 	closelog ();
 
 	//
-	// Return succes
-	return 0;
+	// Return exitval
+	return exitval;
 }

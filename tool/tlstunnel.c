@@ -37,6 +37,35 @@ static char **global_argv;
 static struct addrinfo *remoteaddrinfo;
 static int role = -1;
 
+static struct option choice_clisrv [] = {
+	{ "client", 0, NULL, 'c' },
+	{ "server", 0, NULL, 's' },
+	{ NULL, 0, NULL, 0 }
+};
+
+static struct option command_options [] = {
+	{ "tcp",		0, NULL, 't' },
+	{ "tcp-tls",		0, NULL, 't' },
+	{ "udp",		0, NULL, 'u' },
+	{ "udp-dtls",		0, NULL, 'u' },
+	{ "sctp-stream-number",	1, NULL, 'x' },
+	{ "sctp-tunneled",	0, NULL, 'o' },
+	{ "sctp-tunnelled",	0, NULL, 'o' },
+	{ "sctp-not-tunneled",	0, NULL, 'O' },
+	{ "sctp-not-tunnelled",	0, NULL, 'O' },
+	{ "sctp-dtls",		0, NULL, 'd' },
+	{ "sctp-tls",		0, NULL, 'D' },
+	{ "fork",		0, NULL, 'f' },
+	{ "service",		1, NULL, 's' },
+	{ "local-addr",		1, NULL, 'l' },
+	{ "remote-addr",	1, NULL, 'r' },
+	{ "local-id",		1, NULL, 'L' },
+	{ "remote-id",		1, NULL, 'R' },
+	{ "tlspool-socket-path",1, NULL, 'S' },
+	{ "chat-command",	1, NULL, 'C' },
+	{ NULL, 0, NULL, 0 }
+};
+
 
 
 #ifdef USING_STR2PORT_SOMEWHERE
@@ -399,7 +428,7 @@ int main (int argc, char *argv []) {
 	//
 	// First option is either -c for client or -s for server
 	//TODO// Future options may include peering
-	switch (getopt (argc, argv, "cs")) {
+	switch (getopt_long (argc, argv, "cs", choice_clisrv, NULL)) {
 	case 'c':
 		/* -c for client */
 		role = 'c';
@@ -425,7 +454,9 @@ int main (int argc, char *argv []) {
 	while (parsing) {
 		//TODO// getlongopt
 		//TODO// -d for DTLS / -D for TLS; -w for SCTP-over-UDP; -W not
-		int opt = getopt (argc, argv, "udDtxoO:fs:l:r:L:R:S:C:");
+		int opt = getopt_long (argc, argv,
+			"udDtx:oO:fs:l:r:L:R:S:C:",
+			command_options, NULL);
 		switch (opt) {
 		case 'u':
 			/* -u for DTLS/UDP */
@@ -454,7 +485,7 @@ int main (int argc, char *argv []) {
 			break;
 		case 'x':
 			/* DTLS/SCTP, DTLS/SCTP/UDP, TLS/SCTP or TLS/SCTP/UDP */
-			//TODO// Better to use a comma-separated list
+			//TODO// Maybe better to use a comma-separated list
 			parsed_number = strtol (optarg, &optarg, 0);
 			if (*optarg) {
 				fprintf (stderr, "Syntax error in stream number to -%d\n", opt);

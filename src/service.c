@@ -56,10 +56,24 @@ static struct soxinfo soxinfo [1024];
 static struct pollfd soxpoll [1024];
 static int num_sox = 0;
 static int stop_service = 0;
+static uint32_t facilities;
 
 static struct callback cblist [1024];
 static struct callback *cbfree;
 static pthread_mutex_t cbfree_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+
+/* Setup the service module.
+ */
+void setup_service (void) {
+	facilities = cfg_facilities ();
+}
+
+/* Cleanup the service module.
+ */
+void cleanup_service (void) {
+	;
+}
 
 
 /* Allocate a free command structure for the processing cycle.  Commands are
@@ -240,7 +254,7 @@ void send_success (struct command *cmd) {
 	if (cmd == NULL) {
 		return;
 	}
-	cmd->cmd.pio_cmd = PIOC_SUCCESS_V1;
+	cmd->cmd.pio_cmd = PIOC_SUCCESS_V2;
 	cmd->cmd.pio_cbid = 0;
 	if (!send_command (cmd, -1)) {
 		perror ("Failed to send success reply");
@@ -264,7 +278,7 @@ void send_error (struct command *cmd, int tlserrno, char *msg) {
 		send_success (cmd);
 		return;
 	}
-	cmd->cmd.pio_cmd = PIOC_ERROR_V1;
+	cmd->cmd.pio_cmd = PIOC_ERROR_V2;
 	cmd->cmd.pio_cbid = 0;
 	cmd->cmd.pio_data.pioc_error.tlserrno = tlserrno;
 	strncpy (cmd->cmd.pio_data.pioc_error.message, msg, sizeof (cmd->cmd.pio_data.pioc_error.message));
@@ -449,7 +463,7 @@ static void free_callbacks_by_clientfd (int clientfd) {
 			errcmd->claimed = 1;
 			errcmd->cmd.pio_reqid = 0;  // Don't know how to set it
 			errcmd->cmd.pio_cbid = i + 1;
-			errcmd->cmd.pio_cmd = PIOC_ERROR_V1;
+			errcmd->cmd.pio_cmd = PIOC_ERROR_V2;
 			errcmd->cmd.pio_data.pioc_error.tlserrno = ECONNRESET;
 			snprintf (errcmd->cmd.pio_data.pioc_error.message, 127, "Client fd %d closed", clientfd);
 printf ("DEBUG: Freeing callback with cbid=%d for clientfd %d\n", i+1, clientfd);
@@ -471,15 +485,20 @@ printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
 		return;
 	}
 	switch (cmd->cmd.pio_cmd) {
-	case PIOC_PING_V1:
-		strcpy (d->pioc_ping.YYYYMMDD_producer, TLSPOOL_IDENTITY_TMP);
+	case PIOC_PING_V2:
+		strcpy (d->pioc_ping.YYYYMMDD_producer, TLSPOOL_IDENTITY_V2);
+		d->pioc_ping.facilities &= facilities;
 		send_command (cmd, -1);
 		return;
 	case PIOC_STARTTLS_V2:
 		starttls (cmd);
 		return;
-	case PIOC_STARTTLS_PRNG_V2:
-		starttls_prng (cmd);
+	case PIOC_PRNG_V2:
+		if (facilities & PIOF_FACILITY_STARTTLS) {
+			starttls_prng (cmd);
+		} else {
+			send_error (cmd, EACCES, "The STARTTLS facility is disabled in the TLS Pool configuration");
+		}
 		return;
 	case PIOC_CONTROL_DETACH_V2:
 		ctlkey_detach (cmd);
@@ -487,7 +506,7 @@ printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
 	case PIOC_CONTROL_REATTACH_V2:
 		ctlkey_reattach (cmd);
 		return;
-	case PIOC_PINENTRY_V1:
+	case PIOC_PINENTRY_V2:
 		register_pinentry_command (cmd);
 		return;
 	case PIOC_LIDENTRY_REGISTER_V2:

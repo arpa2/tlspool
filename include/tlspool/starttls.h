@@ -34,6 +34,26 @@
 int tlspool_socket (char *path);
 
 
+/* The library function for ping, which is called to establish the API
+ * version and a list of facilities supported by the TLS Pool.  The data
+ * supplied to the TLS Pool should represent the environment of the
+ * application, which is why no defaults are provided by this function
+ * but the application should supply all ping data.
+ *
+ * The pioc_ping structure will be copied into the command structure,
+ * and upon completion it will be copied back.  Normally, the application
+ * would set YYYYMMDD_producer to TLSPOOL_IDENTITY_V2, and facilities
+ * to PIOF_FACILITY_ALL_CURRENT.  The TLS Pool overwrites the former and
+ * resets unsupported bits in the latter.  Note that facilities may be
+ * unsupported due to the compile-time environment of the TLS Pool or
+ * because it was configured without the requested support.
+ *
+ * This function returns zero on success, and -1 on failure.  In case of
+ * failure, errno will be set.
+ */
+int tlspool_ping (pingpool_t *pingdata);
+
+
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
  *
@@ -150,9 +170,79 @@ static inline int tlspool_control_reattach (uint8_t *ctlkey) {
  * where it was registered with the TLS Pool.  Otherwise, it returns -1
  * and sets errno.
  */
-typedef void (*lidentry_callback_t) (struct tlspool_command *tc, void *data);
-int tlspool_localid_service (uint32_t regflags, int responsetimeout, lidentry_callback_t lidcb, void *data);
+int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout, char * (*cb) (struct pioc_lidentry *entry, void *data), void *data);
 
 
+
+/* The library function to service PIN entry callbacks.  It registers
+ * with the TLS Pool and will service callback requests until it is no
+ * longer welcomed.  Of course, if another process already has a claim on
+ * this functionality, the service offering will not be welcome from the
+ * start.
+ *
+ * This function differs from most other TLS Pool library functions in
+ * setting up a private socket.  This helps to avoid the overhead in the
+ * foreseeable applications that only do this; it also helps to close
+ * down the exclusive claim on local identity resolution when (part of)
+ * the program is torn down.  The function has been built to cleanup
+ * properly when it is subjected to pthread_cancel().
+ *
+ * The path parameter offers a mechanism to specify the socket path.  When
+ * set to NULL, the library's compiled-in default path will be used.
+ *
+ * In terms of linking, this routine is a separate archive object.  This
+ * minimizes the amount of code carried around in statically linked binaries.
+ *
+ * This function returns -1 on error, or 0 on success.
+ */
+int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec, void (*cb) (struct pioc_pinentry *entry, void *data), void *data);
+
+/* Generate a pseudo-random sequence based on session cryptographic keys.
+ *
+ * In the case of TLS, this adheres to RFC 5705; other protocols may or
+ * may not support a similar mechanism, in which case an error is returned.
+ *
+ * This leans on access privileges to an existing connection at a meta-level,
+ * for which we use the customary ctlkey verification mechanism introduced with
+ * tlspool_starttls ().  Note that random material may be used for security
+ * purposes, such as finding the same session key for both sides deriving from
+ * prior key negotiation; the protection of a ctlkey for such applications is
+ * important.
+ * 
+ * The inputs to this function must adhere to the following restrictions:
+ *  - label must not be a NULL pointer, but opt_ctxvalue may be set to NULL
+ *    to bypass the use of a context value.  Note that passing an empty string
+ *    in opt_ctxvalue is different from not providing the string at all by
+ *    setting it to NULL.
+ *  - label  and  opt_ctxvalue  (if non-NULL) refer to ASCII strings with
+ *    printable characters, terminated with a NUL character.  The maximum
+ *    string length of each is 254 bytes.
+ *  - prng_len holds the requested number of pseudo-random bytes
+ *  - prng_buf points is a non-NULL pointer to a buffer that can hold
+ *    prng_len bytes.
+ *
+ * If the operation succeeds, then prng_buf holds prng_len bytes of random
+ * material, and zero is returned.  If the operation fails, then prng_buf
+ * is filled with zero bytes (to make it stand out as a rather rare case of
+ * a random byte string) and -1 is returned.
+ *
+ * Note a few restrictions to the generality of this function, as a result of
+ * the underlying packet format for the communication with the TLS Pool; but
+ * the dimensions have been choosen such that these restrictions would not
+ * typically be a problem in practice:
+ *  - it constrains the string lengths of label and opt_ctxvalue
+ *  - it constrains prng_len to a maximum value of TLSPOOL_PRNGBUFLEN
+ *
+ * The TLS Pool may limit certain TLS PRNG labels, in adherence to the
+ * IANA-maintained TLS Exporter Label Registry.  It additionally supports
+ * the EXPERIMENTAL label prefix specified in RFC 5705.
+ *
+ * Be advised that the maximum size of buffer may increase in future releases.
+ * So, be sure to use TLSPOOL_PRNGBUFLEN which holds the header-file defined
+ * size.
+ */
+int tlspool_prng (char *label, char *opt_ctxvalue,
+		uint16_t prng_len, uint8_t *prng_buf,
+		uint8_t *ctlkey);
 
 #endif // TLSPOOL_STARTTLS_H

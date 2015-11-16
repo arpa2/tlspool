@@ -310,7 +310,7 @@ class PrivateChannel ():
 					'STARTTLS cancelled (you might try again though)']) )
 		#
 		# Now initiate the TLS Pool connection
-		pingstr = tlspool.TLSPOOL_IDENTITY_TMP
+		pingstr = tlspool.TLSPOOL_IDENTITY_V2
 		print 'Sending ping', pingstr
 		pingstr = tlspool.ping (pingstr)
 		print 'Received ping', pingstr

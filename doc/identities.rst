@@ -9,24 +9,24 @@ internal and external identities.*
 Concept: Individual Users and Groups/Roles
 ------------------------------------------
 
-User identities are commonly used to identify human beings.  In addition,
+User identities are used, among others, to identify human beings.  In addition,
 there may be separate identities for machines, services and other automated
 processes; but there are also systems where these are combined with user
-identities.  The main thing that TLS Pool extracts from this is the notion
+identities.  The main thing that the TLS Pool extracts from this is the notion
 of an **individual identity**.
 
-A special form of individual identity is an alias or **pseudonym**, which
+A special form of individual identity is an **alias** or **pseudonym**, which
 is a well-established identity that differs from an individual identity,
 but either maps to it or is equivalent to it.
 
-Opposite to the these individual identities are **group identities**, which
-are functionally similar to role.  When describing the TLS Pool, we use the
-term group identity.  As with individual identities, there may be other
-views on the matter that split the notion.
+Really different from individual identities are **groups**, which are
+functionally similar to **roles**.  When describing the TLS Pool, we use the
+term **group identity** for both.  As with individual identities, there may be
+other views on the matter that interpret the two notions as distinct.
 
 In fact, none of this is supported directly by the TLS Pool, but a suitable
-concept and protocols to base it on is, as this style of identity management
-is an explicit part of the privacy concept behind the TLS Pool.
+concept and protocol to base it on is, to support this style of identity
+management and thus enable explicit control over privacy through the TLS Pool.
 
 
 Concept: Public and Private Identities
@@ -58,8 +58,8 @@ Misconception: Client and Server Identities
 The TLS Pool deliberately does not distinguish client and server identities.
 The initiative of communication is a mechanistic matter, but should not be
 material to identity handling, other than for access control.  Not all parties
-that we access may have access to us, but that does not mean that the
-identities would change.
+that we access may have access to us, but that does not mean that their
+identities should change because of that.
 
 The distinction between a client and server is now strictly a matter of who
 takes the initiative to communicate.  This makes TLS more consistent with
@@ -72,27 +72,39 @@ be setup in both directions; examples are connections
 between domain servers for SMTP, XMPP and SIP; these protocols call for a
 connection by the side that needs to take the initiative.
 
+The TLS Pool is actually trying to pave the way towards a more symmetric
+approach to TLS, where we speak in terms of local and remote identities,
+and whether they are to be authenticated.  The party taking the initiatice
+may be left to the TLS Pool (given a suitable small adaption to the TLS
+protocol to favour symmetric application protocols).  The entire API design
+has been updated to reflect this symmetry.
+
 In practice, client identities are not always required and when they are
 they take the form ``user@example.com`` while servers often use the identity
 of a domain such as ``example.com``, so there are other places that show
 the distinction -- but this is a mere practice for which no strict general
-requirement exists.
+requirement exists.  In the general terms of the TLS Pool API it is said
+that a domain may identify on behalf of a user underneath that domain.  This
+is common practice; for instance a mail server is generally trusted to be
+under sufficiently tight administrative control that it would reliably
+represent its users.
 
 
 Mechanism: Internal and External Identities
 -------------------------------------------
 
-The one thing that TLS Pool supports in terms of identities is a
-distinction between **internal identities** that will never be
-shown to the outside world (at least not without confirmation)
+The implementation concept that the TLS Pool supports in terms of identities
+is a possible distinction between **internal identities** that will not
+normally be shown to the outside world (at least not without confirmation)
 and **external identities** that are considered visible to outside
 entities.
 
-The TLS Pool finds its local identities in a database, usually
-in a file named ``localid.db``, where they may be marked with
-flags.  One of these flags is ``LID_INTERNAL`` that states that
-the identity given should not be sent out without confirmation.
-TODO: Should not be in localid.db but in disclose.db!
+This is implemented with a possible callback scheme that triggers whenever
+a local identity is to be shown to the outside world.  Based on a disclosure
+database that may contain previously approved published local identities,
+and possibly making a callback to a "lidentry" program, the user can control
+whether a local identity is sent out to a remote peer, or whether it will
+be replaced before it is sent out.
 
 Specifically note that the TLS Pool contains no rules to reason
 like "matching domain names" in remote and local identities to
@@ -100,8 +112,8 @@ establish whether a remote peer should be considered local.  This
 is left up to the confirmation mechanism, which is free to setup
 any such rules, or let a user make the choices.
 
-Confirmation means that a backcall is made to the client, to
-select the identity to use.  The backcall puts the client in the
+Confirmation means that a backcall is made to the client, through the "lidentry"
+mechansim, to select the identity to use.  The backcall puts the client in the
 position where it receives a suggested local identity, and is
 in the position to replace it.  The mechanism is the same as
 used when no local identity was provided initially by the client,
@@ -109,9 +121,9 @@ except that a suggestion is made in the form of the internal
 identity.
 
 The new identity may be undefined in the local identity database,
-in which case it is added.  A flag TODO:PICKNAME can be set to
-indicate that the identity provided should (also) be considered
-local.
+in which case it can be added by setting the proper flags.  Any such
+addition will only be stored on disk when it succeeds in setting up
+the TLS connection.
 
 
 Mechanism: Constrained Disclosure
@@ -123,7 +135,7 @@ generalising pattern, for the remote peer.  The patterns take the
 shape of a `DoNAI selector`_
 
 When a remote identity arrives at the TLS Pool, it is looked up
-in disclosure database to find local identities that it may use
+in the disclosure database to find local identities that it may use
 against that remote identity.  When a local identity is freed
 for use against a remote identity, it may actually be freed
 against a DoNAI selector that generalises that remote identity,
@@ -154,8 +166,8 @@ be used to influence the disclosure registration:
    preceded by a series of zero or more callbacks with database entries.
    These can be used by the extension to populate menu structures.  In
    all cases, the remote identity is set to the concrete DoNAI value,
-   plus the number of levels up until a database entry,
-   according to the iteration procedures of DoNAI Selectors.
+   plus the number of levels up until the database entry found,
+   counted by the iteration procedure for DoNAI Selectors.
 
  * The response from the extension indicates whether the returned setting
    should be setup in the database.  In this case, the remote identity may

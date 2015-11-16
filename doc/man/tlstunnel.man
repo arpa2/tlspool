@@ -1,142 +1,217 @@
-NAME
-
-tlstunnel -- Forward TLS/DTLS connections as TCP/UDP/SCTP, and vice versa.
-
-SYNOPSIS
-
-tlstunnel -c|-s [-u|-t|-x #|-y #] -l id [-r id] [-S path] inaddr inport fwaddr fwport [--] [chatargs]
-
-DESCRIPTION
-
-The tlstunnel command wraps TLS around connections that are otherwise
-plaintext.  This cannot used for protocols that do STARTTLS in the
-course of their protocol interactions; it is purely meant to support
-protocols that iniatiate TLS immediately over newly established
-connections; for example, a HTTPS connection wraps TLS around a plain
-HTTP connection.
-
+.TH TLSTUNNEL 8 "November 2015" "ARPA2.net" "System Management Commands"
+.SH NAME
+tlstunnel \- Forward TLS/DTLS as TCP/UDP/SCTP, and vice versa.
+.SH SYNOPSIS
+.B tlstunnel
+.IR MODE " " OPTIONS " [" -- "] " CHATARGS
+.SH DESCRIPTION
+.PP
+The
+.B tlstunnel
+command wraps TLS around connections that are otherwise plaintext.
+This can even be used for protocols that do STARTTLS in the
+course of their protocol interactions, due to a simple
+.IR chat (8)
+scripting facility.
+.PP
+The TLS facilities are drawn from a
+.IR tlspool (8)
+daemon, which is contacted over a UNIX domain socket.  It therefore
+inherits the architectural benefits of the TLS Pool, including the
+ability of central control, strong protection of cryptographic
+credentials, and even the ability to monitor and control which local
+identities are revealed to which remote peers.
+.PP
 The tunnel can be built up using either TLS or DTLS, the latter of which
-is the datagram variety of normal, stream-oriented TLS.  When relaying
+is the datagram variety of common, stream-oriented TLS.  When relaying
 a TCP connection, TLS is the only available option; when relaying a
 UDP connection, DTLS is the only available option; when relaying an
-SCPT connection, both varieties are possible but DTLS is advised for
-efficiency reasons.
-
-The tunnel runs in either client or server mode.  Used as a client, the
-service listens for plain text connections made to address inaddr and
-port inport, wraps them in TLS as a client and forwards the connection
-to address fwaddr and fwport.  When used as a server, the same thing
+SCTP connection, both varieties are available but DTLS is generally
+preferred for efficiency reasons.
+.PP
+Future versions of
+.B tlstunnel
+are expected to support symmetric behaviour, but the present version
+must run in either client or server mode.  Used as a client, the
+service listens for plaintext connections made to address \fIinaddr\fR and
+port \fIinport\fR, wraps them in TLS as a client and forwards the connection
+to address \fIfwaddr\fR and port \fIfwport\fR.  When used as a server, the same
 is done, however the wrapping of TLS is changed to unwrapping of TLS.
-Addresses are written as IPv6 addresses, with backward compatibility to
-IPv4 through the prefixing of :: in front of an IPv4 address.  It is
-not required that inaddr and fwaddr are of the same IP version.
-
+.PP
+Addresses can take the form of a UNIX domain socket path, or host:port where
+the host is either a DNS name or an IPv6 address.  For the last form,
+backward compatibility to IPv4 is possible by prefixing :: to an IPv4 address.
+It is possible to use this backward compatibility with either or both or none
+of \fIinaddr\fR and \fIfwaddr\fR.
+.PP
 The end points authenticate, and are authorized, as configured in the
-system-wide TLS Pool configuration settings.  These settings ensure a
-consistent default behaviour for all TLS Pool connections.  These
-settings include certificate capabilities and visibilities.
+system-wide TLS Pool policy settings.  These settings ensure a
+consistent default behaviour for all TLS Pool connections.  As an example,
+these policies tend to include requirements to certificates.
+.PP
+The \fIMODE\fR defines whether \fItlstunnel\fR runs as a client or server:
+.TP
+.BR -c ", " --client
+Run
+.B tlstunnel
+as a client, meaning that it is connected to by
+a plaintext connection and forwarded as a TLS-wrapped variety.
 
+Client authentication and authorization are implemented as specified
+in the TLS Pool configuration.  This includes choice of certificates
+and settings about their visibility.
+.TP
+.BR -s ", " --server
+Run
+.B tlstunnel
+as a server, meaning that it is connected to by
+a TLS-wrapped connection and forwarded as a plaintext variety.
 
-OPTIONS
+Client authentication and authorization are implemented as specified
+in the TLS Pool configuration.  This includes choice of certificates
+and settings about their visibility.
+.PP
+The \fIOPTIONS\fR detail further information, some of which is
+actually not optional at all.
+.TP
+.BR -f ", " --fork
+When the
+.B tlstunnel
+stops, the TLS connections should continue to run.
+.TP
+.BR -t ", " --tcp ", " --tcp-tls
+Listen to, and forward as, TCP connection.  The secure wrapping
+is implemented through stream-oriented TLS.
 
--c | --client
+This is also the default option, selected when none of
+.BR --tcp-tls ", " --udp-dtls ", " --sctp-tls " or " --sctp-dtls
+has been supplied.
+.TP
+.BR -u ", " --udp ", " --udp-dtls
+THIS FEATURE IS NOT IMPLEMENTED.  The semantics cannot be clearly
+defined, because UDP has no notion of a connection, while TLS does
+need it to keep state.  Rather than implementing guesses here and
+load it with configuration options such as timeouts, it is advised
+to implement DTLS directly in the UDP application.
+.TP
+.BR "-x \fIstream\fB" ", " "--sctp-stream-number \fIstream\fB"
+When SCTP is used, forward the given stream number.  This option may
+in the future be REDESIGNED to permit multiple streams, and the default
+is unsettled but might be all.  There are a few alternative approaches.
 
-	Run the TLS Tunnel as a client, meaning that it is connected to by
-	a plaintext connection and forwarded as a TLS-wrapped variety.
-
-	Client authentication and authorization are implemented as specified
-	in the TLS Pool configuration.  This includes choice of certificates
-	and settings about their visibility.
-
--s | --server
-
-	Run the TLS Tunnel as a server, meaning that it is connected to by
-	a TLS-wrapped connection and forwarded as a plaintext variety.
-
-	Client authentication and authorization are implemented as specified
-	in the TLS Pool configuration.  This includes choice of certificates
-	and settings about their visibility.
-
--t | --tcp | --tcp-tls
-
-	Listen to, and forward as, TCP connection.  The secure wrapping
-	is implemented through stream-oriented TLS.
-
-	This is also the default option, selected when none of --tcp-tls,
-	--udp-dtls, --sctp-tls or --sctp-dtls has been supplied.
-
--u | --udp | --udp-dtls
-
-	THIS FEATURE IS NOT IMPLEMENTED.  The semantics cannot be clearly
-	defined, because UDP has no notion of a connection, while TLS does
-	need it to keep state.  Rather than implementing guesses here and
-	load it with configuration options such as timeouts, it is advised
-	to implement DTLS directly in the UDP application.
-
--x stream | --sctp-dtls stream
-
-	Listen to, and forward as, SCTP.  The secure wrapping
-	is implemented through frame-oriented DTLS, as advised for
-	SCTP because that retains the indepent delivery that SCTP offers.
-
-	The stream is the number of the stream withing SCTP over which the
-	DTLS negotiations are made.
-
--y stream | --sctp-tls stream
-
-	Listen to, and forward as, SCTP.  The secure wrapping
-	is implemented through stream-oriented TLS, which is not advised for
-	SCTP but which may nonetheless be used by a protocol implementation.
-
-	The stream is the number of the stream withing SCTP over which the
-	TLS negotiations are made.
-
--L id | --local-id id
-
-	Set the local identity.  This should be of the form of a domain
-	name, or user@domainname.  This paramater is required.
-
--R id | --remote-id id
-
-	Constrain the remote identity.  This should be of the form of a domain
-	name, or user@domainname.  This parameter is optional.
-
--S path | --tlspool-socket-path path
-
-	Override the built-in default path for the socket pool.  This can be
-	used to address a specific instance of the TLS Pool, for instance one
-	that is run under a personal account, accessing a personally held
-	PKCS #11 token.
-
-
-LIMITATIONS
-
+Combine with one of
+.BR --sctp-dtls " or " --sctp-tls
+to specify the desired form of transport layer security.
+.TP
+.B --sctp-tunneled
+Specifies that SCTP should be tunneled over UDP, using the
+port number 9899 as specified in RFC 6951.  The default is to not use
+a tunnel, as can be specified explicitly with
+.BR --sctp-not-tunneled .
+.TP
+.B --sctp-not-tunneled
+Specifies that SCTP should not be tunneled over UDP.  This is the
+default behaviour when \fI--sctp-tunneled\fR is not specified.
+.TP
+.BR "-l \fIlocaladdr\fB" ", " "--local-addr \fIlocaladdr\fB"
+The local address for the tunnel.
+.TP
+.BR "-r \fIremoteaddr\fB" ", " "--remote-addr \fIremoteaddr\fB"
+The remote address for the tunnel.
+.TP
+.BR "-L \fIlid\fB" ", " "--local-id \fIlid\fB"
+Set the local identity.  This should be of the form of a domain
+name, or user@domainname.  This paramater is required.  When a
+localid service program has registered with
+.IR tlspool (8)
+then the local identity may be passed through for filtering, depending
+on the option used when registering.
+.TP
+.BR "-R \fIrid\fB" ", " "--remote-id \fIrid\fB"
+Constrain the remote identity.  This should be of the form of a domain
+name, or user@domainname.  This parameter is optional in server mode,
+but is (usually) needed to setup client mode.
+.TP
+.BR "-s \fIsvcname\fB" ", " "--service \fIsvcname\fB"
+Specify the service name that will be sent to
+.IR tlspool (8)
+during initiation of the TLS protection.  This helps to decide several
+protocol-specifics, including whether it is safe to start with an
+Anonymising Precursor.  The service name should follow the IANA spelling,
+which is also used in
+.IR /etc/services .
+.TP
+.BR "-S \fIpath\fB" ", " "--tlspool-socket-path \fIpath\fB"
+Override the built-in default path for the socket pool.  This can be
+used to address a specific instance of the TLS Pool, for instance one
+that is run under a personal account, accessing a personally held
+PKCS #11 token.
+.BR "-C command" ", "--chat-command command"
+Specifies an alternative command in the style of
+.IR chat (8)
+to replace the builtin version, which was forked from
+.IR pppd (8).
+Note that an external command will normally be less efficient than the
+builtin variety.
+.PP
+The remaining commandline arguments form the \fICHATARGS\fR, which are passed
+on to the builtin or external
+.IR chat (8)
+facility.  This can be used to perform communication in plaintext over
+the soon-to-be TLS connection; it can be used to negotiate options over
+a textual protocol up to the agreement to switch to TLS.  This is
+precisely what
+.IR chat (8)
+was design for; except that the next-stage protocol was PPP and not TLS.
+.SH LIMITATIONS
+.PP
 The TLS Pool can handle various options when connecting to a remote site.
 These options have not yet been implemented as commandline switches, so
-this level of refinement cannot be added when using a TLS Tunnel.
-
+this level of refinement cannot be added when using the 
+.B tlstunnel
+program.
+.PP
 The TLS Pool usually negotiates local and remote identities as part of
 the authentication and authorization procedures.  These procedures do not
 interface optimally with the TLS Tunnel, because there is no place to
 leave this information.  What has been implemented is the mandatory
 -l option that sets the local identifier to use, and an optional -r option
-tp constrain the remote identity.
-
+to constrain the remote identity.
+.PP
 Note that the TLS Tunnel does not implement a PIN entry interface; this
 is a function that is separately coordinated with the TLS Pool, so it can
 bring up a dialog in a trusted environment, making it easier to secure than
 any per-command PIN entry dialog.
-
+.PP
 Where TLS and even DTLS have a notion of connection state, necessary for the
 management of things like session keys, there is no concept of a connection
 for UDP transmission.  For this reason, the UDP variant of this tool has not
 been implemented; it would involve close-to-NAT practices that can easily
 lead to confusion.
-
-AUTHOR
-
-Written by Rick van Rein of OpenFortress.
-
-SEE ALSO
-
-tlspool
+.SH AUTHOR
+.PP
+Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
+.SH "REPORTING BUGS"
+.PP
+For any discussion, including about bugs, please use the TLS Pool
+mailing list found on
+.IR http://lists.arpa2.org/mailman/listinfo/tls-pool .
+.PP
+Please read the software distribution's
+.IR README ", " INSTALL " and " TODO " files"
+for information about the
+.IR tlspool (8)
+implementation status.
+.SH COPYRIGHT
+.PP
+Copyright \(co 2015 Rick van Rein, ARPA2.net.
+.PP
+ARPA2 is funded from InternetWide.org, which in turns receives donations
+from various funding sources with an interest in a private and secure
+Internet that gives users control over their online presence.  This particular
+project has been sponsored in part by NCSC.
+.SH "SEE ALSO"
+.IR tlspool "(8), " tlspool_starttls "(3), " chat "(8), " pppd (8).
+.PP
+Online resources may be found on the project home page,
+.IR http://tlspool.arpa2.net .

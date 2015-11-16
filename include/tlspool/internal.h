@@ -90,6 +90,8 @@ typedef int success_t;
 void parse_cfgfile (char *filename, int kill_competition);
 
 /* service.c */
+void setup_service (void);
+void cleanup_service (void);
 void run_service (void);
 void hangup_service (void);
 void send_error (struct command *cmd, int tlserrno, char *msg);
@@ -122,6 +124,7 @@ char *cfg_db_localid (void);
 char *cfg_db_disclose (void);
 char *cfg_tls_dhparamfile (void);
 unsigned int cfg_tls_maxpreauth (void);
+uint32_t cfg_facilities (void);
 
 
 
