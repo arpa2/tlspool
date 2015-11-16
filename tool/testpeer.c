@@ -1,4 +1,4 @@
-/* tlspool/testcli.c -- Exchange plaintext stdio over the network */
+/* tlspool/testpeer.c -- Exchange plaintext stdio over the network */
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -16,12 +16,14 @@
 
 
 static starttls_t tlsdata_cli = {
-	.flags =  PIOF_STARTTLS_LOCALROLE_CLIENT
-		| PIOF_STARTTLS_REMOTEROLE_SERVER,
+	.flags =  PIOF_STARTTLS_LOCALROLE_PEER
+		| PIOF_STARTTLS_REMOTEROLE_PEER,
 	.local = 0,
 	.ipproto = IPPROTO_TCP,
-	.localid = "testcli@tlspool.arpa2.lab",
-	.remoteid = "testsrv@tlspool.arpa2.lab",
+	.localid = "",
+	.remoteid = "",
+	// .localid = "testcli@tlspool.arpa2.lab",
+	// .remoteid = "testsrv@tlspool.arpa2.lab",
 	.service = "generic_anonpre",
 };
 
@@ -45,10 +47,7 @@ void runterminal (int chanio) {
 		if (sigcont) {
 			sigcont = 0;
 			printf ("Received SIGCONT, will now initiate TLS handshake renegotiation\n");
-			tlsdata_cli.flags =  PIOF_STARTTLS_LOCALROLE_CLIENT
-					| PIOF_STARTTLS_REMOTEROLE_SERVER
-					| PIOF_STARTTLS_RENEGOTIATE;
-			strcpy (tlsdata_cli.localid, "testcli@tlspool.arpa2.lab");
+			tlsdata_cli.flags |= PIOF_STARTTLS_RENEGOTIATE;
 			strcpy (tlsdata_cli.remoteid, "testsrv@tlspool.arpa2.lab");
 			if (-1 == tlspool_starttls (-1, &tlsdata_cli, NULL, NULL)) {
 				printf ("TLS handshake renegotiation failed, terminating\n");
@@ -110,14 +109,15 @@ int main (int argc, char *argv) {
 	sigset_t sigcontset;
 	uint8_t rndbuf [16];
 
+	fprintf (stderr, "FATAL: This code is untested due to TLS Pool and GnuTLS readiness\n");
+	exit (1);
+
 	if (sigemptyset (&sigcontset) ||
 	    sigaddset (&sigcontset, SIGCONT) ||
 	    pthread_sigmask (SIG_BLOCK, &sigcontset, NULL)) {
 		perror ("Failed to block SIGCONT in worker threads");
 		exit (1);
 	}
-
-reconnect:
 	sox = socket (AF_INET6, SOCK_STREAM, 0);
 	if (sox == -1) {
 		perror ("Failed to create socket on testcli");
@@ -129,11 +129,6 @@ reconnect:
 	memcpy (&sin6.sin6_addr, &in6addr_loopback, 16);
 	if (connect (sox, (struct sockaddr *) &sin6, sizeof (sin6)) == -1) {
 		perror ("Socket failed to connect on testcli");
-		if (errno == ECONNREFUSED) {
-			close (sox);
-			sleep (1);
-			goto reconnect;
-		}
 		exit (1);
 	}
 	plainfd = -1;
@@ -143,6 +138,16 @@ reconnect:
 			close (plainfd);
 		}
 		exit (1);
+	}
+	printf ("DEBUG: STARTTLS succeeded on testcli\n");
+	if (tlspool_prng ("EXPERIMENTAL-tlspool-test", NULL, 16, rndbuf, tlsdata_cli.ctlkey) == -1) {
+		printf ("ERROR: Could not extract data with PRNG function\n");
+	} else {
+		printf ("PRNG bytes: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+			rndbuf [ 0], rndbuf [ 1], rndbuf [ 2], rndbuf [ 3],
+			rndbuf [ 4], rndbuf [ 5], rndbuf [ 6], rndbuf [ 7],
+			rndbuf [ 8], rndbuf [ 9], rndbuf [10], rndbuf [11],
+			rndbuf [12], rndbuf [13], rndbuf [14], rndbuf [15]);
 	}
 	// Play around, just for fun, with the control key
 	if (tlspool_control_reattach (tlsdata_cli.ctlkey) != -1) {
@@ -160,16 +165,6 @@ reconnect:
 	if (tlspool_control_reattach (tlsdata_cli.ctlkey) != -1) {
 		printf ("ERROR: Could reattach the control twice?!?\n");
 	}
-	if (tlspool_prng ("EXPERIMENTAL-tlspool-test", NULL, 16, rndbuf, tlsdata_cli.ctlkey) == -1) {
-		printf ("ERROR: Could not extract data with PRNG function\n");
-	} else {
-		printf ("PRNG bytes: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
-			rndbuf [ 0], rndbuf [ 1], rndbuf [ 2], rndbuf [ 3],
-			rndbuf [ 4], rndbuf [ 5], rndbuf [ 6], rndbuf [ 7],
-			rndbuf [ 8], rndbuf [ 9], rndbuf [10], rndbuf [11],
-			rndbuf [12], rndbuf [13], rndbuf [14], rndbuf [15]);
-	}
-	printf ("DEBUG: STARTTLS succeeded on testcli\n");
 	if (-1 == sigaction (SIGCONT, &sigcont_action, NULL)) {
 		perror ("Failed to install signal handler for SIGCONT");
 		close (plainfd);

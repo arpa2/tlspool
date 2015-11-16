@@ -1,5 +1,5 @@
 #TODO# Produce .so library file through autotools
 AM_CFLAGS = -I $(srcdir)/../include
 AM_LDFLAGS =  
-lib_LTLIBRARIES = libstarttls.la
-libstarttls_la_SOURCES=libfun.c
+lib_LTLIBRARIES = libtlspool.la
+libtlspool_la_SOURCES=libtlspool.c libtlspool_lidentry.c libtlspool_pinentry.c

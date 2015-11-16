@@ -1,4 +1,4 @@
-/* tlspool/localid.c -- Map the keys of local identities to credentials */
+/* tlspool/donai.c -- Map the keys of local identities to credentials */
 
 #include <config.h>
 
@@ -89,11 +89,11 @@ int dbcred_interpret (pool_datum_t *creddata, uint32_t *flags, char **p11priv, u
  * The value returned is only non-zero if a value was setup.
  * The DB_NOTFOUND value indicates that the key was not found.
  */
-success_t dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata) {
+db_error dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata) {
 	int db_errno = 0;
 	E_d2e ("Key not found in db_localid",
 		cursor->get (cursor, keydata, creddata, DB_SET));
-	return !errno;
+	return db_errno;
 }
 
 
@@ -125,35 +125,158 @@ success_t dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata)
  * The value returned is zero if a value was setup; otherwise an error code.
  * The DB_NOTFOUND value indicates that no selector matching the remoteid
  * was found in dbh_disclose.
+ *
+ * Depending on where the remoteid is found and whether/how a lidentry callback
+ * has registered, there may be a need to send localid values to the callback
+ * and ask it to choose the localid to use.  If that is needed, all of that
+ * and even the insertion of modified entries in the localid list are handled
+ * inside this routine.  As a result, callers can consider a straightforward
+ * mapping from a remoteid to one or more localid values, and process the
+ * credentials found without further concern.
  */
-success_t dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_localid, selector_t *remotesel, DBT *discpatn, DBT *keydata, DBT *creddata) {
+db_error dbcred_iterate_from_remoteid_selector (DBC *crs_disclose, DBC *crs_localid, selector_t *remotesel, DBT *discpatn, DBT *keydata, DBT *creddata) {
 	int db_errno = 0;
+	int fnd = 0;
 	int more = 1;
+	int levels_up = 0;
+	int maxlevels = 0;
+	int levels_up_step = (remotesel->user != NULL)? 1: 2;
+	int at_root = 0;
+	int lid_callback = 0;
+	char remoteid [128];
+	char localid  [128];
+	uint32_t lidcbflags;
+
+	memset (remoteid, 0, sizeof (remoteid));
+	//TODO// Next line, is it kosher?  Cannot reconstruct its intention...
+	remoteid [discpatn->size] = donai_iterate_memput (remoteid, remotesel);
 	while (more) {
-		int fnd;
 		discpatn->size = donai_iterate_memput (discpatn->data, remotesel);
 		tlog (TLOG_DB, LOG_DEBUG, "Looking up remote selector %.*s", discpatn->size, (char *) discpatn->data);
 		fnd = crs_disclose->get (crs_disclose, discpatn, keydata, DB_SET);
 		if (fnd == 0) {
 			// Got the selector pattern!
-			// Now continue, even when no localids will work.
-			E_d2e ("Key not found in db_localid",
-				crs_localid->get (
-					crs_localid,
-					keydata,
-					creddata,
-					DB_SET));
-			return !errno;
+			at_root = (remotesel->domlen == 1) && (*remotesel->domain == '.');
+			// Return immediately, IF no need for lidentry callbacks
+			if (db_errno != 0) {
+				return db_errno;
+			}
+			if (lidentry_database_mayskip (levels_up, at_root)) {
+				// Simply set & return the first localid
+				db_errno = crs_localid->get (
+						crs_localid,
+						keydata,
+						creddata,
+						DB_SET);
+				return db_errno;
+			} else {
+				// Use LIDENTRY's DB callbacks, so fall through
+				lid_callback = 1;
+			}
 		} else if (fnd != DB_NOTFOUND) {
 			E_d2e ("Failed while searching with remote ID selector", fnd);
 			break;
 		}
 		more = selector_iterate_next (remotesel);
+		maxlevels++;
+		levels_up += levels_up_step;
 	}
-	// Ended here with nothing more to find
-	E_d2e ("No selector matches remote ID in db_disclose",
-		DB_NOTFOUND);
-	return !errno;
+	if (!lid_callback) {
+		// Ended here with nothing more to find
+		E_d2e ("No selector matches remote ID in db_disclose",
+			DB_NOTFOUND);
+		return db_errno;
+	}
+	//
+	// We broke out of the loop to perform lidentry callbacks;
+	// iterate over localid values, feed them to the listening
+	// program and finally invoke the inquiry callback.
+	fnd = 0;
+printf ("DEBUG: Generating LID-entry menu for %s:\n", remoteid);
+	while (fnd == 0) {
+		int lidlen = sizeof (localid)-1;
+		memset (localid, 0, lidlen+1);
+		if (0 == crs_localid->get (
+				crs_localid,
+				keydata,
+				creddata,
+				DB_SET)) {
+			if (keydata->size < lidlen) {
+				lidlen = keydata->size;
+			}
+			memcpy (localid, keydata->data, lidlen);
+printf ("DEBUG: LID-entry %.*s\n", lidlen, localid);
+			lidentry_database_callback (remoteid, maxlevels, localid);
+		} else {
+			tlog (TLOG_DB, LOG_INFO, "Skipping disclosed localid %.*s with not entries", keydata->size, keydata->data);
+		}
+		fnd = crs_disclose->get (
+			crs_disclose,
+			discpatn,
+			keydata,
+			DB_NEXT_DUP);
+	}
+printf ("DEBUG: Generated  LID-entry menu for %s.\n", remoteid);
+	if (fnd != DB_NOTFOUND) {
+		db_errno = fnd;
+	}
+	//
+	// The callback to the inquiry must always be made after db callbacks
+	lidcbflags = 0;
+	memset (localid, 0, sizeof (localid));
+	if (!lidentry_inquiry_callback (remoteid, maxlevels, localid, &lidcbflags)) {
+		//
+		// The inquiry returned an error; indicate that no entry
+		// was found and, by sheer necessity, cause the downfall of
+		// anything that requires a localid value.
+		return DB_NOTFOUND;
+	}
+	//
+	// PIOF_LIDENTRY_NEW is unimplemented, and immediately reports
+	// what it may always fall back to -- DB_NOTFOUND
+	if (lidcbflags & PIOF_LIDENTRY_NEW) {
+		tlog (TLOG_UNIXSOCK, LOG_ERR, "Request to wait for new credential; not implemented so falling back to reporting DB_NOTFOUND");
+		return DB_NOTFOUND;
+	}
+	//
+	// PIOF_LIDENTRY_ONTHEFLY is unimplemented, and reports what it
+	// does in lieau of configured root key / cert -- DB_NOTFOUND
+	if (lidcbflags & PIOF_LIDENTRY_ONTHEFLY) {
+		tlog (TLOG_UNIXSOCK, LOG_ERR, "Request to generate certificate on the fly; not implemented so falling back to to reporting DB_NOTFOUND");
+		return DB_NOTFOUND;
+	}
+	//
+	// Process the localid and lidcbflags by potential db updates:
+	//  - PIOF_LIDENTRY_DBINSERT -> insert at the head (if new)
+	//  - PIOF_LIDENTRY_DBAPPEND -> insert at the tail (if new)
+	//  - PIOF_LIDENTRY_DBREORDER -> when not new, alter position
+	//
+	// if remoteid->localid already present
+	//	if PIOF_LIDENTRY_DBREORDER then remove the entry => not present
+	// if remoteid->localid not present
+	//	if PIOF_LIDENTRY_DBINSERT then insert entry at the head
+	//	else if PIOF_LIDENTRY_DBAPPEND then insert entry at the tail
+	discpatn->size = strnlen (remoteid, 127);
+	keydata ->size = strnlen (localid , 127);
+	memcpy (discpatn->data, remoteid, discpatn->size);
+	memcpy (keydata ->data, localid , keydata ->size);
+	fnd = crs_disclose->get (crs_disclose, discpatn, keydata, DB_SET);
+	if ((db_errno == 0) && (fnd == 0)) {
+		if (lidcbflags & PIOF_LIDENTRY_DBREORDER) {
+			crs_disclose->del (crs_disclose, 0);
+			fnd = DB_NOTFOUND;
+		}
+	} else if (fnd != DB_NOTFOUND) {
+		db_errno = fnd;
+	}
+	if ((db_errno == 0) && (fnd == DB_NOTFOUND)) {
+		if (lidcbflags & PIOF_LIDENTRY_DBINSERT) {
+			db_errno = crs_disclose->put (crs_disclose, discpatn, keydata, DB_KEYFIRST);
+		} else if (lidcbflags & PIOF_LIDENTRY_DBAPPEND) {
+			db_errno = crs_disclose->put (crs_disclose, discpatn, keydata, DB_KEYLAST);
+		}
+	}
+	return db_errno;
 }
 
 

@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <ctype.h>
 #include <string.h>
+#include <limits.h>
 
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -60,6 +61,11 @@ enum VARS {
 	CFGVAR_DB_LOCALID,
 	CFGVAR_DB_DISCLOSE,
 	CFGVAR_TLS_DHPARAMFILE,
+	CFGVAR_TLS_MAXPREAUTH,
+	CFGVAR_TLS_ONTHEFLY_SIGNCERT,
+	CFGVAR_TLS_ONTHEFLY_SIGNKEY,
+	CFGVAR_FACILITIES_DENY,
+	CFGVAR_FACILITIES_ALLOW,
 	//
 	CFGVAR_LENGTH,
 	CFGVAR_NONE = -1
@@ -103,6 +109,11 @@ struct cfgopt config_options [] = {
 	"db_localid",		cfg_setvar,	CFGVAR_DB_LOCALID,
 	"db_disclose",		cfg_setvar,	CFGVAR_DB_DISCLOSE,
 	"tls_dhparamfile",	cfg_setvar,	CFGVAR_TLS_DHPARAMFILE,
+	"tls_maxpreauth",	cfg_setvar,	CFGVAR_TLS_MAXPREAUTH,
+	"tls_onthefly_signcert",cfg_setvar,	CFGVAR_TLS_ONTHEFLY_SIGNCERT,
+	"tls_onthefly_signkey",	cfg_setvar,	CFGVAR_TLS_ONTHEFLY_SIGNKEY,
+	"deny_facilities",	cfg_setvar,	CFGVAR_FACILITIES_DENY,
+	"allow_facilities",	cfg_setvar,	CFGVAR_FACILITIES_ALLOW,
 	//
 	NULL,			NULL,		CFGVAR_NONE
 };
@@ -155,6 +166,14 @@ struct var2val v2v_log_perror [] = {
 	{ NULL, 0 }
 };
 
+struct var2val v2v_facility_flag [] = {
+	{ "starttls", PIOF_FACILITY_STARTTLS },
+	{ "startgss", PIOF_FACILITY_STARTGSS },
+	{ "startssh", PIOF_FACILITY_STARTSSH },
+	{ "*",        PIOF_FACILITY_ALL_CURRENT },
+	{ NULL, 0 }
+};
+
 
 
 static unsigned int parse_var2val (char *word, int wlen, struct var2val *patterns, unsigned int defaultvalue) {
@@ -178,13 +197,16 @@ static unsigned int parse_var2val (char *word, int wlen, struct var2val *pattern
 static unsigned int parse_var2val_list (char *wordlist, struct var2val *patterns, unsigned int defaultvalue) {
 	int comma;
 	unsigned int retval = 0;
-	if ((wordlist == NULL) || (*wordlist == '\0')) {
+	if (wordlist == NULL) {
 		return defaultvalue;
 	}
 	while (*wordlist) {
 		comma = strcspn (wordlist, ",");
 		retval |= parse_var2val (wordlist, comma, patterns, 0);
-		wordlist += comma + 1;
+		wordlist += comma;
+		if (*wordlist == ',') {
+			wordlist++;
+		}
 	}
 	return retval;
 }
@@ -538,4 +560,44 @@ char *cfg_tls_dhparamfile (void) {
 	return configvars [CFGVAR_TLS_DHPARAMFILE];
 }
 
+unsigned int cfg_tls_maxpreauth (void) {
+	char *mps = configvars [CFGVAR_TLS_MAXPREAUTH];
+	unsigned long mpi = 32768;
+	if (mps != NULL) {
+		mpi = strtoul (mps, &mps, 10);
+		if (mpi > UINT_MAX) {
+			mpi = 32768;
+		}
+	}
+	return (unsigned int) mpi;
+}
+
+char *cfg_tls_onthefly_signcert (void) {
+	if (configvars [CFGVAR_TLS_ONTHEFLY_SIGNKEY]) {
+		return configvars [CFGVAR_TLS_ONTHEFLY_SIGNCERT];
+	} else {
+		return NULL;
+	}
+}
+
+char *cfg_tls_onthefly_signkey (void) {
+	if (configvars [CFGVAR_TLS_ONTHEFLY_SIGNCERT]) {
+		return configvars [CFGVAR_TLS_ONTHEFLY_SIGNKEY];
+	} else {
+		return NULL;
+	}
+}
+
+uint32_t cfg_facilities (void) {
+	uint32_t deny, allow;
+	deny  = parse_var2val_list (
+			configvars [CFGVAR_FACILITIES_DENY ],
+			v2v_facility_flag,
+			0);
+	allow = parse_var2val_list (
+			configvars [CFGVAR_FACILITIES_ALLOW],
+			v2v_facility_flag,
+			PIOF_FACILITY_ALL_CURRENT);
+	return PIOF_FACILITY_ALL_CURRENT & allow & ~deny;
+}
 

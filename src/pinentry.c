@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
+#include <assert.h>
 
 #include <unistd.h>
 #include <syslog.h>
@@ -26,99 +27,9 @@
 #endif
 
 
-/*
- * The user facility for entering PINs.  This is a simple loop that
- * continually asks the TLS pool to send PIN inquiries, and then
- * presents them on the console to the end user.  Chances are that
- * most will see this as an arcane method due to its textual nature,
- * even though that makes its security much more controllable.
- *
- * There is no reason why GUI programs could not do similar things,
- * though.  To those, this function can serve as example code.
- */
-void enter_pins (char *pinsocket) {
-	struct sockaddr_un sun;
-	struct tlspool_command pio;
-	struct pioc_pinentry *pe = &pio.pio_data.pioc_pinentry;
-	char *pwd = NULL;
-	int sox;
-
-	/*
-	 * Connect to the UNIX domain socket for PIN entry
-	 */
-	if (strlen (pinsocket) + 1 > sizeof (sun.sun_path)) {
-		tlog (TLOG_UNIXSOCK | TLOG_USER, LOG_CRIT, "Socket path too long: %s", pinsocket);
-		exit (1);
-	}
-	strcpy (sun.sun_path, pinsocket);
-	sun.sun_family = AF_UNIX;
-	sox = socket (AF_UNIX, SOCK_STREAM, 0);
-	if (!sox) {
-		perror ("Failed to allocate UNIX domain socket");
-		exit (1);
-	}
-	if (connect (sox, (struct sockaddr *) &sun, SUN_LEN (&sun)) == -1) {
-		perror ("Failed to connect to PIN socket");
-		exit (1);
-	}
-	
-	/*
-	 * Setup the command structure
-	 */
-	bzero (&pio.pio_data, sizeof (pio.pio_data));
-	pio.pio_reqid = 666;
-
-	/*
-	 * Iteratively request what token needs a PIN, and provide it.
-	 */
-	while (1) {
-		pio.pio_cmd = PIOC_PINENTRY_V1;
-		bzero (pe->pin, sizeof (pe->pin));
-		if (pwd) {
-			if (strlen (pwd) + 1 > sizeof (pe->pin)) {
-				tlog (TLOG_USER | TLOG_PKCS11, LOG_ERR, "No support for PIN lenghts over 128");
-			} else {
-				strcpy (pe->pin, pwd);
-			}
-			bzero (pwd, strlen (pwd));
-		}
-		tlog (TLOG_PKCS11 | TLOG_USER, LOG_DEBUG, "Offering PIN service to TLS pool with PIN length %d", strlen (pe->pin));
-		if (send (sox, &pio, sizeof (pio), 0) != sizeof (pio)) {
-			pio.pio_cmd = PIOC_ERROR_V1;
-			pio.pio_data.pioc_error.tlserrno = errno;
-			strcpy (pio.pio_data.pioc_error.message, "Failed to send message to TLS pool");
-		} else {
-			if (recv (sox, &pio, sizeof (pio), 0) != sizeof (pio)) {
-				pio.pio_cmd = PIOC_ERROR_V1;
-				pio.pio_data.pioc_error.tlserrno = errno;
-				strcpy (pio.pio_data.pioc_error.message, "Failed to read full message from TLS pool");
-			} else {
-				if ((pio.pio_cmd != PIOC_PINENTRY_V1) && (pio.pio_cmd != PIOC_ERROR_V1)) {
-					tlog (TLOG_UNIXSOCK, LOG_ERR, "Received funny command 0x%08x instead of 0x%08x", pio.pio_cmd, PIOC_PINENTRY_V1);
-					pio.pio_cmd = PIOC_ERROR_V1;
-					pio.pio_data.pioc_error.tlserrno = EPROTO;
-					strcpy (pio.pio_data.pioc_error.message, "Unexpected command response from TLS pool");
-				}
-			}
-		}
-		if (pio.pio_cmd == PIOC_ERROR_V1) {
-			errno = pio.pio_data.pioc_error.tlserrno;
-			perror (pio.pio_data.pioc_error.message);
-			break;
-		}
-		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received PIN inquiry from TLS pool");
-		tlog (TLOG_PKCS11, LOG_INFO, "Token Manuf: %s\n      Model: %s\n     Serial: %s\n      Label: %s\n    Attempt: %d", pe->token_manuf, pe->token_model, pe->token_serial, pe->token_label, pe->attempt);
-		pwd = getpass (pe->prompt);
-	}
-	bzero (&pio.pio_data, sizeof (pio.pio_data));
-	close (sox);
-	exit (1);
-}
-
-
 /* The PIN entry procedure consists of a registration for PINENTRY callbacks.
  * When a PIN is needed, the existing callback is used to ask for one.
- * While the collback is being processed, there could be a danger that another
+ * While the callback is being processed, there could be a danger that another
  * process claims this senstive privilege.  To avoid that, the previous
  * requester has the advantage of being the only one to register up to a
  * timeout that it included in the original request.  This mechanism is
@@ -148,14 +59,14 @@ static time_t pinentry_timeout = 0;
 
 
 /*
- * Register a application socket as one that is willing to process PIN entry
+ * Register an application socket as one that is willing to process PIN entry
  * requests.  The file descriptor may also be used for other functions,
  * so it is only safe to use as a sending channel.  Registration is just
  * for one try, after which the application protocol will let it re-register.
  */
 void register_pinentry_command (struct command *cmd) {
 	int error = 0;
-	pthread_mutex_lock (&pinentry_lock);
+	assert (pthread_mutex_lock (&pinentry_lock) == 0);
 	if (!pinentry_cmd) {
 		// There is actually a need for a PIN entry command to register
 		if (pinentry_client == cmd->clientfd) {
@@ -194,7 +105,7 @@ void register_pinentry_command (struct command *cmd) {
  * requestor.
  */
 void pinentry_forget_clientfd (int fd) {
-	pthread_mutex_lock (&pinentry_lock);
+	assert (pthread_mutex_lock (&pinentry_lock) == 0);
 	if (pinentry_client == fd) {
 		// No response possible.  Service reclaims for cmd pooling
 		pinentry_cmd = NULL;
@@ -257,7 +168,7 @@ success_t pin_callback (	int attempt,
 	}
 	//
 	// Grab the current PINENTRY registration or report failure
-	pthread_mutex_lock (&pinentry_lock);
+	assert (pthread_mutex_lock (&pinentry_lock) == 0);
 	cmd = pinentry_cmd;
 	if (cmd != NULL) {
 		tlog (TLOG_PKCS11 | TLOG_USER, LOG_DEBUG, "Using registered PIN entry command");
@@ -301,10 +212,10 @@ success_t pin_callback (	int attempt,
 	//
 	// Await response or timeout
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response()");
-	cmd = send_callback_and_await_response (cmd);
+	cmd = send_callback_and_await_response (cmd, 0);
 	register_pinentry_command (cmd);
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Returnd send_callback_and_await_response()");
-	if ((cmd->cmd.pio_cmd != PIOC_PINENTRY_V1) || !*cmd->cmd.pio_data.pioc_pinentry.pin) {
+	if ((cmd->cmd.pio_cmd != PIOC_PINENTRY_V2) || !*cmd->cmd.pio_data.pioc_pinentry.pin) {
 		tlog (TLOG_PKCS11 | TLOG_USER, LOG_ERR, "Funny command or empty PIN code for PIN entry");
 		return 0;
 	}

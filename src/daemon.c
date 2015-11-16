@@ -28,7 +28,6 @@ static struct sigaction hupaction = {
 
 int main (int argc, char *argv []) {
 	char *cfgfile = NULL;
-	char *pinentry = NULL;
 	int parsing = 1;
 	int kill_competition = 0;
 
@@ -36,7 +35,7 @@ int main (int argc, char *argv []) {
 	 * Cmdline argument parsing
 	 */
 	while (parsing) {
-		int opt = getopt (argc, argv, "kc:p:P:");
+		int opt = getopt (argc, argv, "kc:");
 		switch (opt) {
 		case 'k':
 			if (kill_competition) {
@@ -52,26 +51,10 @@ int main (int argc, char *argv []) {
 			}
 			cfgfile = strdup (optarg);
 			break;
-		case 'p':
-			if (pinentry) {
-				fprintf (stderr, "You can only specify one pinentry socket file\n");
-				exit (1);
-			}
-			pinentry = strdup (optarg);
-			break;
 		case -1:
 			parsing = 0;
 			break;
 		}
-	}
-	if (cfgfile && pinentry) {
-		fprintf (stderr, "You should specify either a pinentry socket file or a config file\n");
-		free (cfgfile);
-		exit (1);
-	}
-	if (kill_competition && pinentry) {
-		fprintf (stderr, "You cannot combine kill-the-competition with client options\n");
-		exit (1);
 	}
 	if (!cfgfile) {
 		cfgfile = strdup ("/etc/tlspool.conf");
@@ -79,41 +62,54 @@ int main (int argc, char *argv []) {
 
 	//TODO// setup syslogging
 
-	/*
-	 * Mode selection: Daemon or PIN entry
-	 */
-	if (pinentry) {
-		enter_pins (pinentry);
-	} else {
-		int pid = fork ();
-		switch (pid) {
-		case -1:
-			perror ("Failed to fork daemon");
-			exit (1);
-		case 0:
-			setsid ();
-			if (sigaction (SIGHUP, &hupaction, NULL) != 0) {
-				perror ("Failed to setup HUP signal handler");
-			}
-			//TODO// close the common fd's 0/1/2
-			parse_cfgfile (cfgfile, kill_competition);
-			setup_error ();
-			tlog (TLOG_DAEMON, LOG_INFO, "TLS Pool started");
-			setup_management ();
-			setup_starttls ();
-			setup_pinentry ();
-			run_service ();
-			tlog (TLOG_DAEMON, LOG_DEBUG, "Preparing to stop -- Cleanup started");
-			cleanup_pinentry ();
-			cleanup_starttls ();
-			cleanup_management ();
-			cleanup_error ();
-			tlog (TLOG_DAEMON, LOG_DEBUG, "Orderly shutdown seems to have worked");
-			tlog (TLOG_DAEMON, LOG_INFO, "TLS Pool stopped");
-			break;
-		default:
-			break;
+	//UNDO// sigset_t sigblockmask;
+	int pid = fork ();
+	switch (pid) {
+	case -1:
+		perror ("Failed to fork daemon");
+		exit (1);
+	case 0:
+		// Detach from the startup session
+		setsid ();
+		//TODO// close the common fd's 0/1/2
+		// Setup a SIGHUP handler to gracefully stop service
+		if (sigaction (SIGHUP, &hupaction, NULL) != 0) {
+			perror ("Failed to setup HUP signal handler");
 		}
+		if (signal (SIGPIPE, SIG_IGN) == SIG_ERR) {
+			perror ("Failed to protect daemon from SIGPIPE");
+		}
+		//UNDO// // Block SIGINT, which is used between copycat() threads
+		//UNDO// sigemptyset (&sigblockmask);
+		//UNDO// sigaddset (&sigblockmask, SIGINT);
+		//UNDO// if (sigprocmask (SIG_BLOCK, &sigblockmask, NULL) != 0) {
+		//UNDO// 	perror ("Failed to set signal mask");
+		//UNDO// 	exit (1);
+		//UNDO// }
+		// Setup program structures
+		parse_cfgfile (cfgfile, kill_competition);
+		setup_error ();
+		tlog (TLOG_DAEMON, LOG_INFO, "TLS Pool started");
+		setup_management ();
+		setup_service ();
+		setup_starttls ();
+		setup_pinentry ();
+		setup_ctlkey ();
+		// Run the TLS Pool service's main routine
+		run_service ();
+		// Cleanup for shutdown of the TLS Pool
+		tlog (TLOG_DAEMON, LOG_DEBUG, "Preparing to stop -- Cleanup started");
+		cleanup_ctlkey ();
+		cleanup_pinentry ();
+		cleanup_starttls ();
+		cleanup_service ();
+		cleanup_management ();
+		cleanup_error ();
+		tlog (TLOG_DAEMON, LOG_DEBUG, "Orderly shutdown seems to have worked");
+		tlog (TLOG_DAEMON, LOG_INFO, "TLS Pool stopped");
+		break;
+	default:
+		break;
 	}
 
 	/*

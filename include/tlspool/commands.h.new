@@ -8,14 +8,14 @@
 #include <stdint.h>
 
 
-#define TLSPOOL_IDENTITY_V2	"20151111api@tlspool.arpa2.net"
+#define TLSPOOL_IDENTITY_TMP	"20150527tlspool@tmp.vanrein.org"
 
 
 /****************************** STRUCTURES *****************************/
 
 
 #define TLSPOOL_CTLKEYLEN 16
-#define TLSPOOL_SERVICELEN 16
+#define TLSPOOL_SERVICELEN 32
 #define TLSPOOL_PRNGBUFLEN 350
 #define TLSPOOL_TIMEOUT_DEFAULT 0
 #define TLSPOOL_TIMEOUT_INFINITE (~(uint32_t)0)
@@ -89,7 +89,6 @@ struct tlspool_command {
 		} pioc_error;
 		struct pioc_ping {
 			char YYYYMMDD_producer [8+128];	// when & who?
-			uint32_t facilities;		// PIOF_FACILITY_xxx
 		} pioc_ping;
 		struct pioc_starttls {
 			uint32_t flags;		// PIOF_STARTTLS_xxx below
@@ -133,10 +132,7 @@ struct tlspool_command {
 };
 
 
-typedef struct pioc_ping     pingpool_t;
 typedef struct pioc_starttls starttls_t;
-typedef struct pioc_pinentry pinentry_t;
-typedef struct pioc_lidentry lidentry_t;
 
 
 /******************************** COMMANDS *******************************/
@@ -146,34 +142,25 @@ typedef struct pioc_lidentry lidentry_t;
  * the current exchange.  It explains why, through a code and message,
  * in the pioc_error type.  Error codes are defined in <errno.h>
  */
-#define PIOC_SUCCESS_V2				0x00000000
+#define PIOC_SUCCESS_V1				0x00000000
 
 
 /* An error packet is sent if the other party is unwilling to continue
  * the current exchange.  It explains why, through a code and message,
  * in the pioc_error type.  Error codes are defined in <errno.h>
  */
-#define PIOC_ERROR_V2				0x00000001
+#define PIOC_ERROR_V1				0x00000001
 
 
 /* A simple command to exchange courtesy, keepalives and potentially
  * identifying information of the peers.  The same packet is used in
  * both directions.
- *
  * The string in pioc_ping.YYYYMMDD_producer describes the sender's
  * semantics with an identity comprising of a YYYYMMDD timestamp for
  * the software semantics version, plus a domain or user@domain identity
  * representing the producer at that time, terminated with '\0'.
- *
- * The facilities make it possible to ask the TLS Pool which extended
- * facilities will be supported.  The compile-time constant
- * PIOF_FACILITY_ALL_CURRENT is usually sent to the TLS Pool, which
- * will only reset bits from what it receives.  The default behaviour
- * is a bit-wise and with the TLS Pool's own PIOF_FACILITY_ALL_CURRENT
- * but configuration may lead to a further reduction of usable
- * facilities.
  */
-#define PIOC_PING_V2				0x00000010
+#define PIOC_PING_V1				0x00000010
 
 
 /* Start a TLS handshake.  This uses PIO_STARTTLS_xxx flags, defined below.
@@ -220,16 +207,19 @@ typedef struct pioc_lidentry lidentry_t;
 #define PIOC_STARTTLS_LOCALID_V2		0x00000028
 
 
+/* TODO: Possibly support renegotiation, like for explicit authn */
+
+
 /* The PIN entry command.  The data stored in tlscmd_pinentry determines
  * what happens exactly.  When sent to the TLS Pool it can provide a
- * non-empty PIN, which only makes sense in response to a PIOC_PINENTRY_V2
+ * non-empty PIN, which only makes sense in response to a PIOC_PINENTRY_V1
  * from the TLS Pool.  An empty PIN always means that no PIN is being
  * provided, possibly due to cancellation by the user.  All
  * token-descriptive are terminated with a NUL-character, unlike in
  * PKCS #11 where they have a fixed length.  Trailing spaces available
  * in the PKCS #11 level token description have been stripped off.
  */
-#define PIOC_PINENTRY_V2			0x00000029
+#define PIOC_PINENTRY_V1			0x00000029
 
 
 /* The named connect command.  This is used in callbacks from the TLS Pool,
@@ -283,7 +273,7 @@ typedef struct pioc_lidentry lidentry_t;
  * Be advised that the size of buffer may increase in future releases.  So,
  * be sure to use TLSPOOL_PRNGBUFLEN which holds the header-file defined size.
  */
-#define PIOC_PRNG_V2				0x0000002b
+#define PIOC_STARTTLS_PRNG_V2			0x0000002b
 
 
 /* Detach the connection decribed by the given ctlkey value.  The value for
@@ -335,39 +325,6 @@ typedef struct pioc_lidentry lidentry_t;
 #define PIOC_LOCAL				0x80000000
 
 
-/*************************** PIOF_FACILITY_xxx FLAGS **************************/
-
-
-/* The PIOF_FACILITY_xxx facilities are sent and received in pioc_ping.
- *
- * When sent to the TLS Pool, this expresses the facilities that the
- * application is interested in.  A customary practice is to set this
- * to PIOF_FACILITY_ALL_CURRENT to incorporate all the compile-time
- * facilities known to the TLS Pool client.
- *
- * The TLS Pool will respond by resetting those facilities that it will
- * not support.  This may be due to the PIOF_FACILITY_ALL_CURRENT at the
- * time it was built, or to explicit configuration that denies certain
- * facilities and/or that only allows certain other facilities.
- *
- * The facilities that are currently specified, though not necessarily
- * implemented and incorporated into PIOF_FACILITY_ALL_CURRENT, are:
- *
- * PIOF_FACILITY_STARTTLS -- support for the PIOC_STARTTLS command
- * PIOF_FACILITY_STARTGSS -- support for the PIOC_STARTGSS command
- * PIOF_FACILITY_STARTSSH -- support for the PIOC_STARTSSH command
- *
- * Note that the interpretation of flags sent from the TLS Pool, as well
- * as those sent to the TLS Pool, are subject to the API version that is
- * reported by the the PING command.
- */
-
-#define PIOF_FACILITY_ALL_CURRENT		0x00000001
-#define PIOF_FACILITY_STARTTLS			0x00000001
-#define PIOF_FACILITY_STARTGSS			0x00000002
-#define PIOF_FACILITY_STARTSSH			0x00000004
-
-
 /*************************** PIOF_STARTTLS_xxx FLAGS **************************/
 
 
@@ -409,24 +366,66 @@ typedef struct pioc_lidentry lidentry_t;
 #define PIOF_STARTTLS_REMOTEROLE_PEER		0x0000000c
 
 
+#if 0 /* WILL NOT IMPLEMENT -- WILL REMOVE SOON */
+
+/* PIOF_STARTTLS_REQUIRE_DNSSEC tells the TLS Pool that DNSSEC must be
+ * used for all information in DNS; so, a self-acclaimed I-can-do-without
+ * domain is no longer permitted to connect over TLS.  The TLS Pool may
+ * rely on an external resolver to properly set the AD bits.
+ */
+#define PIOF_STARTTLS_REQUIRE_DNSSEC		0x00000010
+
+
+/* PIOF_STARTTLS_TIGHTEN_LDAP tells the TLS Pool that LDAP connections must
+ * be secured through TLS.  In addition, the certificate used by LDAP will
+ * be verified as is normally done for domain certificates.  Normally, that
+ * means it must be acknowledged in a TLSA record.  Users and domains from
+ * LDAP servers that do not live up to this are no longer trusted as peers
+ * on grounds of their occurrence in LDAP alone.
+ */
+#define PIOF_STARTTLS_REQUIRE_LDAP_CERT		0x00000020
+#define PIOF_STARTTLS_REQUIRE_LDAP_DANE		0x00000040
+#define PIOF_STARTTLS_REQUIRE_LDAP_SECURITY	0x00000060
+
+
+/* PIOF_STARTTLS_SKIP_EXT_AUTHN tells the TLS Pool that no external
+ * authentication is needed on top of the normal operations of the
+ * TLS Pool.  Usually, if an external authentication source is configured,
+ * it will be RADIUS.  If it is not even configured, then this flag is of
+ * no consequence.
+ */
+#define PIOF_STARTTLS_SKIP_EXT_AUTHN		0x00000080
+
+
+/* PIOF_STARTTLS_SKIP_EXT_AUTHZ tells the TLS Pool that no external
+ * authorization is needed on top of the normal operations of the
+ * TLS Pool.  Usually, if an external authorization source is configured,
+ * it will be RADIUS.  If it is not even configured, then this flag is of
+ * no consequence.
+ */
+#define PIOF_STARTTLS_BYPASS_EXT_AUTHZ		0x00000100
+
+#endif
+
+
 /* PIOF_STARTTLS_DTLS requests to setup DTLS instead of TLS.
  */
 #define PIOF_STARTTLS_DTLS			0x00000100
 
 
-/* PIOF_STARTTLS_WITHOUT_SNI can be used for client-side STARTTLS as an
- * indication that if the remotid is present then its domain should not
- * be passed over to the other side as a Server Name Indication.  This
- * is not a common structure for all protocols, but is sent by default
+/* PIOF_STARTTLS_SEND_SNI can be used for client-side STARTTLS as an
+ * indication that the remotid is present and its domain should be
+ * passed over to the other side as a Server Name Indication.  This
+ * is not a common structure for all protocols, but it is harmless
  * because it is an indicative TLS option.  Note that it is useful
- * for xxxxs: protocols, which immediately start TLS, but usually not
+ * of xxxxs: protocols, which immediately start TLS, but usually not
  * needed for protocols that issue a STARTTLS command during a normal
  * exchange.  Anyhow, this is application-determined. 
  * If the remoteid contains a user@ part, it is not sent as part of
- * the SNI information, because that would violate the format.  That
+ * the SNI information, because that would violate the format.  It
  * is a missed opportunity though.
  */
-#define PIOF_STARTTLS_WITHOUT_SNI		0x00000200
+#define PIOF_STARTTLS_SEND_SNI			0x00000200
 
 
 /* PIOF_STARTTLS_IGNORE_CACHES requires the TLS Pool to perform the
@@ -448,12 +447,9 @@ typedef struct pioc_lidentry lidentry_t;
  * to authenticate with, and should still be able to access the service
  * over TLS.  It is also useful to permit anonymous TLS connections to
  * remote clients or servers if both sides agree to that.
- *
  * Note that a bidirectionally unauthenticated TLS connection is not
- * protected from man in the middle attacks, although its encryption
- * may protect against passive observers.
- *
- * This flag is overridden by PIOF_STARTTLS_IGNORE_REMOTEID.
+ * protected from man in the middle attacks, although it does warrant
+ * against passive observers.
  */
 #define PIOF_STARTTLS_REQUEST_REMOTEID		0x00000800
 
@@ -464,12 +460,9 @@ typedef struct pioc_lidentry lidentry_t;
  * remote identity in any useful way.  It is also useful to permit
  * anonymous TLS connections to remote clients or servers if both sides
  * agree to that.
- *
  * Note that a bidirectionally unauthenticated TLS connection is not
  * protected from man in the middle attacks, although it does warrant
  * against passive observers.
- *
- * This flag overrides PIOF_STARTTLS_REQUEST_REMOTEID.
  */
 #define PIOF_STARTTLS_IGNORE_REMOTEID		0x00001000
 
@@ -513,19 +506,6 @@ typedef struct pioc_lidentry lidentry_t;
 #define PIOF_STARTTLS_FORK			0x00004000
 
 
-/* PIOF_STARTTLS_DOMAIN_REPRESENTS_USER indicates that the remote identity
- * need not be the expected user@domain, but that the domain is acceptable
- * as well.  This is a common flag on protocols such as SMTP, where a
- * server represents all users under its domain, and authenticates as the
- * domain instead of as the user.  Note that the flag applies equally well
- * to clients as it does to servers.  If an application does not supply
- * this flag, it must supply any remote_id field for a STARTTLS exchange in
- * the exact format as it is supported by the server.  The returned remote_id
- * will always be the exact identity as provided by the server.
- */
-#define PIOF_STARTTLS_DOMAIN_REPRESENTS_USER	0x00008000
-
-
 /* PIOF_STARTTLS_LOCALID_CHECK requests that a local identity is provided
  * to the application before it is accepted; this mechanism allows the
  * application to check such things as its list of virtual host names, and
@@ -535,16 +515,6 @@ typedef struct pioc_lidentry lidentry_t;
  * with possible extensions by a registered LIDENTRY extension.
  */
 #define PIOF_STARTTLS_LOCALID_CHECK		0x00010000
-
-
-/* PIOF_STARTTLS_RENEGOTIATE takes a previously agreed TLS connection and
- * renegotiates identities as specified in this STARTTLS request.  The
- * ctlkey field indicates an attached TLS connection that is to be
- * renegotiated; this field will not be modified in the course of this
- * run of the STARTTLS command.
- */
-#define PIOF_STARTTLS_RENEGOTIATE		0x00020000
-
 
 
 /*************************** PIOF_LIDENTRY_xxx FLAGS **************************/
@@ -669,9 +639,8 @@ typedef struct pioc_lidentry lidentry_t;
  * identities embedded in an infrastructure.
  *
  * TODO: This is unimplemented behaviour; the flag is merely allocated.
- * The result of using this is currently immediate return of DB_NOTFOUND.
  */
-#define PIOF_LIDENTRY_NEW			0x00100000
+// #define PIOF_LIDENTRY_NEW			0x00100000
 
 
 /* PIOF_LIDENTRY_ONTHEFLY indicates in a response to callback that the selected
@@ -694,10 +663,8 @@ typedef struct pioc_lidentry lidentry_t;
  * such as off-the-shelve browsers that require a HTTPS proxy.
  *
  * TODO: This is unimplemented behaviour; the flag is merely allocated.
- * For now, the response is the same as in lieu of configuration of a
- * root key and cert, namely to return DB_NOTFOUND.
  */
-#define PIOF_LIDENTRY_ONTHEFLY			0x00200000
+// #define PIOF_LIDENTRY_ONTHEFLY		0x00300000
 
 
 #endif //TLSPOOL_COMMANDS_H

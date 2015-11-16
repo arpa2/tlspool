@@ -1,0 +1,142 @@
+.TH TLSPOOL_PRNG 3 "November 2015" "ARPA2.net" "Library Calls"
+.SH NAME
+tlspool_prng \- Pseudo-Random Number Generation from TLS master secret
+.SH SYNOPSIS
+.B #include <stdint.h>
+.br
+.B #include <tlspool/commands.h>
+.br
+.B #include <tlspool/starttls.h>
+.sp
+.B int tlspool_prng (char *\fIlabel\fB, char *\fIopt_ctxvalue\fB,
+.RS
+.B uint16_t \fIprng_len\fB, uint8_t *\fIprng_buf\fB,
+.br
+.B uint8_t *ctlkey);
+.RE
+.SH DESCRIPTION
+.PP
+.BR tlspool_prng ()
+generates a pseudo-random sequence based on session cryptographic keys.
+In the case of TLS, this adheres to RFC 5705; other protocols may or
+may not support a similar mechanism, in which case an error is returned.
+.PP
+This leans on access privileges to an existing connection at a meta-level,
+for which we use the customary
+.I ctlkey
+verification mechanism introduced with
+.IR tlspool_starttls ().
+Note that
+random material may be used for security purposes, such as finding the
+same session key for both sides deriving from prior key negotiation; the
+protection of a
+.I ctlkey
+for such applications is important.
+.PP
+The inputs to this function must adhere to the following restrictions:
+.TP 3
+ -
+.I label
+must not be a NULL pointer, but
+.I opt_ctxvalue
+may be set to NULL to bypass the use of a context value.  Note that passing
+an empty string in
+.I opt_ctxvalue
+is different from not providing the string at all by setting it to NULL.
+.TP 3
+ -
+.IR label " and " opt_ctxvalue " (if non-NULL)"
+refer to ASCII strings with printable characters, terminated with a NUL
+character.  The maximum string length of each is 254 bytes.
+.TP 3
+ -
+.I prng_len
+holds the requested number of pseudo-random bytes
+.TP 3
+ -
+.I prng_buf
+points is a non-NULL pointer to a buffer that can hold
+.I prng_len
+bytes.
+.PP
+If the operation succeeds, then
+.I prng_buf
+holds
+.I prng_len
+bytes of random material.  If the operation fails, then
+.I prng_buf
+is filled with zero bytes (to make it stand out as a rather rare case of
+a random byte string).
+.PP
+Note a few restrictions to the generality of this function, as a result of
+the underlying packet format for the communication with the TLS Pool; but
+the dimensions have been choosen such that these restrictions would not
+typically be a problem in practice:
+.TP 3
+ -
+it constrains the string lengths of
+.I label
+and
+.I opt_ctxvalue
+.TP 3
+ -
+it constrains
+.I prng_len
+to a maximum value of
+.B TLSPOOL_PRNGBUFLEN
+.PP
+The TLS Pool may limit certain TLS PRNG labels, in adherence to the
+IANA-maintained TLS Exporter Label Registry.  It additionally supports
+the EXPERIMENTAL label prefix specified in RFC 5705.
+.PP
+Be advised that the maximum size of buffer may increase in future releases.
+So, be sure to use
+.B TLSPOOL_PRNGBUFLEN
+which holds the header-file defined size.
+.SH "RETURN VALUE"
+The function returns 0 on success.
+If an error occurs, the function returns -1 and
+.I errno
+is set appropriately.
+In addition to this behaviour, an error situation resets the
+.I prng_len
+bytes in
+.I prng_buf
+to zero; that is just to make it obvious that it is not random material.
+You should be really cautious about not missing the error reports from
+this function, and these zeroes are there to help you with that.
+.\"TODO: .SH ERRORS
+.\"TODO: Various.
+.SH AUTHOR
+.PP
+Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
+.SH "REPORTING BUGS"
+.PP
+For any discussion, including about bugs, please use the mailing list
+found on
+.IR http://lists.arpa2.org/mailman/listinfo/tls-pool .
+.PP
+Please read the software distribution's
+.IR README ", " INSTALL " and " TODO " files"
+for information about the
+.I tlspool
+implementation status.
+.SH COPYRIGHT
+.PP
+Copyright \(co 2015 Rick van Rein, ARPA2.net.
+.PP
+ARPA2 is funded from InternetWide.org, which in turns receives donations
+from various funding sources with an interest in a private and secure
+Internet that gives users control over their online presence.  This particular
+project has been sponsored in part by NCSC.
+.SH "SEE ALSO"
+.IR tlspool "(8)," tlspool_starttls "(3)
+.PP
+The TLS Pool API is documented in the include file
+.IR <tlspool/commands.h> " and " <tlspool/starttls.h>
+for C, and the
+.I tlspool.py
+module for Python.
+.PP
+Online resources may be found on the project home page,
+.IR http://tlspool.arpa2.net .

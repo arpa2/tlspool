@@ -4,16 +4,23 @@
 #include <stdio.h>
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
+#include <fcntl.h>
 
 #include <errno.h>
 #include <poll.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <netdb.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/wait.h>
+#include <sys/select.h>
+#include <sys/resource.h>
 
 #include <tlspool/starttls.h>
 
@@ -23,68 +30,45 @@ static starttls_t tlsdata = {
 	.local = 0,
 };
 
+static char *chatcommand;
+static char *tunnelcommand;
+static int global_argc;
+static char **global_argv;
+static struct addrinfo *remoteaddrinfo;
+static int role = -1;
 
-struct copydata {
-	pthread_t thread;
-	int cnx;
-	int fwd;
+static struct option choice_clisrv [] = {
+	{ "client", 0, NULL, 'c' },
+	{ "server", 0, NULL, 's' },
+	{ NULL, 0, NULL, 0 }
+};
+
+static struct option command_options [] = {
+	{ "tcp",		0, NULL, 't' },
+	{ "tcp-tls",		0, NULL, 't' },
+	{ "udp",		0, NULL, 'u' },
+	{ "udp-dtls",		0, NULL, 'u' },
+	{ "sctp-stream-number",	1, NULL, 'x' },
+	{ "sctp-tunneled",	0, NULL, 'o' },
+	{ "sctp-tunnelled",	0, NULL, 'o' },
+	{ "sctp-not-tunneled",	0, NULL, 'O' },
+	{ "sctp-not-tunnelled",	0, NULL, 'O' },
+	{ "sctp-dtls",		0, NULL, 'd' },
+	{ "sctp-tls",		0, NULL, 'D' },
+	{ "fork",		0, NULL, 'f' },
+	{ "service",		1, NULL, 's' },
+	{ "local-addr",		1, NULL, 'l' },
+	{ "remote-addr",	1, NULL, 'r' },
+	{ "local-id",		1, NULL, 'L' },
+	{ "remote-id",		1, NULL, 'R' },
+	{ "tlspool-socket-path",1, NULL, 'S' },
+	{ "chat-command",	1, NULL, 'C' },
+	{ NULL, 0, NULL, 0 }
 };
 
 
-void copycat (void *cd_void) {
-	struct copydata *cd = (struct copydata *) cd_void;
-	struct pollfd inout [2];
-	char buf [1024];
-	ssize_t sz;
-	inout [0].fd = cd->cnx;
-	inout [1].fd = cd->fwd;
-	inout [0].events = inout [1].events = POLLIN;
-	printf ("DEBUG: Starting copycat cycle for insox=%d, fwsox=%d\n", cd->cnx, cd->fwd);
-	while (1) {
-		if (poll (inout, 2, -1) == -1) {
-			printf ("DEBUG: Copycat polling returned an error\n");
-			break;
-		}
-		if (inout [0].revents & POLLIN) {
-			sz = recv (cd->cnx, buf, sizeof (buf), MSG_DONTWAIT);
-			printf ("DEBUG: Copycat received %d local bytes from %d\n", (int) sz, cd->cnx);
-			if (sz == -1) {
-				break;	// stream error
-			} else if (sz == 0) {
-				errno = 0;
-				break;	// orderly shutdown
-			} else if (send (cd->fwd, buf, sz, MSG_DONTWAIT) != sz) {
-				break;	// communication error
-			} else {
-				printf ("Copycat forwarded %d bytes to %d\n", (int) sz, cd->fwd);
-			}
-		}
-		if (inout [1].revents & POLLIN) {
-			sz = recv (cd->fwd, buf, sizeof (buf), MSG_DONTWAIT);
-			printf ("DEBUG: Copycat received %d reply bytes from %d\n", (int) sz, cd->fwd);
-			if (sz == -1) {
-				break;	// stream error
-			} else if (sz == 0) {
-				errno = 0;
-				break;	// orderly shutdown
-			} else if (send (cd->cnx, buf, sz, MSG_DONTWAIT) != sz) {
-				break;	// communication error
-			} else {
-				printf ("Copycat returned %d bytes to %d\n", (int) sz, cd->cnx);
-			}
-		}
-		if ((inout [0].revents | inout [1].revents) & ~POLLIN) {
-			printf ("DEBUG: Copycat polling returned a special condition\n");
-			break;
-		}
-	}
-	printf ("DEBUG: Ending copycat cycle for insox=%d, fwsox=%d\n", cd->cnx, cd->fwd);
-	close (cd->cnx);
-	close (cd->fwd);
-	free (cd);	// Contains pthread_t but that's only an ID
-}
 
-
+#ifdef USING_STR2PORT_SOMEWHERE
 int str2port (char *portstr) {
 	char *portrest;
 	long int retval = strtol (portstr, &portrest, 0);
@@ -98,11 +82,80 @@ int str2port (char *portstr) {
 	}
 	return (int) retval;
 }
+#endif
 
 
-#ifdef INVOKE_EXTERNAL_PROCESS_THROUGH_FORK_EXECVE
-int chat (int plainfd, int skipc, int argc, char *argv []) {
-	int pppexit = 0;
+struct unixaddrinfo {
+	struct addrinfo ai;
+	struct sockaddr_un sa;
+};
+
+void parse_addrinfo (char *instr, char local_remote,
+			struct addrinfo *hint, struct addrinfo **res) {
+	while (*res != NULL) {
+		res = &(*res)->ai_next;
+	}
+	if (!instr) {
+		fprintf (stderr, "Specify -%c as either a socket pathname or a [host]:port\n", local_remote);
+		exit (1);
+	}
+	if (instr [0] == '/') {
+		struct unixaddrinfo *uai;
+		/* Interpret instr as a UNIX domain socket's path name */
+		uai = malloc (sizeof (struct unixaddrinfo));
+		if (uai == NULL) {
+			fprintf (stderr, "Out of memory allocating UNIX addrinfo\n");
+			exit (1);
+		}
+		uai->ai.ai_flags = 0;
+		uai->ai.ai_family = AF_UNIX;
+		uai->ai.ai_socktype = hint->ai_socktype;
+		uai->ai.ai_protocol = 0;
+		uai->ai.ai_addrlen = sizeof (struct sockaddr_un);
+		uai->ai.ai_addr = (struct sockaddr *) &uai->sa;
+		uai->ai.ai_canonname = instr;
+		uai->ai.ai_next = NULL;
+		uai->sa.sun_family = AF_UNIX;
+		if (strlen (instr) +1 > sizeof (uai->sa.sun_path)) {
+			fprintf (stderr, "UNIX domain socket path %s too long\n", instr);
+			exit (1);
+		}
+		strcpy (uai->sa.sun_path, instr);
+		*res = &uai->ai;
+	} else {
+		/* Interpret instr as a host:port combination */
+		char *port;
+		int braket;
+		port = strrchr (instr, ':');
+		if (port == NULL) {
+			fprintf (stderr, "Format -%c as either /unix/domain/path/name or as host:port\n", local_remote);
+			exit (1);
+		}
+		if ((instr [0] == '[') && (port [-1] == ']')) {
+			braket = 1;
+			hint->ai_family = AF_INET6;
+		} else {
+			braket = 0;
+			hint->ai_family = AF_UNSPEC;
+		}
+		port [-braket] = '\0';
+		if (getaddrinfo (instr + braket, port+1, hint, res) != 0) {
+			fprintf (stderr, "Syntax error in -%c paramater; use /uinx/domain/path/name or host:port\n", local_remote);
+			exit (1);
+		}
+		port [-braket] = braket? ']': ':';
+	}
+}
+
+
+int chat_builtin (int plainfd, char *progpath, int argc, char *argv []);
+int chat (int plainfd) {
+	int chatexit = 0;
+	//
+	// Without explicit chatcommand, invoke the builtin ppp-style chat
+	if (chatcommand == NULL) {
+		return chat_builtin (plainfd, tunnelcommand, global_argc, global_argv);
+	}
 	//
 	// Fork off a STARTTLS chat session
 	switch (fork ()) {
@@ -113,77 +166,368 @@ int chat (int plainfd, int skipc, int argc, char *argv []) {
 		close (0);
 		close (1);
 		if ((dup2 (plainfd, 0) == -1) || (dup2 (plainfd, 1) == -1)) {
-			fprintf (stderr, "Failed to connect plaintext to the %s interaction\n", argv [0]);
+			fprintf (stderr, "Failed to connect plaintext to the %s interaction\n", tunnelcommand);
 			exit (2);
 		}
-		fprintf (stderr, "Starting script + args: %s, %s, %s...\n", argv [0], argv [1], argv [2]);
-		execve (argv [0], argv, NULL /*TODO:envp*/);
-		perror ("Failed to start ppp-style chat script");
-		exit (2);		// See chat(8)
+		fprintf (stderr, "Starting script + args: %s, %s, %s...\n", tunnelcommand, global_argv [1], global_argv [2]);
+		execve (chatcommand, global_argv, NULL /*TODO:envp:params*/);
+		perror ("Failed to start alternative to the ppp-style chat");
+		exit (2);		// See tlstunnel-chat(8)
 	default:
-		wait (&pppexit);
-		if (!WIFEXITED (pppexit)) {
-			return 2;	// See chat(8)
+		wait (&chatexit);
+		if (!WIFEXITED (chatexit)) {
+			return 2;	// See tlstunnel-chat(8)
 		}
-		return WEXITSTATUS (pppexit);
+		return WEXITSTATUS (chatexit);
 	}
 }
-#else
-int chat (int plainfd, int skipc, int argc, char *argv []);
-#endif /* INVOKE_EXTERNAL_PROCESS_THROUGH_FORK_EXECVE */
+
+
+
+/* Format a UNIX domain socket path that may contain formatting characters:
+ *
+ * %L and %*L indicate the localid  negotiated in the TLS handshake;
+ * %R and %*R indicate the remoteid negotiated in the TLS handshake;
+ *
+ * Note that a server has authenticated names, but a client does not, due
+ * to the early stage in which it forms these addresses (before the TLS
+ * handshake).
+ *
+ * The * is ignored for now, but may be used to prefix domain patterns.
+ *
+ * There currently is no support for iterators with DoNAI selectors, but
+ * this is a logical extension (this function would recurse).
+ */
+int fmtcpy (char *dst, char *src, size_t dstsz, starttls_t *tlsdata) {
+	while (src && *src) {
+		size_t len;
+		char *perc = strchr (src, '%');
+		if (perc) {
+			len = ((intptr_t) perc) - ((intptr_t) src);
+		} else {
+			len = strlen (src);
+		}
+		if (len + 1 > dstsz) {
+			return -1;
+		}
+		memcpy (dst, src, len);
+		src   += len;
+		dst   += len;
+		dstsz -= len;
+		if (perc) {
+			int star = *(++src) == '*';
+			char *xtra = "";
+			if (star) {
+				src++;
+			}
+			switch (*src++) {
+			case 'L':
+				xtra = tlsdata->localid;
+				break;
+			case 'R':
+				xtra = tlsdata->remoteid;
+				break;
+			default:
+				return -1;
+			}
+			len = strnlen (xtra, 127);
+			if (len + 1 > dstsz) {
+				return -1;
+			}
+			memcpy (dst, xtra, len);
+			dst   += len;
+			dstsz -= len;
+		}
+	}
+	*dst++ = '\0';
+	return 0;
+}
+
+
+//TODO// Spark thread with:  fd, localaddrinfo, role, remoteaddrinfo, chatcommand, tlsdata, tunnelcommand, argc, argv; only dynamic is fd, localaddrinfo; thread negotiates session and then goes down; curtlsdata is a thread local variable
+
+/* Data structure passed to connection handler threads */
+struct fdinfo {
+	int fd;
+	struct addrinfo *localaddrinfo;
+};
+
+/* We will smuggle a file descriptor into the localaddrinfo field ai_family;
+ * the value in ai_family is no longer needed, and it would be replicated in
+ * ai_addr->sa_family as well as available through the getsockaddr() result.
+ */
+#define smuggle_fd ai_family
+
+
+#ifdef NEED_THIS_WHEN_THE_CONNECTION_CLOSES_FINALLY
+void cleanup_connection (void *vfdi) {
+	struct fdinfo *fdi = vfdi;
+	struct addrinfo *lai = fdi->localaddrinfo;
+	if (lai->smuggle_fd < 0) {
+		/* Correct UDP reversal so it will be selected again */
+		lai->smuggle_fd = -lai->smuggle_fd;
+	}
+	if (fdi->fd != lai->smuggle_fd) {
+		/* For TCP and SCTP, close the connection */
+		close (fdi->fd);
+	}
+}
+#endif
+
+
+/* The connect_remote() call finds a remoteaddrinfo of the same ai_socktype
+ * as the vlai argument; vlai is localaddrinfo but is passed as (void *) to
+ * support its use in starttls_xxx as a connect_plaintext() routine.  This
+ * is also the reason for the starttls_t data (that is being ignored).
+ *
+ * The return value is -1 on error, and errno will then be set.  Successful
+ * return is a file descriptor >= 0.
+ */
+int connect_remote (starttls_t *curtlsdata, void *vlai) {
+	struct addrinfo *lai = vlai;
+	struct addrinfo *rai = remoteaddrinfo;
+	while (rai) {
+		if (rai->ai_socktype == lai->ai_socktype) {
+			struct sockaddr_un sun;
+			struct sockaddr *sai = rai->ai_addr;
+			int sailen = rai->ai_addrlen;
+			int sox = socket (sai->sa_family, rai->ai_socktype, rai->ai_protocol);
+			if (sox == -1) {
+				return -1;
+			}
+			if (sai->sa_family == AF_UNIX) {
+				bzero (&sun, sizeof (sun));
+				sun.sun_family = AF_UNIX;
+				if (fmtcpy (sun.sun_path, ((struct sockaddr_un *) sai)->sun_path, sizeof (sun.sun_path), curtlsdata) != 0) {
+					fprintf (stderr, "Formatted socket path too long or badly formatted: %s\n");
+					close (sox);
+					continue;
+				}
+				fprintf (stderr, "DEBUG: Formatting returned %s\n", sun.sun_path);
+				sai = (struct sockaddr *) &sun;
+			}
+			if (connect (sox, sai, sailen) == 0) {
+				return sox;
+			}
+			close (sox);
+		}
+		rai = rai->ai_next;
+	}
+	return -1;
+}
+
+
+/* The connection_thread() uses the facilities of starttls_xxx() to
+ * request the plaintext fd.  It also runs chat() over the cryptfd before
+ * invoking starttls_xxx(), as a preamble to the encrypted link.
+ *
+ * When acting as a client:
+ *  - local initiator cnx is plainfd
+ *  - fwd/cryptfd is constructed early, using connect_remote()
+ *  - fwd/cryptfd is then subjected to chat()
+ *  - fwd/cryptfd is then passed into starttls_client()
+ *  - cnx/plainfd is setup in int *privdata, connect_plaintext is NULL/default
+ *
+ * When acting as a server:
+ *  - local intitiator cnx is cryptfd
+ *  - cnx/cryptfd first subjected to chat()
+ *  - cnx/cryptfd is that passed into starttls_server()
+ *  - fwd/plainfd is constructed on demand, in connect_plaintext()
+ *  - fwd/plainfd construction is connect_remote() with privdata==localaddrinfo
+ */
+
+void *connection_thread (void *vfdi) {
+	struct fdinfo *fdi = vfdi;
+	int cnx = fdi->fd;
+	int plainfd = -1;
+	int cryptfd = -1;
+	//TODO// pthread_cleanup_push (cleanup_connection, vfdi);
+	printf ("Thread started to handle fd=%d\n", cnx);
+	int fwd;
+	int setup;
+	starttls_t curtlsdata = tlsdata;	/* local working copy */
+
+	//
+	// Setup cnx/fwd and/or cryptfd/plainfd, inasfar as possible now
+	if (role == 's') {
+		cryptfd = cnx;
+	} else {
+		plainfd = cnx;
+		fwd = cryptfd = connect_remote (&curtlsdata, fdi->localaddrinfo);
+	}
+	//
+	// Perform chat on the cryptfd, as a preamble to starttls
+	setup = chat (cryptfd);
+	if (setup != 0) {
+		fprintf (stderr, "Failed chatting precursor to TLS, error code %d\n", setup);
+		return NULL;
+	}
+	//
+	// Invoke starttls
+	if (role == 's') {
+		// Server: on-demand connect_remote based on localaddrinfo
+		setup = tlspool_starttls (cryptfd, &curtlsdata, fdi->localaddrinfo, connect_remote);
+	} else {
+		// Client: plainfd already available, default returns it
+		setup = tlspool_starttls (cryptfd, &curtlsdata, &plainfd, NULL);
+	}
+	if (setup == -1) {
+		perror ("Failed to start TLS");
+		if (plainfd >= 0) {
+			close (plainfd);
+			plainfd = -1;
+		}
+	}
+	//
+	// Cleanup, as the TLS Pool now connects the end points
+	if (plainfd >= 0) {
+		close (plainfd);
+		plainfd = -1;
+	}
+	//TODO// pthread_cleanup_pop (1);
+	return NULL;
+}
+
 
 int main (int argc, char *argv []) {
 	int parsing = 1;
 	int carrier = -1;
-	int dtls = 0;
-	int role = -1;
+	int sctpdtls = 1;
+	int sctpudp = 0;
+	long parsed_number;
 	int stream;
-	struct sockaddr_in6 insa = { .sin6_family = AF_INET6, 0 };
-	struct sockaddr_in6 fwsa = { .sin6_family = AF_INET6, 0 };
+	int tlsfork = 0;
 	char *localid = NULL;
 	char *remotid = NULL;
 	char *cmdsoxpath = NULL;
+	struct addrinfo hint;
+	struct addrinfo *localaddrinfo = NULL;
+	struct addrinfo *addrwalk = NULL;
+	fd_set bindings, rselect; 
+	int maxbound;
 	int sox = -1;
 	int argc_skip;
+	int cnxlim;
+	struct rlimit rlimit_nofile;
+	struct fdinfo *fdmem;
+
+	//
+	// Initialise variables
+	tunnelcommand = argv [0];
+	//
+	// Fetch the limitation on the number of conncetions
+	if (getrlimit (RLIMIT_NOFILE, &rlimit_nofile) == -1) {
+		perror ("Failed to extract file number limit");
+		exit (1);
+	}
 	//
 	// Parse the command line arguments
+	bzero (&hint, sizeof (hint));
+	hint.ai_family = AF_UNSPEC;
+	hint.ai_socktype = SOCK_STREAM;
+	//
+	// First option is either -c for client or -s for server
+	//TODO// Future options may include peering
+	switch (getopt_long (argc, argv, "cs", choice_clisrv, NULL)) {
+	case 'c':
+		/* -c for client */
+		role = 'c';
+		tlsdata.flags = PIOF_STARTTLS_LOCALROLE_CLIENT
+				| PIOF_STARTTLS_REMOTEROLE_SERVER;
+		break;
+	case 's':
+		/* -s for server */
+		role = 's';
+		tlsdata.flags = PIOF_STARTTLS_LOCALROLE_SERVER
+				| PIOF_STARTTLS_REMOTEROLE_CLIENT;
+		break;
+	case -1:
+	default:
+		break;
+	}
+	if (role == -1) {
+		fprintf (stderr, "The first argument should be -c or -s to setup a TLS client or TLS server\n");
+		exit (1);
+	}
+	//
+	// Further options are settings
 	while (parsing) {
 		//TODO// getlongopt
-		int opt = getopt (argc, argv, "csutx:y:p:L:R:S:");
+		//TODO// -d for DTLS / -D for TLS; -w for SCTP-over-UDP; -W not
+		int opt = getopt_long (argc, argv,
+			"udDtx:oO:fs:l:r:L:R:S:C:",
+			command_options, NULL);
 		switch (opt) {
-		case 'c':
-		case 's':
-			if (role != -1) {
-				fprintf (stderr, "Specify -c or -s only once\n");
-				exit (1);
-			}
-			role = opt;
-			break;
 		case 'u':
+			/* -u for DTLS/UDP */
+			hint.ai_socktype = SOCK_DGRAM;
 			fprintf (stderr, "UDP mode wrapping with DTLS is not implemented -- see man page\n");
 			exit (1);
+		case 'd':
+			/* Run SCTP with DTLS (default) */
+			sctpdtls = 1;
+			break;
+		case 'D':
+			/* Run SCTP with TLS */
+			sctpdtls = 0;
+			break;
+		case 'o':
+			/* Run SCTP over an UDP tunnel */
+			sctpudp = 1;
+			break;
+		case 'O':
+			/* Run SCTP directly (default) */
+			sctpudp = 0;
+			break;
 		case 't':
+			/* Run over TCP (default) */
+			hint.ai_socktype = SOCK_STREAM;
+			break;
 		case 'x':
-		case 'y':
-			if (carrier != -1) {
-				fprintf (stderr, "Specify -t or -x or -y only once\n");
+			/* DTLS/SCTP, DTLS/SCTP/UDP, TLS/SCTP or TLS/SCTP/UDP */
+			//TODO// Maybe better to use a comma-separated list
+			parsed_number = strtol (optarg, &optarg, 0);
+			if (*optarg) {
+				fprintf (stderr, "Syntax error in stream number to -%d\n", opt);
 				exit (1);
 			}
-			carrier = opt;
-			if ((carrier == 'x') || (carrier == 'y')) {
-				long int parsed = strtol (optarg, &optarg, 0);
-				if (*optarg) {
-					fprintf (stderr, "Syntax error in stream number to -%d\n", opt);
-					exit (1);
-				}
-				if ((parsed < 0) || (parsed > 65535)) {
-					fprintf (stderr, "Stream numbers range from 0 to 65535\n");
-					exit (1);
-				}
-				stream = parsed;
+			if ((parsed_number < 0) || (parsed_number > 65535)) {
+				fprintf (stderr, "Stream numbers range from 0 to 65535\n");
+				exit (1);
 			}
+			hint.ai_socktype = SOCK_SEQPACKET;
+			stream = parsed_number;
+			break;
+		case 'f':
+			/* -f to fork TLS sessions */
+			if (tlsfork) {
+				fprintf (stderr, "You should only specify TLS session forking once\n");
+				exit (1);
+			}
+			tlsfork = 1;
+			break;
+		case 's':
+			/* -s servicename */
+			if (*tlsdata.service) {
+				fprintf (stderr, "You should only specify one service name\n");
+				exit (1);
+			}
+			if (strlen (optarg) > TLSPOOL_SERVICELEN - 1) {
+				fprintf (stderr, "Service names should not exceed a length of %d characters (and be IANA-defined)\n", TLSPOOL_SERVICELEN - 1);
+				exit (1);
+			}
+			strcpy (tlsdata.service, optarg);
+			break;
+		case 'l':
+			/* -l xxx for local  address xxx */
+			parse_addrinfo (optarg, 'l', &hint, &localaddrinfo);
+			break;
+		case 'r':
+			/* -l xxx for remote address xxx */
+			parse_addrinfo (optarg, 'r', &hint, &remoteaddrinfo);
 			break;
 		case 'L':
+			/* -L xxx for localid xxx */
 			if (*tlsdata.localid) {
 				fprintf (stderr, "For now, it is not permitted to specify multiple local identities\n");
 				exit (1);
@@ -195,6 +539,7 @@ int main (int argc, char *argv []) {
 			strcpy (tlsdata.localid, optarg);
 			break;
 		case 'R':
+			/* -R xxx for remoteid xxx */
 			if (*tlsdata.remoteid) {
 				fprintf (stderr, "Cannot constrain to multiple remote identities at the same time\n");
 				exit (1);
@@ -206,34 +551,42 @@ int main (int argc, char *argv []) {
 			strcpy (tlsdata.remoteid, optarg);
 			break;
 		case 'S':
+			/* -S /sox/path for TLS Pool socket path /sox/path */
 			if (cmdsoxpath) {
 				fprintf (stderr, "You can specify only one TLS Pool command socket path\n");
 				exit (1);
 			}
 			cmdsoxpath = strdup (optarg);
 			break;
+		case 'C':
+			/* -C /usr/bin/chat for external chat replacement */
+			if (chatcommand) {
+				fprintf (stderr, "You can specify only one replacement for the ppp-style chat command\n");
+				exit (1);
+			}
+			chatcommand = strdup (optarg);
+			break;
 		case -1:
 			parsing = 0;
 		}
 	}
+	//
+	// Sanity checks
 	if (role == -1) {
-		fprintf (stderr, "Specify either -c or -s\n");
+		fprintf (stderr, "Specify either -c or -s (client or server mode)\n");
 		exit (1);
 	}
 	if (!*tlsdata.localid) {
-		fprintf (stderr, "You need to specify -L\n");
+		fprintf (stderr, "You need to specify -L (localid)\n");
 		exit (1);
 	}
-	if (argc < optind + 4) {
-		fprintf (stderr, "After options, specify: inaddr inport fwaddr fwport [[--] pppscriptargs]\n");
+	if (!localaddrinfo) {
+		fprintf (stderr, "You need to specify -l (local socket address)\n");
 		exit (1);
 	}
-	if (carrier == -1) {
-		carrier = 't';
-	} else if (carrier == 'x') {
-		dtls = 1;
-	} else if (carrier == 'y') {
-		carrier = 'x';	// With dtls==0
+	if (!remoteaddrinfo) {
+		fprintf (stderr, "You need to specify -r (remote socket address)\n");
+		exit (1);
 	}
 	if (cmdsoxpath) {
 		if (tlspool_socket (cmdsoxpath) == -1) {
@@ -241,60 +594,82 @@ int main (int argc, char *argv []) {
 			exit (1);
 		}
 	}
-	tlsdata.flags = (dtls? PIOF_STARTTLS_DTLS: 0);
+	tlsdata.flags |= (sctpdtls? PIOF_STARTTLS_DTLS: 0);	//TODO// Later
 	if (role == 'c') {
-		tlsdata.flags |= PIOF_STARTTLS_SEND_SNI;
+		//DO-SEND-SNI// tlsdata.flags |= PIOF_STARTTLS_WITHOUT_SNI;
+	}
+	if (tlsfork) {
+		tlsdata.flags |= PIOF_STARTTLS_FORK;
 	}
 	//
-	// Parse addresses and ports in the remaining arguments
-	if (inet_pton (AF_INET6, argv [optind + 0], &insa.sin6_addr) == 0) {
-		fprintf (stderr, "Not an incoming IPv6 address: %s\n", argv [optind + 0]);
+	// Allocate an information structure per file descriptor
+	fdmem = malloc (sizeof (struct fdinfo [rlimit_nofile.rlim_cur]));
+	if (fdmem == NULL) {
+		fprintf (stderr, "Failed to allocate connection data structures\n");
 		exit (1);
 	}
-	if (inet_pton (AF_INET6, argv [optind + 2], &fwsa.sin6_addr) == 0) {
-		fprintf (stderr, "Not a forwarding IPv6 address: %s\n", argv [optind + 2]);
-		exit (1);
-	}
-	insa.sin6_port = htons (str2port (argv [optind + 1]));
-	fwsa.sin6_port = htons (str2port (argv [optind + 3]));
-	optind += 4;
 	//
 	// Collect the chatscript arguments
-	if (optind >= argc) {
-		fprintf (stderr, "Warning: Not running chat script in lieu of arguments\n");
-	}
-	argc_skip = optind;	/* First is an argument, not program name! */
+	global_argv = argv + (optind - 1);   /* First is arg, not progname! */
+	global_argc = argc - (optind - 1);
+#ifdef DEBUG
 	printf ("argv_chat = %s, %s, %s... (skipped %d)\n", argv [argc_skip], argv [argc_skip+1], argv [argc_skip+1], argc_skip);
+#endif
 	//
 	// Listen to the incoming address
-	switch (carrier) {
-	case 't':
-		tlsdata.ipproto = IPPROTO_TCP;
-		sox = socket (AF_INET6, SOCK_STREAM, 0);
-		break;
-	case 'u':
-		tlsdata.ipproto = IPPROTO_UDP;
-		sox = socket (AF_INET6, SOCK_DGRAM, 0);
-		break;
-	case 'x':
-		tlsdata.ipproto = IPPROTO_SCTP;
-		tlsdata.streamid = stream;
-		sox = socket (AF_INET6, SOCK_SEQPACKET, 0);
-		break;
+	//TODO// Setup localaddrinfo/remoteaddrinfo ai_socktype as a "hint"
+	//TODO// Sockets are opened in the binding loop, using localaddrinfo
+	FD_ZERO (&bindings);
+	maxbound = 0;
+	addrwalk = localaddrinfo;
+	while (addrwalk) {
+		int true = 1;
+		long fcntl_flags;
+		int sox = socket (addrwalk->ai_family, addrwalk->ai_socktype, addrwalk->ai_protocol);
+		if (sox == -1) {
+			fprintf (stderr, "Failed to create socket for %s: %s\n",
+					addrwalk->ai_canonname,
+					strerror (errno));
+			exit (1);
+		}
+		// Share the socket; used because the TLS Pool holds older
+		// connections alive while restarting a TLS Tunnel.
+		if (setsockopt (sox, SOL_SOCKET, SO_REUSEADDR, &true, sizeof (true)) != 0) {
+			fprintf (stderr, "Failed to setup socket for reuse of local address (non-fatal)\n");
+		}
+		// Set the socket to non-blocking mode; this avoids a lockup
+		// on accept() when select() reports a connection attempt that
+		// is retracted before accept() is tried.
+		fcntl_flags = fcntl (sox, F_GETFL, 0);
+		if (fcntl_flags >= 0) {
+			if (fcntl (sox, F_SETFL, fcntl_flags | O_NONBLOCK) != 0) {
+				fcntl_flags = -1;
+			}
+		}
+		if (fcntl_flags < 0) {
+			fprintf (stderr, "Failed to setup for non-blocking accept()\n");
+		}
+		if (bind (sox, addrwalk->ai_addr, addrwalk->ai_addrlen) == -1) {
+			fprintf (stderr, "Failed to bind to %s: %s\n",
+					addrwalk->ai_canonname,
+					strerror (errno));
+			exit (1);
+		}
+		if (addrwalk->ai_socktype != SOCK_DGRAM) {
+			if (listen (sox, 5) == -1) {
+				fprintf (stderr, "Failed to listen to %s: %s\n",
+						addrwalk->ai_canonname,
+						strerror (errno));
+				exit (1);
+			}
+		}
+		FD_SET (sox, &bindings);
+		if (sox > maxbound) {
+			maxbound = sox;
+		}
+		addrwalk->smuggle_fd = sox; // Note: destroys ai_family info!!
+		addrwalk = addrwalk->ai_next;
 	}
-	if (sox == -1) {
-		perror ("Failed to open socket");
-		exit (1);
-	}
-	if (bind (sox, (struct sockaddr *) &insa, sizeof (insa)) == -1) {
-		perror ("Failed to bind socket to inaddr:inport");
-		exit (1);
-	}
-	if (listen (sox, 5) == -1) {
-		perror ("Failed to listen to socket");
-		exit (1);
-	}
-
 	//
 	// Fork off a daemon process
 	switch (fork ()) {
@@ -313,80 +688,39 @@ int main (int argc, char *argv []) {
 	}
 	//
 	// Handle incoming connections
+	//TODO// Support simultaneous connections for real-life tunnel use
 	while (1) {
 		int cnx;
-		int fwd;
-		int setup;
-		struct copydata *sub;
-		starttls_t curtlsdata;
-		memcpy (&curtlsdata, &tlsdata, sizeof (curtlsdata));
-		cnx = accept (sox, NULL, 0);
-		if (cnx == -1) {
-			perror ("Failed to accept incoming connection");
-			continue;
-		}
-		if (role == 's') {
-			setup = chat (cnx, argc_skip, argc, argv);
-			if (setup != 0) {
-				fprintf (stderr, "Failed while chatting to the forwarded client, error code %d\n", setup);
-				close (cnx);
-				continue;
-			}
-			cnx = starttls_server (cnx, &curtlsdata, NULL);
-			if (cnx == -1) {
-				perror ("Failed to setup TLS server");
-				continue;
-			}
-		}
-		switch (carrier) {
-		case 't':
-			fwd = socket (AF_INET6, SOCK_STREAM, 0);
-			break;
-		case 'u':
-			fwd = socket (AF_INET6, SOCK_DGRAM, 0);
-			break;
-		case 'x':
-			fwd = socket (AF_INET6, SOCK_SEQPACKET, 0);
-			break;
-		}
-		if (fwd == -1) {
-			perror ("Failed to create forwarding socket");
+		rselect = bindings;
+		if (select (maxbound+1, &rselect, NULL, NULL, NULL) == -1) {
+			perror ("Failed to select()");
+			//TODO// Is there a reason for recovery?
 			exit (1);
 		}
-		if (connect (fwd, (struct sockaddr *) &fwsa, sizeof (fwsa)) == -1) {
-			perror ("Failed to forward connection");
-			close (fwd);
-			close (cnx);
-			continue;
-		}
-		if (role == 'c') {
-			setup = chat (fwd, argc_skip, argc, argv);
-			if (setup != 0) {
-				fprintf (stderr, "Failed while chatting to the forwarding server, error code %d\n", setup);
-				close (fwd);
-				close (cnx);
-				continue;
+		addrwalk = localaddrinfo;
+		while (addrwalk) {
+			if ((addrwalk->smuggle_fd >= 0) && FD_ISSET (addrwalk->smuggle_fd, &rselect)) {
+				pthread_t thr;
+				if (addrwalk->ai_socktype == SOCK_DGRAM) {
+					// UDP handling must be delegated
+					// completely and no longer polled here
+					cnx = addrwalk->smuggle_fd;
+					addrwalk->smuggle_fd = -addrwalk->smuggle_fd;
+				} else {
+					cnx = accept (addrwalk->smuggle_fd, NULL, 0);
+					if (cnx == -1) {
+						// Spurious RST detected, ignore
+						continue;
+					}
+				}
+				//
+				// Spark a thread to handle to connection
+				fdmem [cnx].fd = cnx;
+				fdmem [cnx].localaddrinfo = addrwalk;
+				pthread_create (&thr, NULL, (void *) connection_thread, (void *) &fdmem [cnx]);
+				pthread_detach (thr);
 			}
-			fwd = starttls_client (fwd, &curtlsdata);
-			if (fwd == -1) {
-				perror ("Failed to setup TLS client");
-				close (cnx);
-				close (fwd);
-				continue;
-			}
-		}
-		if (!(sub = (struct copydata *) malloc (sizeof (struct copydata)))) {
-			perror ("Failed to allocate thread data");
-			exit (1);
-		}
-		sub->cnx = cnx;
-		sub->fwd = fwd;
-		errno = pthread_create (&sub->thread, NULL, copycat, (void *) sub);
-		if (errno) {
-			perror ("Failed to start copycat thread");
-			close (cnx);
-			close (fwd);
-			free (sub);
+			addrwalk = addrwalk->ai_next;
 		}
 	}
 	exit (1);
