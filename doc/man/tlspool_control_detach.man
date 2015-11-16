@@ -1,0 +1,86 @@
+.TH TLSPOOL_CONTROL_DETACH 3 "November 2015" "ARPA2.net" "Library Calls"
+.SH NAME
+tlspool_control_detach \- Detach a TLS connection from the current process
+.SH SYNOPSIS
+.B #include <stdint.h>
+.br
+.B #include <tlspool/commands.h>
+.br
+.B #include <tlspool/starttls.h>
+.sp
+.B int tlspool_control_detach (uint8_t *\fIctlkey\fB);
+.SH DESCRIPTION
+.PP
+.BR tlspool_control_detach ()
+explicitly detaches a TLS session from the controlling connection to the
+TLS Pool.  This
+means that any control connection (including ones from other processes
+and other programs) can reattach, using the
+.I ctlkey
+for the TLS session, provided that this value is passed to them through
+an application mechanism.
+.PP
+The value of
+.I ctlkey
+is used to identify a TLS session from among the set of sessions controlled
+by the current TLS Pool client.  The
+.I ctlkey
+value is a random byte string constructed during the
+.IR tlspool_starttls (3)
+call.  If the flag
+.B PIOF_STARTTLS_FORK
+is set during this operation, then the TLS session is detached immediately,
+without this flag it is attached to the current TLS Pool client.
+.PP
+When the current TLS Pool client closes its connection, for instance
+because the last process dies that held the connection to the TLS Pool open,
+then all attached TLS sessions will be closed by the TLS Pool, but
+TLS sessions in detached state will continue to run.
+.PP
+The
+.IR tlspool_control_reattach ()
+call can be used to re-attach a detached TLS session to a TLS Pool client,
+possibly in another process.  This also uses the
+.IR ctlkey ,
+this time to identify the TLS session from among the set of sessions that
+are not controlled by any TLS Pool client.
+.SH "RETURN VALUE"
+The function returns 0 on success.
+If an error occurs, the function returns -1 and
+.I errno
+is set appropriately.
+.\"TODO: .SH ERRORS
+.\"TODO: Various.
+.SH AUTHOR
+.PP
+Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
+.SH "REPORTING BUGS"
+.PP
+For any discussion, including about bugs, please use the mailing list
+found on
+.IR http://lists.arpa2.org/mailman/listinfo/tls-pool .
+.PP
+Please read the software distribution's
+.IR README ", " INSTALL " and " TODO " files"
+for information about the
+.I tlspool
+implementation status.
+.SH COPYRIGHT
+.PP
+Copyright \(co 2015 Rick van Rein, ARPA2.net.
+.PP
+ARPA2 is funded from InternetWide.org, which in turns receives donations
+from various funding sources with an interest in a private and secure
+Internet that gives users control over their online presence.  This particular
+project has been sponsored in part by NCSC.
+.SH "SEE ALSO"
+.IR tlspool_control_reattach "(3), " tlspool "(8)"
+.PP
+The TLS Pool API is documented in the include file
+.IR <tlspool/commands.h> " and " <tlspool/starttls.h>
+for C, and the
+.I tlspool.py
+module for Python.
+.PP
+Online resources may be found on the project home page,
+.IR http://tlspool.arpa2.net .

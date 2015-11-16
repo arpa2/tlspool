@@ -1,0 +1,406 @@
+.TH TLSPOOL_LOCALID_SERVICE 3 "November 2015" "ARPA2.net" "Library Calls"
+.SH NAME
+tlspool_localid_service \- Offer localid selection service to the TLS Pool
+.SH SYNOPSIS
+.B #include <tlspool/commands.h>
+.br
+.B #include <tlspool/starttls.h>
+.sp
+.B int tlspool_localid_service (char *\fIpath\fB,
+.RS
+.B uint32_t \fIregflags\fB, int \fIresponsetimeout\fB,
+.br
+.B char * (*\fIcb\fB) (lidentry_t *\fIentry\fB, void *\fIdata\fB),
+.br
+.B void *\fIdata\fB);
+.RE
+.SH DESCRIPTION
+.PP
+.BR tlspool_localid_service ()
+registers with the TLS Pool for callbacks that select the local identity
+to present to remote peers.  This is used when the TLS Pool needs to
+reveal an identity, in the interest of privacy and control over a
+user's online presence.
+The intention of
+.BR tlspool_localid_service ()
+is to permit front-end programs to present a popup with a menu for the
+selection of a local identity from a menu, and to potentially add a new
+local identity to be used.
+.PP
+The TLS Pool accepts at most one active localid selection frontend at any time,
+and will even protect a localid selection frontend from being replaced while it
+is in the process of choosing a local identity.  The limit to this protection is
+requested in a number of seconds in
+.IR responsetimeout .
+.PP
+The callback function is called with the opaque
+.I data
+value supplied to
+.B tlspool_localid_service
+and a pointer to a
+.B lidentry_t
+structure that holds a number of fields to guide the selection process:
+.TP
+.I flags
+Holds flags
+.B PIOF_LIDENTRY_xxx
+described below.
+.TP
+.I maxlevels
+Indicates the number of generalisation steps that the response may make
+from the concrete remote identity.
+.TP
+.I timeout
+Specifies the time value (as returned from the
+.IR time ()
+function) at which the selection process times out, and may be replaced
+by a new registration by another TLS Pool client.
+.TP
+.I localid
+May be set to a suggested local identity when
+.I cb
+is called;
+and should be set to the selected local identity when it returns.
+To indicate that no selection was made, this field is set to an empty string.
+.TP
+.I remoteid
+May be set to the current remote identity when
+.I cb
+is called;
+and should be set to the (possibly generalised) remote identity when it
+returns, although this may not take more than
+.B maxlevels
+steps up.
+.PP
+A single local identity selection callback may be preceded by zero or more
+database entries that might match, and that can be used to fill a menu.
+These are passed in invocations to
+.I cb
+before the actual inquiry call to
+.IR cb .
+The various calls to
+.I cb
+return NULL when they succeed, or an error description (and a
+corresponding  error number in
+.IR errno )
+to be relayed back to the TLS Pool and (after it bounces from there) to the
+calling program.
+.PP
+The
+.I regflags
+set the behaviour while searching the database
+.B disclose.db
+for entries
+that map a remote identity to a list of local identities.  It indicates which
+values may be passed without interaction with
+.IR cb ;
+by default, as long as a
+.IR cb
+is registered through
+.BR tlspool_lidentry_service (),
+all attempts
+to determine a local identity pass through 
+.IR cb ;
+the
+.B PIOF_LIDENTRY_SKIP_xxx
+flags
+indicate which entries may be implicitly skipped when they all apply.
+.TP
+.B PIOF_LIDENTRY_SKIP_USER
+indicates that part of the skip condition is that
+any username is not removed; variants with just a domain name are also
+considered skippable under this flag;
+.TP
+.B PIOF_LIDENTRY_SKIP_DOMAIN_xxx
+indicates whether the domain may be changed;
+use
+.BR PIOF_LIDENTRY_SKIP_SAME and/or PIOF_LIDENTRY_SKIPEUP
+to indicate 0 and 1 levels up from the concrete
+domain name; the
+.BR _SUB " variation combines " PIOF_LIDENTRY_SKIPME " and " PIOF_LIDENTRY_SKIPEUP .
+.TP
+.B PIOF_LIDENTRY_SKIP_NOTROOT
+indicates that the entry must not be the root
+domain entry; whether or not the username is removed is not of influence
+on the meaning of this flag.
+.TP
+.B PIOF_LIDENTRY_SKIP_DBENTRY
+indicates that the entry must be in the database;
+it is implied by all the above, but has meaning when used on its own, as it
+permits skipping anything that is stored, without further restricting flags.
+.PP
+These flags are used as
+.I regflags when calling
+.BR tlspool_localid_service ();
+they are also
+returned in callbacks, where they refer to the remote identity selector.
+For example,
+.B PIOF_LIDENTRY_SKIP_USER
+indicates that the username part was skipped, and
+.B PIOF_LIDENTRY_SKIP_DOMAIN_ONEUP
+indicates that the domain name goes one up.
+.TP
+.B PIOF_LIDENTRY_WANT_DBENTRY
+is used as part of the
+.I regflags
+to cause the invocation of
+.I cb
+for database entries at
+the most concrete level above the considered remoteid.
+These can be used to build up a menu, for instance in a data structure
+pointed to by the
+.IR data " parameter of " cb .
+.PP
+Although the skip selection could be made in the extension, it is less
+efficient that way; the interaction with the extension is forced into a
+sequence, and concurrent contenders may therefore need to wait for the
+extension while it is interacting with the user.  So, skipping user
+interaction when it is not needed is advantageous.  When skipping, the
+.B disclose.db
+is used as a source, as if there is no active
+.IR tlspool_localid_service ()
+call active.  Where the database holds multiple values for a given key,
+the first will be used.
+.PP
+Any invocations of
+.I cb
+to deliver a database entry precede the actual inquiry for a local identity.
+These invocations are only made when
+.B PIOF_LIDENTRY_WANT_DBENTRY
+is included in
+.I regflags
+and the number of entries reported are 0 or more, basically variable.
+Any such database entry callbacks precede the normal callback and have:
+.TP 3
+ -
+.B PIOF_LIDENTRY_DBENTRY
+set
+.TP 3
+ -
+.I maxlevels
+set to the number of levels up for this entry (0 for concrete)
+.TP 3
+ -
+.I remoteid
+set to the remoteid entry found in
+.B disclose.db
+.TP 3
+ -
+.I localid
+set to an entry found in the database
+.PP
+The return to these database entries from
+.I cb
+should not be ERROR but is otherwise ignored.  TODO: return error/success?
+.PP
+The final/normal call to
+.I cb
+asks for a local identity, and it is different:
+.TP 3
+ -
+.B PIOF_LIDENTRY_DBENTRY
+is not set
+.TP 3
+ -
+.I maxlevels
+set to the number of permissible levels up (from 0 for concrete)
+.TP 3
+ -
+.I remoteid
+set to the concrete remote identity considered
+.TP 3
+ -
+.I localid
+set to the application-suggested local identity, or empty to signal that it is
+undefined
+.PP
+The entry returned value from the callback function
+.I cb
+should have:
+.TP 3
+ -
+.I flags
+can hold
+.B PIOF_LIDENTRY_xxx
+flags suitable for callback processing
+.I remoteid
+is the given concrete, or no more than
+.I maxlevels
+iterations up
+.TP 3
+ -
+.I localid
+is the concrete identity to disclose, unrelated to the suggested
+.PP
+In addition to the above interactions, the callback function
+.I cb
+can introduce flags to indicate what it wants to have done.  These flags
+may relay an end user's requirements.
+.PP
+.BR PIOF_LIDENTRY_DBAPPEND " and " PIOF_LIDENTRY_DBINSERT
+indicate that the provided
+information should be added to the database, respectively at the end or
+beginning of the disclose.db list of local identities for the given remote
+identity.  When the entry is already available, the posision is not changed
+by default, but that will be done when
+.B PIOF_LIDENTRY_DBREORDER
+is set.
+.PP
+Changes to the database are part of a database transaction that is rolled
+back when the TLS handshake fails.  This means that providing an identity
+that somehow fails to work is not going to be remembered for the next time.
+A simple restart of the TLS handshake therefore suffices to restart the
+user interaction and find an alternative.  Note that it is assumed that the
+application that uses the TLS Pool will somehow report back on the failure,
+and the user should therefore not be surprised to be confronted with a
+question that he though had been stored.
+.PP
+Note that these flags lead to database activity; optimal efficiency
+requires that they are only set on
+.I cb
+responses
+that actually write to the database -- because they return either:
+.LI -
+a
+.I remoteid
+less than
+.I maxlevels
+steps up with
+.BR PIOF_LIDENTRY_DBINSERT " or " PIOF_LIDENTRY_DBAPPEND ;
+.LI -
+a
+.I localid
+with
+.BR PIOF_LIDENTRY_DBINSERT " or " PIOF_LIDENTRY_DBAPPEND
+if it is not yet setup in the database;
+.LI -
+a
+.I localid
+whose position must be updated under
+.BR PIOF_LIDENTRY_DBREORDER .
+.PP
+The
+.IR cb -returned
+flag
+.B PIOF_LIDENTRY_NEW
+indicates in a response to a callback that the selected
+local identity should be available soon, but may not have come through yet.
+It instructs the TLS Pool to await its arrival before proceeding.
+.PP
+This flag is useful to end a callback (and thus free up the resource of the
+forced user-interaction sequence) while identities are being created in
+complex network infrastructures that may involve key generation, publication
+in identity showcases like DNS or LDAP, and whatever else is needed to have
+identities embedded in an infrastructure.
+.PP
+TODO:
+.B PIOF_LIDENTRY_NEW
+is unimplemented behaviour; the flag is merely allocated.
+The result of using this is currently immediate return of
+.BR DB_NOTFOUND .
+.PP
+The
+.IR cb -returned
+flag
+.B PIOF_LIDENTRY_ONTHEFLY
+indicates in a response to callback that the selected
+local identity should be setup as an on-the-fly identity.  This type of
+identity is only available locally, and uses a configured credential to
+vouch for the on-the-fly generated identity.  The manner in which this
+is done depends on the kind of credential to provide.
+.PP
+These on-the-fly identities will disappear when the TLS Pool restarts, and
+possibly sooner.  They are to be considered usable for one connection only,
+although temporary caching may be used to improve efficiency.  In general,
+do not rely on the same certificate to stay available.  Also, do not expect
+public visibility of this identity in LDAP, DNS, or other identity showcase.
+.PP
+Note that it should be assumed that these identities require special setup
+in the remote node; if it is a full-blown TLS Pool, it will not appreciate
+the locality of the identity, and demand more infrastructural confirmation
+in identity showcases.  One example of its use however, is towards lame
+and old-fashioned remote services and towards highly structured local users,
+such as off-the-shelve browsers that require a HTTPS proxy.
+.PP
+TODO:
+The flag
+.B PIOF_LIDENTRY_ONTHEFLY
+is unimplemented behaviour; the flag is merely allocated.
+For now, the response is the same as in lieu of configuration of a
+root key and cert, namely to return
+.BR DB_NOTFOUND .
+.PP
+The
+.I path
+parameter to
+.BR tlspool_localid_service ()
+points to the socket path for the TLS Pool; this function does not share
+in the general resources setup through
+.IR tlspool_socket (3)
+because it is usually employed in isolated commands.  For this reason,
+the function opens its own client socket, and will close it before
+ending, even when the thread running it is victimised to
+.IR pthread_cancel (3).
+The
+.I path
+may be set to NULL, in which case the
+.B TLSPOOL_DEFAULT_SOCKET_PATH
+is used to connect to the TLS Pool.
+.SH "RETURN VALUE"
+As long as the function is successful, it does not return, but continue
+to keep the TLS Pool locked into its localid entry loop.  At some point however,
+the routine may return with an error code in
+.I errno
+and the return value -1.
+.\"TODO: .SH ERRORS
+.\"TODO: Various.
+.SH AUTHOR
+.PP
+Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
+.SH "REPORTING BUGS"
+.PP
+For any discussion, including about bugs, please use the mailing list
+found on
+.IR http://lists.arpa2.org/mailman/listinfo/tls-pool .
+.PP
+Please read the software distribution's
+.IR README ", " INSTALL " and " TODO " files"
+for information about the
+.I tlspool
+implementation status.
+.SH COPYRIGHT
+.PP
+Copyright \(co 2015 Rick van Rein, ARPA2.net.
+.PP
+ARPA2 is funded from InternetWide.org, which in turns receives donations
+from various funding sources with an interest in a private and secure
+Internet that gives users control over their online presence.  This particular
+project has been sponsored in part by NCSC.
+.SH "SEE ALSO"
+.IR tlspool "(8), " pthread_cancel "(3), " tlspool_pin_service "(3)"
+.PP
+The configuration file option
+.I socket_name
+influences the path at which the TLS Pool is available; this is not
+read by the client library, and when it differs from the default path in
+.BR TLSPOOL_DEFAULT_SOCKET_PATH ,
+this function is used to inform the client library once, before calling
+any of the other client functions.
+.PP
+The configuration file options
+.IR dbenv_dir ", " db_localid " and " db_disclose
+together determine where the databases are located that play a role in the
+local identity service, and store any changes requested over it.
+.PP
+The configuration file options
+.IR tls_onthefly_signcert " and " tls_onthefly_signkey
+are used to setup on-the-fly creation of identities.
+.PP
+The TLS Pool API is documented in the include file
+.IR <tlspool/commands.h> " and " <tlspool/starttls.h>
+for C, and the
+.I tlspool.py
+module for Python.
+.PP
+Online resources may be found on the project home page,
+.IR http://tlspool.arpa2.net .

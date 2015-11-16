@@ -1,0 +1,428 @@
+.TH TLSPOOL_STARTTLS 3 "November 2015" "ARPA2.net" "Library Calls"
+.SH NAME
+tlspool_starttls \- Switch wrapping a plaintext connection into TLS
+.SH SYNOPSIS
+.B #include <tlspool/commands.h>
+.br
+.B #include <tlspool/starttls.h>
+.sp
+.B int tlspool_starttls (int \fIcryptfd\fB, starttls_t *\fItlsdata\fB,
+.RS
+void *\fIprivdata\fB,
+.br
+int (*\fInamedconnect\fB) (starttls_t *\fItlsdata\fB, void *\fIprivdata\fB));
+.SH DESCRIPTION
+.PP
+.BR tlspool_starttls ()
+is the main facilitation function of the TLS Pool; it starts a TLS session
+under control of the TLS Pool.  In doing so, the TLS Pool encapsulates
+all concerns of security and even most that relate to privacy; the
+application that calls
+.BR tlspool_starttls ()
+communicates with the TLS Pool in terms of local and remote identities,
+but not in terms of credentials such as certificates, keys or passwords,
+and also not in terms of policy settings or other mechanistic aspects
+of TLS.
+.PP
+It has been known that an application could implement TLS functionality
+in a matter of hours, with extreme examples of needing just half an hour
+of programming effort.  The cause of this is that no concerns related
+to TLS itself are left in the hands of the application, which can therefore
+focus entirely on what it does best \- implement application logic.
+.PP
+Aside from programming simplicity, there is the benefit of separate
+control over security matters and application content matters, which
+parallels operational practice, both in terms of system administration
+and software update responsibilities.
+.PP
+The
+.I cryptfd
+handle supplies the TLS connection that is assumed to have
+been setup.  When
+.BR tlspool_starttls ()
+ends, either in success or failure, this
+handle will no longer be available to the caller; the responsibility of
+closing it is passed on to the function and/or the TLS Pool.
+.PP
+The
+.I tlsdata
+structure will be copied into the command structure,
+and upon completion it will be copied back.  You can use it to
+communicate flags, protocols and other parameters, including the
+most important settings \- local and remote identifiers.  See
+the socket protocol document for details.
+.PP
+The
+.I privdata
+handle is used in conjunction with the
+.IR namedconnect ()
+call;
+it is passed on to connect the latter to the context from which it was
+called and is not further acted upon by this function.
+The
+.IR namedconnect ()
+function is called when the identities have been
+exchanged, and established, in the TLS handshake.  This is the point
+at which a connection to the plaintext side is needed, and a callback
+to namedconnect() is made to find a handle for it.  The function is
+called with a version of the
+.I tlsdata
+that has been updated by the
+TLS Pool to hold the local and remote identities.  The return value
+should be -1 on error, with errno set, or it should be a valid file
+handle that can be passed back to the TLS Pool to connect to.
+.PP
+When the
+.I namedconnect
+argument passed is NULL, default behaviour is
+triggered.  This interprets the
+.I privdata
+handle as an (int *) holding
+a file descriptor.  If its value is valid, that is >= 0, it will be
+returned directly; otherwise, a
+.IR socketpair (2)
+is constructed, one of the
+sockets is stored in
+.I privdata
+for use by the caller and the other is
+returned as the connected file descriptor for use by the TLS Pool.
+This means that the
+.I privdata
+must be properly initialised for this
+use, with either -1 (to create a socketpair) or the TLS Pool's
+plaintext file descriptor endpoint.  The file handle returned in
+.IR privdata ,
+if it is >= 0, should be closed by the caller, both in case
+of success and failure.
+.PP
+The fields in the
+.I tlsdata
+structure have the following meaning when calling this function:
+.TP
+.I flags
+.RB "see " PIOF_STARTTLS_xxx " below"
+.TP
+.I local
+may hold locally defined bits (none at the present time)
+.TP
+.I ipproto
+.RB "one of the values " IPPROTO_TCP ", " IPPROTO_UDP " and " IPPROTO_SCTP
+.TP
+.I sreamid
+when
+.I ipproto
+is set to
+.BR IPPROTO_SCTP ,
+this is the stream identifier on which to apply the STARTTLS request.
+It is common for SCTP to negotiate TLS in the full-blown manner over
+stream 0, and then to derive keys for the other streams from the
+master key of that one stream.
+.TP
+.I localid
+is the local identity string.  This string may be empty if no value is known.
+When functioning as a TLS client, the TLS Pool will take the
+.B disclose.db
+and
+.IR tlspool_localid_service (3)
+mechanisms into account to filter this string's disclosure to the TLS server,
+or to do things such as substitution of a pseudonym, alias, group or role.
+.TP
+.I remoteid
+is the remote identity string.  This string may be empty if no value is known.
+When functioning as a TLS client, this value is used as a key for the
+.B disclose.db
+and/or the
+.IR tlspool_localid_service (3)
+in determining whether to conceal the
+.I localid
+value to this remote.
+.TP
+.I ctlkey
+is the control key for later use with
+.IR tlspool_ctlkey_detach (3)
+and
+.IR tlspool_ctlkey_reattach (3).
+The value provided to the
+.BR tlspool_starttls ()
+call should be filled with random data, both to prevent guessing the value
+in a rogue process, and to minimise the chances of an error due to hitting
+upon an already known control key.
+.TP
+.I service
+is the IANA-standardised service name, as also stored in the
+.IR services (5)
+database.  This can be used by the TLS Pool in its efforts to isolate
+security mechanisms from applications, so it is valuable that it is set
+to a proper value.
+.TP
+.I timeout
+is the number of milliseconds that the TLS handshake process waits for
+traffic from the remote peer.  The special value 0 means that the default
+timeout will be used; the special value ~0 is interpreted to mean that
+no timeout should be applied by the TLS Pool.
+.PP
+When the function returns successfully, the fields in the
+.I tlsdata
+structure have the following meaning:
+.TP
+.I flags
+.RB "see " PIOF_STARTTLS_xxx " below"
+.TP
+.I local
+may hold locally defined bits (none at the present time)
+.TP
+.I ipproto
+would not have changed.
+.TP
+.I sreamid
+would not have changed.
+.TP
+.I localid
+is the authenticated identity of the local TLS end point.  This same identity
+is passed to the remote peer through a TLS mechanism, if the remote asked
+for it.  The value may be mpty if no local identity is available to the
+remote peer.
+.sp
+Note that the precise choice of the TLS security mechanism is of no concern
+to the application that called
+.BI tlspool_starttls ()
+\- any security concerns about mechanisms to use and not use are part of the
+policy interface to the TLS Pool, which is not linked to the application
+but to an administrative interface, namely a local database.
+.TP
+.I remoteid
+is the authenticated identity of the remote TLS end point.  If no identity
+is known, or if it was not authenticated in a way that would not count as
+a TLS error, then this value may be set to the empty string.
+.TP
+.I ctlkey
+would not have changed.
+.TP
+.I service
+would not have changed.
+.TP
+.I timeout
+would not have changed.
+.PP
+Various
+.B PIOF_STARTTLS_xxx
+flags are sent and received in the
+.I tlsdata
+structure.
+When sent to the TLS Pool, they may provide it some freedom; when
+it is still set in the response then this freedom has been exercised.
+Other flags indicate additional requirements.  When these are not met,
+an error will be raised.  Their meaning in the response is meaningless.
+.PP
+The following
+.I flags
+are recognised by the TLS Pool:
+.TP
+.BR PIOF_STARTTLS_LOCALROLE_CLIENT ", " PIOF_STARTTLS_LOCALROLE_SERVER ", " PIOF_STARTTLS_LOCALROLE_PEER ", " PIOF_STARTTLS_REMOTEROLE_CLIENT ", " PIOF_STARTTLS_REMOTEROLE_SERVER " and " PIOF_STARTTLS_REMOTEROLE_PEER
+define whether the local or remote should
+act as a client or as a server.  This is the TLS relationship, and may or
+may not match the transport connection over which TLS runs.
+.sp
+Each side may be setup to act as a peer, which means it will mirror the
+other side.  When either side is setup as a peer, the TLS Pool will begin
+as a client, but employ a TLS extension that can ignore the ClientHello
+from one of the sides -- this is not currently a part of TLS, but may be
+added later on, in support of peer-to-peer connections as drafted in
+draft-vanrein-tls-p2p.
+.sp
+At some point, the TLS transaction has an obvious client and server side,
+even in peer-to-peer connections, and a normal handshake commences.  But
+the remote role helps to decide which forms of identity are acceptable,
+and when a remote peer effectively became a server it may still present
+a client credential, and the similar freedom may also be assumed by the
+local side, although the "right" kind of credential is preferred.
+.TP
+.B PIOF_STARTTLS_DTLS
+requests to setup DTLS instead of TLS.
+.TP
+.B PIOF_STARTTLS_WITHOUT_SNI
+can be used for client-side STARTTLS as an
+indication that if the remotid is present then its domain should not
+be passed over to the other side as a Server Name Indication.  This
+is not a common structure for all protocols, but is sent by default
+because it is an indicative TLS option.  Note that it is useful
+for xxxxs: protocols, which immediately start TLS, but usually not
+needed for protocols that issue a STARTTLS command during a normal
+exchange.  Anyhow, this is application-determined. 
+If the remoteid contains a user@ part, it is not sent as part of
+the SNI information, because that would violate the format.  That
+is a missed opportunity though.
+.TP
+.B PIOF_STARTTLS_IGNORE_CACHES
+requires the TLS Pool to perform the
+validation here and now.  It will not accept cached results from
+recent encounters as sufficient proof that the remote peer has
+the acclaimed identity.  This can be used at places in an
+interaction where the identity of the remote peer must be firmly
+established.  Note that bypassing the caches dramatically increases
+the amount of work for the TLS Pool, and should thus be used with
+care.  Note that the validation outcome may still be cached, for
+future use when the peer relation is more relaxed.
+.TP
+.B PIOF_STARTTLS_REQUEST_REMOTEID
+means that the TLS Pool should not
+strictly require, but merely request a remote identity.  This is
+useful if the remote peer is a client who may not have a certificate
+to authenticate with, and should still be able to access the service
+over TLS.  It is also useful to permit anonymous TLS connections to
+remote clients or servers if both sides agree to that.
+.sp
+Note that a bidirectionally unauthenticated TLS connection is not
+protected from man in the middle attacks, although its encryption
+may protect against passive observers.
+.sp
+This flag is overridden by
+.BR PIOF_STARTTLS_IGNORE_REMOTEID .
+.TP
+.B PIOF_STARTTLS_IGNORE_REMOTEID
+means that the TLS Pool need not bother
+to even request a remote identity.  If one is provided, it is not
+validated.  This is useful if the local application cannot use the
+remote identity in any useful way.  It is also useful to permit
+anonymous TLS connections to remote clients or servers if both sides
+agree to that.
+.sp
+Note that a bidirectionally unauthenticated TLS connection is not
+protected from man in the middle attacks, although it does warrant
+against passive observers.
+.sp
+This flag overrides
+.BR PIOF_STARTTLS_REQUEST_REMOTEID .
+.TP
+.B PIOF_STARTTLS_DETACH
+instructs the TLS Pool to detach the TLS session
+from the client connection over which it was setup.  This means that
+no more control commands can be sent in relation to the TLS session
+until a client connection issues a successful
+.IR tlspool_control_reattach ().
+.sp
+In many applications, this flag will be combined with
+.B PIOF_STARTTLS_FORK
+which has an independent meaning;
+.B PIOF_STARTTLS_FORK
+applies to the independent
+life of a TLS session that is run by the TLS Pool, and
+.B PIOF_STARTTLS_DETACH
+applies to
+the ability to send control commands in relation to a TLS session.
+.sp
+The TLS Pool also implements one relationship between
+.BR PIOF_STARTTLS_FORK " and " PIOF_STARTTLS_DETACH ;
+after a
+.BR PIOF_STARTTLS_FORK ,
+the close-down of the client that setup a connection will
+automatically cause a
+.BR PIOF_STARTTLS_DETACH
+of those TLS sessions.
+.sp
+When the
+.BR tlspool_starttls ()
+exchange starts, the value in
+.I ctlkey
+is stored
+fur future reference; control can be regained from any TLS Pool client
+connection that presents the
+.I ctlkey
+in
+.IR tlspool_control_reattach (3).
+.sp
+See also the
+.IR tlspool_control_detach (3)
+function, which performs the action as a separate step.
+.TP
+.B PIOF_STARTTLS_FORK
+instructs the TLS Pool that the TLS session should
+continue to run when the client connection over which it was setup closes.
+By default, TLS sessions are terminated when their requesting client
+disappears, for instance due to termination of the requesting program.
+.br
+.BR PIOF_STARTTLS_FORK " and " PIOF_STARTTLS_DETACH
+are different concepts;
+.B PIOF_STARTTLS_FORK
+applies to the independent
+life of a TLS session that is run by the TLS Pool, and
+.B PIOF_STARTTLS_DETACH
+applies to
+the ability to send control commands in relation to a TLS session.  Many
+applications will use the two combined.  The TLS Pool also implements one
+relation; after a
+.BR PIOF_STARTTLS_FORK ,
+the close-down of the client that setup a
+connection will automatically cause a
+.B PIOF_STARTTLS_DETACH
+of those TLS sessions. 
+.TP
+.B PIOF_STARTTLS_DOMAIN_REPRESENTS_USER
+indicates that the remote identity
+need not be the expected user@domain, but that the domain is acceptable
+as well.  This is a common flag on protocols such as SMTP, where a
+server represents all users under its domain, and authenticates as the
+domain instead of as the user.  Note that the flag applies equally well
+to clients as it does to servers.  If an application does not supply
+this flag, it must supply any remote_id field for a STARTTLS exchange in
+the exact format as it is supported by the server.  The returned remote_id
+will always be the exact identity as provided by the server.
+.TP
+.B PIOF_STARTTLS_RENEGOTIATE
+takes a previously agreed TLS connection and
+renegotiates identities as specified in this request's
+.IR tlsdata .
+The
+.I ctlkey
+field indicates an attached TLS connection that is to be
+renegotiated; this field will not be modified in the course of this
+invocation of the
+.BR tlspool_starttls "() function."
+.SH "RETURN VALUE"
+The function returns a file descriptor >= 0 on success.
+If an error occurs, the function returns -1 and
+.I errno
+is set appropriately.
+.\"TODO: .SH ERRORS
+.\"TODO: Various.
+.SH AUTHOR
+.PP
+Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
+.SH "REPORTING BUGS"
+.PP
+For any discussion, including about bugs, please use the mailing list
+found on
+.IR http://lists.arpa2.org/mailman/listinfo/tls-pool .
+.PP
+Please read the software distribution's
+.IR README ", " INSTALL " and " TODO " files"
+for information about the
+.I tlspool
+implementation status.
+.SH COPYRIGHT
+.PP
+Copyright \(co 2015 Rick van Rein, ARPA2.net.
+.PP
+ARPA2 is funded from InternetWide.org, which in turns receives donations
+from various funding sources with an interest in a private and secure
+Internet that gives users control over their online presence.  This particular
+project has been sponsored in part by NCSC.
+.SH "SEE ALSO"
+.IR tlspool "(8), " tlspool_control_detach "(3), " tlspool_control_reattach "(3)"
+.PP
+The configuration file options
+.IR allow_facilities " and " deny_facilities
+can specify the
+.B starttls
+facility to allow, respectively disable this facility.
+Whether this has been done, can be checked with
+.IR tlspool_ping "(3)."
+.PP
+The TLS Pool API is documented in the include file
+.IR <tlspool/commands.h> " and " <tlspool/starttls.h>
+for C, and the
+.I tlspool.py
+module for Python.
+.PP
+Online resources may be found on the project home page,
+.IR http://tlspool.arpa2.net .

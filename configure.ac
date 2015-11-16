@@ -118,5 +118,5 @@ fi
 #
 AC_CONFIG_HEADERS([config.h])
 #TODO# Left out: testdata/Makefile
-AC_CONFIG_FILES([Makefile src/Makefile lib/Makefile tool/Makefile])
+AC_CONFIG_FILES([Makefile src/Makefile lib/Makefile tool/Makefile doc/Makefile doc/man/Makefile])
 AC_OUTPUT

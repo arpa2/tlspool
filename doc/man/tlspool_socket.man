@@ -1,0 +1,74 @@
+.TH TLSPOOL_SOCKET 3 "November 2015" "ARPA2.net" "Library Calls"
+.SH NAME
+tlspool_socket \- Setup the TLS Pool to use with a given socket path.
+.SH SYNOPSIS
+.B #include <tlspool/commands.h>
+.br
+.B #include <tlspool/starttls.h>
+.sp
+.B int tlspool_socket (char *\fIpath\fB);
+.SH DESCRIPTION
+.PP
+.BR tlspool_socket ()
+returns a file descriptor for the TLS Pool.  During the first call, the
+.I path
+argument is used as a path to the UNIX domain socket to use; during later
+calls, the argument is ignored but the returned file descriptor is instead
+the same one as before.  A NULL value for the argument is replaced with
+.BR TLSPOOL_DEFAULT_SOCKET_PATH .
+.PP
+All of the
+.IR tlspool_XXX ()
+functions that do not have a socket path argument
+call this function internally, to setup a shared access point
+to the TLS Pool.  In addition, a "master thread" is created to retrieve
+and redistribute return values.  This mechanism facilitates multiple
+simultaneous commands being sent to the TLS Pool by independent threads.
+.SH "RETURN VALUE"
+The function returns a file descriptor >= 0 on success.
+If an error occurs, the function returns -1 and
+.I errno
+is set appropriately.
+.\"TODO: .SH ERRORS
+.\"TODO: Various.
+.SH AUTHOR
+.PP
+Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
+.SH "REPORTING BUGS"
+.PP
+For any discussion, including about bugs, please use the mailing list
+found on
+.IR http://lists.arpa2.org/mailman/listinfo/tls-pool .
+.PP
+Please read the software distribution's
+.IR README ", " INSTALL " and " TODO " files"
+for information about the
+.I tlspool
+implementation status.
+.SH COPYRIGHT
+.PP
+Copyright \(co 2015 Rick van Rein, ARPA2.net.
+.PP
+ARPA2 is funded from InternetWide.org, which in turns receives donations
+from various funding sources with an interest in a private and secure
+Internet that gives users control over their online presence.  This particular
+project has been sponsored in part by NCSC.
+.SH "SEE ALSO"
+.IR tlspool "(8)"
+.PP
+The configuration file option
+.I socket_name
+influences the path at which the TLS Pool is available; this is not
+read by the client library, and when it differs from the default path in
+.BR TLSPOOL_DEFAULT_SOCKET_PATH ,
+this function is used to inform the client library once, before calling
+any of the other client functions.
+.PP
+The TLS Pool API is documented in the include file
+.IR <tlspool/commands.h> " and " <tlspool/starttls.h>
+for C, and the
+.I tlspool.py
+module for Python.
+.PP
+Online resources may be found on the project home page,
+.IR http://tlspool.arpa2.net .

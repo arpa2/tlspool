@@ -1,0 +1,130 @@
+.TH TLSPOOL_PING 3 "November 2015" "ARPA2.net" "Library Calls"
+.SH NAME
+tlspool_ping \- Negotiate version and features with the TLS Pool
+.SH SYNOPSIS
+.B #include <tlspool/commands.h>
+.br
+.B #include <tlspool/starttls.h>
+.sp
+.B int tlspool_ping (pingpool_t *\fIpingdata\fB);
+.SH DESCRIPTION
+.PP
+.BR tlspool_ping ()
+negotiates the TLS Pool version and a list of supported features with the
+TLS Pool.  It sends the settings of the local program, which should be
+setup in
+.I pingdata
+before calling this function.  When the call returns, the structure
+will be updated with what the TLS Pool can make out of it.
+
+The supply of initial data is meant to offer to the TLS Pool what the
+client can, which is why it must be filled by the client.  A good
+procedure to do this is
+.PP
+.RS
+pingpool_t pp;
+.sp
+bzero (&pp, sizeof (pp));
+.br
+strcpy (pp.YYYYMMDD_producer, TLSPOOL_IDENTITY_V2);
+.br
+pp.facilities = PIOF_FACILITY_ALL_CURRENT;
+.RE
+.PP
+When
+.I &pp
+is supplied to the
+.BR tlspool_ping ()
+function, the TLS Pool will replace the field
+.B YYYYMMDD_producer
+with the value that determines how it interprets what it got.  This version
+returned determines how to interpret the returned facilities.
+.PP
+The
+.B facilities
+as returned can be relied on to be implemented in the TLS Pool, as well
+as permitted by its configuration.  Administrator control is able to
+remove features from the implementation, so care must be taken to always
+check what to use.
+.PP
+Currently defined flags that can be found in
+.B features
+are:
+.TP
+.B PIOF_FACILITY_STARTTLS
+Indicates support for the
+.IR tlspool_starttls (3)
+API call.
+.TP
+.B PIOF_FACILITY_ALL_CURRENT
+Indicates all flags that are currently implemented in the code base that
+includes this value.  Note that the value may differ between independently
+compiled modules, even when their
+.B YYYYMMDD_producer
+values are the same.
+.TP
+.B PIOF_FACILITY_STARTGSS
+Indicates support for the
+.IR tlspool_startgss (3)
+API call \- but note that this has not yet been defined or implemented,
+so current versions of the API will never return this facility, and it is
+not included in
+.B PIOF_FACILITY_ALL_CURRENT
+to support recognition of that fact at compile time.
+.TP
+.B PIOF_FACILITY_STARTSSH
+Indicates support for the
+.IR tlspool_startssh (3)
+API call \- but note that this has not yet been defined or implemented,
+so current versions of the API will never return this facility, and it is
+not included in
+.B PIOF_FACILITY_ALL_CURRENT
+to support recognition of that fact at compile time.
+.PP
+In light of future compatibility, the intention is to continue to
+support this operation without incompatible changes in the future.
+.SH "RETURN VALUE"
+The function returns 0 on success.  If an error occurs, the function
+returns -1 and
+.I errno
+is set appropriately.
+.\"TODO: .SH ERRORS
+.\"TODO: Various.
+.SH AUTHOR
+.PP
+Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
+.SH "REPORTING BUGS"
+.PP
+For any discussion, including about bugs, please use the mailing list
+found on
+.IR http://lists.arpa2.org/mailman/listinfo/tls-pool .
+.PP
+Please read the software distribution's
+.IR README ", " INSTALL " and " TODO " files"
+for information about the
+.I tlspool
+implementation status.
+.SH COPYRIGHT
+.PP
+Copyright \(co 2015 Rick van Rein, ARPA2.net.
+.PP
+ARPA2 is funded from InternetWide.org, which in turns receives donations
+from various funding sources with an interest in a private and secure
+Internet that gives users control over their online presence.  This particular
+project has been sponsored in part by NCSC.
+.SH "SEE ALSO"
+.IR tlspool "(8)"
+.PP
+The configuration file options
+.IR allow_facilities and deny_facilities
+influence the returned
+.IR facilities .
+.PP
+The TLS Pool API is documented in the include file
+.IR <tlspool/commands.h> " and " <tlspool/starttls.h>
+for C, and the
+.I tlspool.py
+module for Python.
+.PP
+Online resources may be found on the project home page,
+.IR http://tlspool.arpa2.net .
