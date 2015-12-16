@@ -20,15 +20,15 @@
 #include <grp.h>
 #include <signal.h>
 
-#include <ldap.h>
+//NOTYET// #include <ldap.h>
 
 #include <tlspool/internal.h>
 
-#include <libmemcached/memcached.h>
+//NOTYET// #include <libmemcached/memcached.h>
 
-static LDAP *ldap_handle;
+//NOTYET// static LDAP *ldap_handle;
 
-static struct memcached_st *cache;
+//NOTYET// static struct memcached_st *cache;
 
 static int kill_old_pid = 0;
 
@@ -506,34 +506,34 @@ void cfg_ldap (char *item, int itemno, char *value) {
 		fprintf (stderr, "This version ignores additional LDAP proxy servers\n");
 	} else {
 		fprintf (stderr, "This version ignores all LDAP proxy servers\n");
-		//TODO// ldap_handle = NULL;
-		//TODO// if (ldap_initialize (&ldap_handle, value) || !ldap_handle) {
-		//TODO// 	fprintf (stderr, "Failure to setup LDAP proxy server\n");
-		//TODO// 	exit (1);
-		//TODO// } else {
-		//TODO// 	cfg_setvar (item, itemno, value);
-		//TODO// }
+		//NOTYET// ldap_handle = NULL;
+		//NOTYET// if (ldap_initialize (&ldap_handle, value) || !ldap_handle) {
+		//NOTYET// 	fprintf (stderr, "Failure to setup LDAP proxy server\n");
+		//NOTYET// 	exit (1);
+		//NOTYET// } else {
+		//NOTYET// 	cfg_setvar (item, itemno, value);
+		//NOTYET// }
 	}
 }
 
 void cfg_cachehost (char *item, int itemno, char *value) {
 	int port;
 	int ttl;
-	if (cache == NULL) {
-		//TODO// cache = memcached_create (NULL);
-		//TODO// if (cache == NULL) {
-			fprintf (stderr, "Failed to create memcached administrative structures\n");
-			exit (1);
-		//TODO// }
-	}
-	port = MEMCACHED_DEFAULT_PORT;
+	//NOTYET// if (cache == NULL) {
+	//NOTYET// 	cache = memcached_create (NULL);
+	//NOTYET// 	if (cache == NULL) {
+	//NOTYET// 		fprintf (stderr, "Failed to create memcached administrative structures\n");
+	//NOTYET// 		exit (1);
+	//NOTYET// 	}
+	//NOTYET// }
+	//NOTYET// port = MEMCACHED_DEFAULT_PORT;
 	if (configvars [CFGVAR_CACHE_PORT]) {
 		port = atoi (configvars [CFGVAR_CACHE_PORT]);
 	}
-	//TODO// if (memcached_server_add (cache, value, port)) {
+	//NOTYET// if (memcached_server_add (cache, value, port)) {
 		fprintf (stderr, "Failed to add memcached server %s\n");
 		exit (1);
-	//TODO// }
+	//NOTYET// }
 }
 
 char *cfg_dbenv_dir (void) {

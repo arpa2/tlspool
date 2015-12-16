@@ -13,7 +13,7 @@
 
 #include <tlspool/internal.h>
 
-#include <ldap.h>
+//NOTYET// #include <ldap.h>
 
 
 #define LDAP_FILTER_TRUE	"(&)"
