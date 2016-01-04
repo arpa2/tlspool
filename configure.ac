@@ -15,7 +15,7 @@ PKG_PROG_PKG_CONFIG
 
 PKG_CHECK_MODULES(
         [GNUTLS],
-        [gnutls >= 3.2.21],
+        [gnutls >= 3.4.4],
         [],
         AC_MSG_ERROR([GnuTLS version 3.2.21 or later is missing])
 )

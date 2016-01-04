@@ -10,7 +10,7 @@ Dependencies
 
 Runtime dependencies are:
 
- * libgnutls >= 3.2.21 for TLS handling (that implies libnettle-2.7)
+ * libgnutls >= 3.4.4 for TLS handling (that implies libnettle-2.7)
  * p11-kit >= 0.22.1 for PKCS #11 URI handling
  * libdb >= 4.0 for key->value lookup with BerkeleyDB transactions/replication
  * libtasn1 for parsing of BER and DER data structures
