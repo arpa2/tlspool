@@ -154,8 +154,12 @@ void error_db2posix (int db_errno, char *new_errstr) {
 		errno = ENOLCK;
 		break;
 	case DB_NOSERVER:
+#ifdef DB_NOSERVER_HOME
 	case DB_NOSERVER_HOME:
+#endif
+#ifdef DB_NOSERVER_ID
 	case DB_NOSERVER_ID:
+#endif
 	case DB_REP_DUPMASTER:
 	case DB_REP_HANDLE_DEAD:
 	case DB_REP_HOLDELECTION:
