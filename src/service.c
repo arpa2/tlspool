@@ -208,6 +208,10 @@ int send_command (struct command *cmd, int passfd) {
 		return 1;	// Success guaranteed when nobody is listening
 	}
 	assert (passfd == -1);	// Working passfd code retained but not used
+#ifdef WINDOWS
+	cmd->pio_ancil_type = ANCIL_TYPE_NONE;
+	bzero (&cmd->pio_ancil_data, sizeof (cmd->pio_ancil_data));
+#endif
 	bzero (anc, sizeof (anc));
 	bzero (&iov, sizeof (iov));
 	bzero (&mh, sizeof (mh));
@@ -288,6 +292,7 @@ void send_error (struct command *cmd, int tlserrno, char *msg) {
 }
 
 
+#ifndef WINDOWS
 /* Receive a command.  Return nonzero on success, zero on failure. */
 int receive_command (int sox, struct command *cmd) {
 	int newfds [2];
@@ -329,6 +334,16 @@ int receive_command (int sox, struct command *cmd) {
 
 	return 1;
 }
+#endif /* !WINDOWS */
+
+
+#ifdef WINDOWS
+/* Receive a command.  Return nonzero on success, zero on failure. */
+int receive_command (int sox, struct command *cmd) {
+#warning "receive_command() not yet implemented on Windows"
+	return 0;
+}
+#endif /* WINDOWS */
 
 
 /* Check if a command request is a proper callback response.

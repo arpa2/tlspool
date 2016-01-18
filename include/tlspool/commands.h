@@ -7,6 +7,10 @@
 
 #include <stdint.h>
 
+#ifdef WINDOWS
+#include <windows-specific-includes.h>
+#endif /* WINDOWS */
+
 
 #define TLSPOOL_IDENTITY_V2	"20151111api@tlspool.arpa2.net"
 
@@ -19,6 +23,21 @@
 #define TLSPOOL_PRNGBUFLEN 350
 #define TLSPOOL_TIMEOUT_DEFAULT 0
 #define TLSPOOL_TIMEOUT_INFINITE (~(uint32_t)0)
+
+#ifdef WINDOWS
+/* Windows is the only non-POSIX system, and as such, it is the only
+ * platform that does not support ancilary data (as on UNIX domain sockets).
+ * To pass a socket or file handle, different structures must be passed to
+ * the TLS Pool, and of course it is also possible to pass neither.  The
+ * anciltype indicates which applies.  This is used in an add-on that is
+ * always appended to the TLS Pool structure when passing it on Windows.
+ */
+enum anciltype {
+	ANCIL_TYPE_NONE = 0,
+	ANCIL_TYPE_SOCKET = 1,
+	ANCIL_TYPE_FILEHANDLE = 2,
+};
+#endif /* WINDOWS */
 
 
 /*
@@ -130,6 +149,13 @@ struct tlspool_command {
 			uint8_t buffer [TLSPOOL_PRNGBUFLEN]; // ctlkey, in1, in2
 		} pioc_prng;
 	} pio_data;
+#ifdef WINDOWS
+	enum anciltype pio_ancil_type;
+	union {
+		HANDLE pioa_filehandle;
+		WSAPROTOCOL_INFO pioa_socket;
+	} pio_ancil_data;
+#endif
 };
 
 

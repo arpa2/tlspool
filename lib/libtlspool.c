@@ -111,6 +111,7 @@ int tlspool_simultaneous_starttls (void) {
 		}
 		simu = rlimit_nofile.rlim_max / 2;  // 2 FDs per STARTTLS
 	}
+	return simu;
 }
 
 
@@ -569,6 +570,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 	mh.msg_iov = &iov;
 	mh.msg_iovlen = 1;
 	if (!renegotiate) {
+#ifndef WINDOWS
 		mh.msg_control = anc;
 		mh.msg_controllen = sizeof (anc);
 		cmsg = CMSG_FIRSTHDR (&mh);
@@ -576,6 +578,18 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		cmsg->cmsg_type = SCM_RIGHTS;
 		* (int *) CMSG_DATA (cmsg) = cryptfd;	/* cannot close it yet */
 		cmsg->cmsg_len = CMSG_LEN (sizeof (int));
+#else /* ifdef WINDOWS */
+		// cmd was already set to 0, including ancilary data simulation
+		if (getsockopt (cryptfd, SOL_SOCKET, SO_DONTLINGER, &tmp, sizeof (tmp) != SOCKET_ERROR) || (WSAGetLastError () != WSAENOTSOCK)) {
+			// Send a socket
+			cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
+			... (..., &cmd.pio_ancil_data.pioa_socket, ...);
+		} else {
+			// Send a file handle
+			cmd.pio_ancil_type = ANCIL_TYPE_FILEHANDLE;
+			... (..., &cmd.pio_ancil_data.pioa_filehandle, ...);
+		}
+#endif /* WINDOWS */
 	}
 	if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
 		// Let SIGPIPE be reported as EPIPE
@@ -627,6 +641,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 			}
 			/* We may now have a value to send in plainfd */
 			if (plainfd >= 0) {
+#ifndef WINDOWS
 				mh.msg_control = anc;
 				mh.msg_controllen = sizeof (anc);
 				cmsg = CMSG_FIRSTHDR (&mh);
@@ -634,6 +649,19 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				cmsg->cmsg_type = SCM_RIGHTS;
 				* (int *) CMSG_DATA (cmsg) = plainfd;
 				cmsg->cmsg_len = CMSG_LEN (sizeof (int));
+#else /* ifdef WINDOWS */
+				cmd.pio_ancil_type = ANCIL_TYPE_NONE;
+				bzero (&cmd.pio_ancil_data, sizeof (cmd.pio_ancil_data));
+				if (getsockopt (cryptfd, SOL_SOCKET, SO_DONTLINGER, &tmp, sizeof (tmp) != SOCKET_ERROR) || (WSAGetLastError () != WSAENOTSOCK)) {
+					// Send a socket
+					cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
+					... (..., &cmd.pio_ancil_data.pioa_socket, ...);
+				} else {
+					// Send a file handle
+					cmd.pio_ancil_type = ANCIL_TYPE_FILEHANDLE;
+					... (..., &cmd.pio_ancil_data.pioa_filehandle, ...);
+				}
+#endif /* WINDOWS */
 			}
 			/* Now supply plainfd in the callback response */
 			sentfd = plainfd;
