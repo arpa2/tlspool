@@ -109,6 +109,7 @@ if sys.version_info [:2] < (3,3):
 		"""
 		fds = []
 		if ancdata is not None:
+			#TODO# For WINDOWS, we need to parse a data structure attached to cmd
 			assert (len (ancdata) == 1)
 			assert (len (ancdata [0]) == 3)
 			assert (ancdata [0][:2] == (syssocket.SOL_SOCKET,syssocket.SCM_RIGHTS))
@@ -120,6 +121,7 @@ if sys.version_info [:2] < (3,3):
 		"""Stub recvmsg() function, implementing just enough of the
 		   Python 3.3 syssocket.recvmsg() to work for the TLS Pool
 		"""
+		#TODO# For WINDOWS, we need to parse a data structure attached to cmd
 		(msg,anc) = fdsend.recvfds (self.fileno (), 1025, flags=flags, numfds=1)
 		if anc is None:
 			anc = []
@@ -136,6 +138,7 @@ if sys.version_info [:2] < (3,3):
 		"""
 		return 100
 	# Patch syssocket and its objects with the stub functions
+	#TODO# For WINDOWS, we need to attach a data structure to cmd
 	syssocket.SOL_SOCKET = 1
 	syssocket.SCM_RIGHTS = 0x01
 	syssocket._socketobject.sendmsg    = _stub_sendmsg
@@ -187,7 +190,9 @@ def ping (my_id_str, facilities=PIOF_FACILITY_ALL_CURRENT):
 					facilities
 				)
 		cmd = struct.pack ('376s', cmd)
+		#TODO# For WINDOWS, we need to attach zero bytes for no passfd
 		pfd.sendmsg ([cmd])
+		#TODO# For WINDOWS, we need to receive more bytes for passfd
 		([msg], _, _, _) = pfd.recvmsg (376)
 		(reqid, cbid, cmdcode2,
 			ping_resp_str,
@@ -287,6 +292,7 @@ def starttls (cryptfd, tlsdata, privdata, namedconnect=None):
 					tlsdata ['service'],
 					tlsdata ['timeout'])
 		cmd = struct.pack ('376s', cmd)
+		#TODO# For WINDOWS, we need to attach a data structure to cmd
 		anc = [ (syssocket.SOL_SOCKET,
 			 syssocket.SCM_RIGHTS,
 			 array.array ("i", [cryptfd.fileno()])) ]
@@ -294,6 +300,7 @@ def starttls (cryptfd, tlsdata, privdata, namedconnect=None):
 		pfd.sendmsg ([cmd], anc)
 		processing = True
 		while processing:
+			#TODO# For WINDOWS, we need to receive more bytes for passfd
 			([msg], _, _, _) = pfd.recvmsg (376)
 			(reqid, cbid, cmdcode,
 				tlsdata ['flags'],
@@ -340,6 +347,7 @@ def starttls (cryptfd, tlsdata, privdata, namedconnect=None):
 							tlsdata ['timeout']
 						)
 				cmd = struct.pack ('376s', cmd)
+				#TODO# For WINDOWS, we need to attach a data structure to cmd
 				anc = [ (syssocket.SOL_SOCKET,
 					 syssocket.SCM_RIGHTS,
 					 array.array ("i", [plainfd.fileno()])) ]
@@ -395,8 +403,10 @@ def starttls_prng (ctlkey, reqlen=350, label='EXPERIMENTAL-DEFAULT', context=Non
 					reqlen,
 					buf
 				)
+		#TODO# For WINDOWS, we need to attach zero bytes for no passfd
 		cmd = struct.pack ('376s', cmd)
 		pfd.sendmsg ([cmd])
+		#TODO# For WINDOWS, we need to receive more bytes for passfd
 		([msg], _, _, _) = pfd.recvmsg (376)
 		(reqid, cbid, cmdcode,
 			_,
@@ -437,7 +447,9 @@ def _control_xxtach (ctlkey, cmdcode, flags=0, name=''):
 					name
 				)
 		cmd = struct.pack ('376s', cmd)
+		#TODO# For WINDOWS, we need to attach zero bytes for no passfd
 		pfd.sendmsg ([cmd])
+		#TODO# For WINDOWS, we need to receive more bytes for passfd
 		([msg], _, _, _) = pfd.recvmsg (376)
 		(reqid, cbid, cmdcode2,
 			flags,
@@ -509,8 +521,10 @@ def pinentry (pinentry_cb, flags_reg, timeout_usec=60000000):
 					' ' * 32	# not yet meaningful
 				)
 		cmd = struct.pack ('376s', cmd)
+		#TODO# For WINDOWS, we need to attach zero bytes for no passfd
 		pfd.sendmsg ([cmd])
 		while True:
+			#TODO# For WINDOWS, we need to receive more bytes for passfd
 			([msg], _, _, _) = pfd.recvmsg (376)
 			pinentry = { }
 			(reqid, cbid, cmdcode,
@@ -594,9 +608,11 @@ def lidentry (lidentry_cb, flags_reg, timeout_sec=60):
 					'',	# not yet meaningful
 				)
 		cmd = struct.pack ('376s', cmd)
+		#TODO# For WINDOWS, we need to attach zero bytes for no passfd
 		pfd.sendmsg ([cmd])
 		localids_db = []
 		while True:
+			#TODO# For WINDOWS, we need to receive more bytes for passfd
 			([msg], _, _, _) = pfd.recvmsg (376)
 			lidentry = { }
 			(reqid, cbid, cmdcode,
