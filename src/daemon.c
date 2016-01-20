@@ -63,14 +63,16 @@ int main (int argc, char *argv []) {
 	//TODO// setup syslogging
 
 	//UNDO// sigset_t sigblockmask;
+#ifdef DOFORK	
 	int pid = fork ();
 	switch (pid) {
 	case -1:
 		perror ("Failed to fork daemon");
 		exit (1);
-	case 0:
+	case 0:	
 		// Detach from the startup session
 		setsid ();
+#endif		
 		//TODO// close the common fd's 0/1/2
 		// Setup a SIGHUP handler to gracefully stop service
 		if (sigaction (SIGHUP, &hupaction, NULL) != 0) {
@@ -107,10 +109,12 @@ int main (int argc, char *argv []) {
 		cleanup_error ();
 		tlog (TLOG_DAEMON, LOG_DEBUG, "Orderly shutdown seems to have worked");
 		tlog (TLOG_DAEMON, LOG_INFO, "TLS Pool stopped");
+#ifdef DOFORK	
 		break;
 	default:
 		break;
 	}
+#endif
 
 	/*
 	 * Done.  Exit, closing all resources in the parent.

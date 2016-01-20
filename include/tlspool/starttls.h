@@ -7,6 +7,7 @@
 #include <tlspool/commands.h>
 
 
+
 /*
  * These functions are used by application software to turn an existing
  * connection into one that runs over TLS or DTLS.  These functions are
@@ -23,6 +24,11 @@
 
 #define TLSPOOL_DEFAULT_SOCKET_PATH "/var/run/tlspool.sock"
 
+/*
+ * Quick and dirty function to get the PID of the tlspool daemon
+ */
+
+int tlspool_getpid ();
 
 /* Setup the TLS pool socket to use, if it is not the default path name
  * /var/run/tlspool.sock.  The return value is the file descriptor for the

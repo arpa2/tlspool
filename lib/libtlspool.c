@@ -7,6 +7,7 @@
 #include <syslog.h>
 #include <assert.h>
 #include <stdint.h>
+#include <fcntl.h>
 
 #include <unistd.h>
 #include <pthread.h>
@@ -37,6 +38,22 @@ static pthread_cond_t updated_poolfd = PTHREAD_COND_INITIALIZER;
 
 static pthread_mutex_t prng_lock = PTHREAD_MUTEX_INITIALIZER;
 
+/*
+ * Quick and dirty function to get the PID of the tlspool daemon
+ */
+
+int tlspool_getpid () {
+	int fd;
+
+	if ((fd = open("/var/run/tlspool.pid", O_RDONLY)) != -1) {
+		char str_pid[256];
+
+		if (read(fd, str_pid, sizeof(str_pid)) != -1) {
+			return atoi(str_pid);
+		}
+	}
+	return -1;
+}
 
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
@@ -579,15 +596,21 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		* (int *) CMSG_DATA (cmsg) = cryptfd;	/* cannot close it yet */
 		cmsg->cmsg_len = CMSG_LEN (sizeof (int));
 #else /* ifdef WINDOWS */
+		BOOL tmp;
+		int len = sizeof(tmp);
+
 		// cmd was already set to 0, including ancilary data simulation
-		if (getsockopt (cryptfd, SOL_SOCKET, SO_DONTLINGER, &tmp, sizeof (tmp) != SOCKET_ERROR) || (WSAGetLastError () != WSAENOTSOCK)) {
+		if (getsockopt ((SOCKET) cryptfd, SOL_SOCKET, SO_DONTLINGER, (char *) &tmp, &len) != SOCKET_ERROR || WSAGetLastError () != WSAENOTSOCK) {
 			// Send a socket
+			int pid = tlspool_getpid();
+
 			cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
-			... (..., &cmd.pio_ancil_data.pioa_socket, ...);
+			WSADuplicateSocket(cryptfd, pid, &cmd.pio_ancil_data.pioa_socket);			
+			//... (..., &cmd.pio_ancil_data.pioa_socket, ...);
 		} else {
 			// Send a file handle
 			cmd.pio_ancil_type = ANCIL_TYPE_FILEHANDLE;
-			... (..., &cmd.pio_ancil_data.pioa_filehandle, ...);
+			//... (..., &cmd.pio_ancil_data.pioa_filehandle, ...);
 		}
 #endif /* WINDOWS */
 	}
@@ -650,16 +673,21 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				* (int *) CMSG_DATA (cmsg) = plainfd;
 				cmsg->cmsg_len = CMSG_LEN (sizeof (int));
 #else /* ifdef WINDOWS */
-				cmd.pio_ancil_type = ANCIL_TYPE_NONE;
-				bzero (&cmd.pio_ancil_data, sizeof (cmd.pio_ancil_data));
-				if (getsockopt (cryptfd, SOL_SOCKET, SO_DONTLINGER, &tmp, sizeof (tmp) != SOCKET_ERROR) || (WSAGetLastError () != WSAENOTSOCK)) {
+				BOOL tmp;
+				int len = sizeof(tmp);
+
+				// cmd was already set to 0, including ancilary data simulation
+				if (getsockopt ((SOCKET) cryptfd, SOL_SOCKET, SO_DONTLINGER, (char *) &tmp, &len) != SOCKET_ERROR || WSAGetLastError () != WSAENOTSOCK) {
 					// Send a socket
+					int pid = tlspool_getpid();
+
 					cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
-					... (..., &cmd.pio_ancil_data.pioa_socket, ...);
+					WSADuplicateSocket(cryptfd, pid, &cmd.pio_ancil_data.pioa_socket);			
+					//... (..., &cmd.pio_ancil_data.pioa_socket, ...);
 				} else {
 					// Send a file handle
 					cmd.pio_ancil_type = ANCIL_TYPE_FILEHANDLE;
-					... (..., &cmd.pio_ancil_data.pioa_filehandle, ...);
+					//... (..., &cmd.pio_ancil_data.pioa_filehandle, ...);
 				}
 #endif /* WINDOWS */
 			}

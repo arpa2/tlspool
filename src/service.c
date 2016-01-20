@@ -209,8 +209,8 @@ int send_command (struct command *cmd, int passfd) {
 	}
 	assert (passfd == -1);	// Working passfd code retained but not used
 #ifdef WINDOWS
-	cmd->pio_ancil_type = ANCIL_TYPE_NONE;
-	bzero (&cmd->pio_ancil_data, sizeof (cmd->pio_ancil_data));
+	cmd->cmd.pio_ancil_type = ANCIL_TYPE_NONE;
+	bzero (&cmd->cmd.pio_ancil_data, sizeof (cmd->cmd.pio_ancil_data));
 #endif
 	bzero (anc, sizeof (anc));
 	bzero (&iov, sizeof (iov));
@@ -219,6 +219,7 @@ int send_command (struct command *cmd, int passfd) {
 	iov.iov_len = sizeof (cmd->cmd);
 	mh.msg_iov = &iov;
 	mh.msg_iovlen = 1;
+#ifndef WINDOWS	
 	if (passfd >= 0) {
 		mh.msg_control = anc;
 		mh.msg_controllen = sizeof (anc);
@@ -228,7 +229,7 @@ int send_command (struct command *cmd, int passfd) {
 		cmsg->cmsg_len = CMSG_LEN (sizeof (int));
 		* (int *) CMSG_DATA (cmsg) = passfd;
 	}
-
+#endif
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Sending command 0x%08x and fd %d to socket %d", cmd->cmd.pio_cmd, passfd, cmd->clientfd);
 	if (sendmsg (cmd->clientfd, &mh, MSG_NOSIGNAL) == -1) {
 		//TODO// Differentiate behaviour based on errno?
@@ -340,7 +341,21 @@ int receive_command (int sox, struct command *cmd) {
 #ifdef WINDOWS
 /* Receive a command.  Return nonzero on success, zero on failure. */
 int receive_command (int sox, struct command *cmd) {
-#warning "receive_command() not yet implemented on Windows"
+	if (recv(sox, &cmd->cmd, sizeof(cmd->cmd), 0) != sizeof(cmd->cmd)) {
+		//TODO// Differentiate behaviour based on errno?
+		perror ("Failed to receive command");
+		return 0;	
+	}
+	if (cmd->cmd.pio_ancil_type == ANCIL_TYPE_SOCKET) {
+			if (cmd->passfd == -1) {
+				cmd->passfd = (int) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
+				tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d", cmd->passfd);
+			} else {
+				int superfd = (int) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
+				tlog (TLOG_UNIXSOCK, LOG_ERR, "Received superfluous file descriptor as %d", superfd);
+				close (superfd);
+			}
+	}
 	return 0;
 }
 #endif /* WINDOWS */

@@ -8,7 +8,7 @@
 #include <stdint.h>
 
 #ifdef WINDOWS
-#include <windows-specific-includes.h>
+#include <windows/winsock2.h>
 #endif /* WINDOWS */
 
 

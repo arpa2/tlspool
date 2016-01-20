@@ -108,6 +108,7 @@ int main (int argc, char *argv) {
 	sigset_t sigcontset;
 	uint8_t rndbuf [16];
 
+	printf("PID of tlspool: %d\n", tlspool_getpid());
 	if (sigemptyset (&sigcontset) ||
 	    sigaddset (&sigcontset, SIGCONT) ||
 	    pthread_sigmask (SIG_BLOCK, &sigcontset, NULL)) {
