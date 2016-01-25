@@ -19,6 +19,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#include <arpa/inet.h>
+
 #include <gnutls/gnutls.h>
 #include <gnutls/pkcs11.h>
 #include <gnutls/abstract.h>
@@ -87,6 +89,12 @@ static struct credinfo srv_creds [EXPECTED_SRV_CREDCOUNT];
 static struct credinfo cli_creds [EXPECTED_CLI_CREDCOUNT];
 static int srv_credcount = 0;
 static int cli_credcount = 0;
+static const char const *onthefly_p11uri = "pkcs11:manufacturer=ARPA2.net;token=TLS+Pool+internal;object=on-the-fly+signer;type=private;serial=1";
+static unsigned long long onthefly_serial;  //TODO: Fill with now * 1000
+static gnutls_x509_crt_t onthefly_issuercrt = NULL;
+static gnutls_privkey_t onthefly_issuerkey = NULL;
+static gnutls_x509_privkey_t onthefly_subjectkey = NULL;
+static pthread_mutex_t onthefly_signer_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* The local variation on the ctlkeynode structure, with TLS-specific fields
  */
@@ -175,6 +183,34 @@ struct anonpre_regentry anonpre_registry [] = {
 };
 const int anonpre_registry_size = sizeof (anonpre_registry) / sizeof (struct anonpre_regentry);
 
+
+/* The registry of Key Usage and Extended Key Usage for any given service name.
+ */
+static const char *http_noncrit [] = { GNUTLS_KP_TLS_WWW_SERVER, GNUTLS_KP_TLS_WWW_CLIENT, NULL };
+struct svcusage_regentry {
+	char *service;
+	unsigned int usage;
+	const char **oids_non_critical;
+	const char **oids_critical;
+};
+struct svcusage_regentry svcusage_registry [] = {
+	{ "generic_anonpre",
+		GNUTLS_KEY_KEY_ENCIPHERMENT |
+		GNUTLS_KEY_KEY_AGREEMENT,
+		NULL,
+		NULL
+	},
+	{ "http",
+		GNUTLS_KEY_DIGITAL_SIGNATURE |
+		GNUTLS_KEY_KEY_ENCIPHERMENT |
+		GNUTLS_KEY_KEY_AGREEMENT,
+		http_noncrit,
+		NULL
+	},
+};
+const int svcusage_registry_size = sizeof (svcusage_registry) / sizeof (struct svcusage_regentry);
+
+
 /* The maximum number of bytes that can be passed over a TLS connection before
  * the authentication is complete in case of a anonymous precursor within a
  * protocol that ensures that this cannot be a problem.
@@ -194,7 +230,7 @@ gnutls_priority_t priority_normal;
  * Continue if errno differs from 0, GnuTLS may "damage" it even when OK. */
 #define E_g2e(errstr,gtlscall) { \
 	if (gtls_errno == GNUTLS_E_SUCCESS) { \
-		int gtls_errno = (gtlscall); \
+		gtls_errno = (gtlscall); \
 		if (gtls_errno != GNUTLS_E_SUCCESS) { \
 			error_gnutls2posix (gtls_errno, errstr); \
 		} \
@@ -617,6 +653,7 @@ void setup_starttls (void) {
 	int setup_starttls_credentials (void);	/* Defined below */
 	const char *curver;
 	int gtls_errno = GNUTLS_E_SUCCESS;
+	char *otfsigcrt, *otfsigkey;
 	//
 	// Setup configuration variables
 	maxpreauth = cfg_tls_maxpreauth ();
@@ -655,6 +692,82 @@ void setup_starttls (void) {
 		gnutls_priority_init (&priority_normal, "NONE:+VERS-TLS-ALL:+VERS-DTLS-ALL:+COMP-NULL:+CIPHER-ALL:+CURVE-ALL:+SIGN-ALL:+MAC-ALL:+ANON-ECDH:+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:+CTYPE-X.509:+CTYPE-OPENPGP:+SRP:+SRP-RSA:+SRP-DSS", NULL));
 		// gnutls_priority_init (&priority_normal, "NORMAL:-RSA:+ANON-ECDH:+RSA:+CTYPE-X.509:+CTYPE-OPENPGP:+SRP:+SRP-RSA:+SRP-DSS", NULL));
 	//
+	// Try to setup on-the-fly signing key / certificate and gen a certkey
+	otfsigcrt = cfg_tls_onthefly_signcert ();
+	otfsigkey = cfg_tls_onthefly_signkey ();
+fprintf (stderr, "DEBUG: gtls_errno = %d, otfsigcrt == %s, otfsigkey == %s\n", gtls_errno, otfsigcrt? otfsigcrt: "NULL", otfsigkey? otfsigkey: "NULL");
+	if ((gtls_errno == GNUTLS_E_SUCCESS) && (otfsigcrt != NULL)) {
+		FILE *crtfile = NULL;
+fprintf (stderr, "DEBUG: gtls_errno==%d when initialising onthefly_issuercrt\n", gtls_errno);
+		E_g2e ("Failed to initialise on-the-fly issuer certificate structure",
+			gnutls_x509_crt_init (&onthefly_issuercrt));
+		if (strncmp (otfsigcrt, "file:", 5) == 0) {
+			// Provisionary support for the "file:" prefix
+			otfsigcrt += 5;
+		}
+		crtfile = fopen (otfsigcrt, "r");
+		if (crtfile == NULL) {
+			E_g2e ("Failed to open on-the-fly issuer certificate file",
+				GNUTLS_E_FILE_ERROR);
+fprintf (stderr, "DEBUG: gtls_errno==%d after failing to open file for onthefly_issuercrt\n", gtls_errno);
+		} else {
+			char crt [5001];
+			size_t len = fread (crt, 1, sizeof (crt), crtfile);
+			if (ferror (crtfile)) {
+				E_g2e ("Failed to read on-the-fly issuer certificate from file",
+					GNUTLS_E_FILE_ERROR);
+			} else if ((len >= sizeof (crt)) || !feof (crtfile)) {
+				E_g2e ("Unexpectedly long on-the-fly issuer certificate file",
+					GNUTLS_E_FILE_ERROR);
+			} else {
+				gnutls_datum_t cd = {
+					.data = crt,
+					.size = len
+				};
+fprintf (stderr, "DEBUG: gtls_errno==%d before importing onthefly_issuercrt\n", gtls_errno);
+				E_g2e ("Failed to import on-the-fly certificate from file",
+					gnutls_x509_crt_import (onthefly_issuercrt, &cd, GNUTLS_X509_FMT_DER));
+fprintf (stderr, "DEBUG: gtls_errno==%d after  importing onthefly_issuercrt\n", gtls_errno);
+			}
+			fclose (crtfile);
+		}
+	}
+	if ((gtls_errno == GNUTLS_E_SUCCESS) && (otfsigkey != NULL)) {
+		E_g2e ("Failed to initialise on-the-fly issuer private key structure",
+			gnutls_privkey_init (&onthefly_issuerkey));
+fprintf (stderr, "DEBUG: before onthefly p11 import, gtlserrno = %d\n", gtls_errno);
+		E_g2e ("Failed to import pkcs11: URI into on-the-fly issuer private key",
+			gnutls_privkey_import_pkcs11_url (onthefly_issuerkey, otfsigkey));
+fprintf (stderr, "DEBUG: after  onthefly p11 import, gtlserrno = %d\n", gtls_errno);
+	}
+fprintf (stderr, "DEBUG: When it matters, gtls_errno = %d, onthefly_issuercrt %s NULL, onthefly_issuerkey %s NULL\n", gtls_errno, onthefly_issuercrt?"!=":"==", onthefly_issuerkey?"!=":"==");
+	if ((gtls_errno == GNUTLS_E_SUCCESS) && (onthefly_issuercrt != NULL) && (onthefly_issuerkey != NULL)) {
+		E_g2e ("Failed to initialise on-the-fly certificate session key",
+			gnutls_x509_privkey_init (&onthefly_subjectkey));
+		E_g2e ("Failed to generate on-the-fly certificate session key",
+			gnutls_x509_privkey_generate (onthefly_subjectkey, GNUTLS_PK_RSA, 2048 /*TODO:FIXED*/, 0));
+		if (gtls_errno == GNUTLS_E_SUCCESS) {
+			tlog (TLOG_TLS, LOG_INFO, "Setup for on-the-fly signing with the TLS Pool");
+		} else {
+			tlog (TLOG_TLS, LOG_ERR, "Failed to setup on-the-fly signing (shall continue without it)");
+			gnutls_x509_privkey_deinit (onthefly_subjectkey);
+			onthefly_subjectkey = NULL;
+		}
+	} else {
+		gtls_errno = GNUTLS_E_SUCCESS;
+		E_gnutls_clear_errno ();
+	}
+	if (onthefly_subjectkey == NULL) {
+		if (onthefly_issuercrt != NULL) {
+			gnutls_x509_crt_deinit (onthefly_issuercrt);
+			onthefly_issuercrt = NULL;
+		}
+		if (onthefly_issuerkey != NULL) {
+			gnutls_privkey_deinit (onthefly_issuerkey);
+			onthefly_issuerkey = NULL;
+		}
+	}
+	//
 	// Finally, check whether there was any error setting up GnuTLS
 	if (gtls_errno != GNUTLS_E_SUCCESS) {
 		tlog (TLOG_TLS, LOG_CRIT, "FATAL: GnuTLS setup failed: %s", gnutls_strerror (gtls_errno));
@@ -676,6 +789,18 @@ void setup_starttls (void) {
 void cleanup_starttls (void) {
 	void cleanup_starttls_credentials (void);	/* Defined below */
 	//MOVED// cleanup_management ();
+	if (onthefly_subjectkey != NULL) {
+		gnutls_x509_privkey_deinit (onthefly_subjectkey);
+		onthefly_subjectkey = NULL;
+	}
+	if (onthefly_issuercrt != NULL) {
+		gnutls_x509_crt_deinit (onthefly_issuercrt);
+		onthefly_issuercrt = NULL;
+	}
+	if (onthefly_issuerkey != NULL) {
+		gnutls_privkey_deinit (onthefly_issuerkey);
+		onthefly_issuerkey = NULL;
+	}
 	cleanup_starttls_credentials ();
 	remove_dh_params ();
 	gnutls_pkcs11_set_pin_function (NULL, NULL);
@@ -846,8 +971,6 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 	gnutls_datum_t certdatum = { NULL, 0 };
 	gnutls_openpgp_crt_t pgpcert = NULL;
 	gnutls_openpgp_privkey_t pgppriv = NULL;
-	gnutls_x509_crt_t x509cert = NULL;
-	gnutls_x509_privkey_t x509priv = NULL;
 	int gtls_errno = GNUTLS_E_SUCCESS;
 	int lidtype;
 	int lidrole = 0;
@@ -965,7 +1088,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 			fetch_local_credentials (cmd));
 	}
 	if (cmd->lids [lidtype - LID_TYPE_MIN].data == NULL) {
-printf ("DEBUG: Missing certificate for local ID %s and remote ID %s\n", lid, rid);
+fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n", lid, rid);
 		E_g2e ("Missing certificate for local ID",
 			GNUTLS_E_NO_CERTIFICATE_FOUND);
 		return gtls_errno;
@@ -1001,13 +1124,21 @@ printf ("DEBUG: Missing certificate for local ID %s and remote ID %s\n", lid, ri
 	E_g2e ("Failed to initialise private key",
 		gnutls_privkey_init (
 			pkey));
-	if (gtls_errno == GNUTLS_E_SUCCESS) {
-		cmd->session_privatekey = (intptr_t) (void *) *pkey;	//TODO// Used for session cleanup
+	if ((onthefly_subjectkey != NULL) && (strcmp (p11priv, onthefly_p11uri) == 0)) {
+		E_g2e ("Failed to import on-the-fly subject private key",
+			gnutls_privkey_import_x509 (
+				*pkey,
+				onthefly_subjectkey,
+				GNUTLS_PRIVKEY_IMPORT_COPY));
+	} else {
+		if (gtls_errno == GNUTLS_E_SUCCESS) {
+			cmd->session_privatekey = (intptr_t) (void *) *pkey;	//TODO// Used for session cleanup
+		}
+		E_g2e ("Failed to import PKCS #11 private key URI",
+			gnutls_privkey_import_pkcs11_url (
+				*pkey,
+				p11priv));
 	}
-	E_g2e ("Failed to import PKCS #11 private key URL",
-		gnutls_privkey_import_pkcs11_url (
-			*pkey,
-			p11priv));
 	E_gnutls_clear_errno ();
 
 //TODO// Moved out (start)
@@ -1016,7 +1147,7 @@ printf ("DEBUG: Missing certificate for local ID %s and remote ID %s\n", lid, ri
 	// Setup public key certificate
 	switch (lidtype) {
 	case LID_TYPE_X509:
-		E_g2e ("Failed to import X.509 certificate into chain",
+		E_g2e ("MOVED: Failed to import X.509 certificate into chain",
 			gnutls_pcert_import_x509_raw (
 				*pcert,
 				&certdatum,
@@ -1024,7 +1155,7 @@ printf ("DEBUG: Missing certificate for local ID %s and remote ID %s\n", lid, ri
 				0));
 		break;
 	case LID_TYPE_PGP:
-		E_g2e ("Failed to import OpenPGP certificate",
+		E_g2e ("MOVED: Failed to import OpenPGP certificate",
 			gnutls_pcert_import_openpgp_raw (
 				*pcert,
 				&certdatum,
@@ -1063,6 +1194,7 @@ gtls_error load_certificate (int lidtype, gnutls_pcert_st *pcert, gnutls_datum_t
 	// Setup public key certificate
 	switch (lidtype) {
 	case LID_TYPE_X509:
+fprintf (stderr, "DEBUG: About to import %d bytes worth of X.509 certificate into chain: %02x %02x %02x %02x...\n", certdatum->size, certdatum->data[0], certdatum->data[1], certdatum->data[2], certdatum->data[3]);
 		E_g2e ("Failed to import X.509 certificate into chain",
 			gnutls_pcert_import_x509_raw (
 				pcert,
@@ -1227,6 +1359,23 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 	int gtls_errno = 0;
 	int db_errno = 0;
 	int found = 0;
+
+	//
+	// When applicable, try to create an on-the-fly certificate
+	if (((cmd->cmd.pio_cmd == PIOC_STARTTLS_V2) &&
+			(cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALID_ONTHEFLY))
+	|| ((cmd->cmd.pio_cmd == PIOC_LIDENTRY_CALLBACK_V2) &&
+			(cmd->cmd.pio_data.pioc_lidentry.flags & PIOF_LIDENTRY_ONTHEFLY))) {
+		gtls_errno = certificate_onthefly (cmd);
+		if (gtls_errno != GNUTLS_E_AGAIN) {
+			// This includes GNUTLS_E_SUCCESS
+fprintf (stderr, "DEBUG: otfcert retrieval returned %d\n", gtls_errno);
+			return gtls_errno;
+		} else {
+fprintf (stderr, "DEBUG: otfcert retrieval returned GNUTLS_E_AGAIN, so skip it\n", gtls_errno);
+			gtls_errno = GNUTLS_E_SUCCESS;  // Attempt failed, ignore
+		}
+	}
 
 	//
 	// Setup a number of common references and structures
@@ -1414,6 +1563,7 @@ static int configure_session (struct command *cmd,
 			anonpre_ok				?'+':'-',
 			lidtpsup (cmd, LID_TYPE_X509)		?'+':'-',
 			lidtpsup (cmd, LID_TYPE_PGP)		?'+':'-',
+			//TODO// Temporarily patched out SRP
 			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
 			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
 			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-');
@@ -1548,7 +1698,7 @@ fprintf (stderr, "DEBUG: Got gtls_errno = %d at %d\n", gtls_errno, __LINE__);
 
 	//
 	// Round off with an overal judgement
-fprintf (stderr, "DEBUG: Returning glts_errno = %d or \"%s\" from srv_clihello()\n", gtls_errno, gnutls_strerror (gtls_errno));
+fprintf (stderr, "DEBUG: Returning gtls_errno = %d or \"%s\" from srv_clihello()\n", gtls_errno, gnutls_strerror (gtls_errno));
 	return gtls_errno;
 }
 
@@ -2796,5 +2946,181 @@ void starttls_prng (struct command *cmd) {
 	} else {
 		send_command (cmd, -1);
 	}
+}
+
+
+/* Flying signer functionality.  Create an on-the-fly certificate because
+ * the lidentry daemon and/or application asks for this to represent the
+ * local identity.  Note that this will only work if the remote party
+ * accepts the root identity under which on-the-signing is done.
+ *
+ * When no root credentials have been configured, this function will
+ * fail with GNUTLS_E_AGAIN; it may be used as a hint to try through
+ * other (more conventional) means to obtain a client certificate.
+ *
+ * The API of this function matches that of fetch_local_credentials()
+ * and that is not a coincidence; this is a drop-in replacement in some
+ * cases.
+ *
+ * Limitations: The current implementation only supports X.509 certificates
+ * to be generated on the fly.  So, this will set LID_TYPE_X509, if anything.
+ */
+gtls_error certificate_onthefly (struct command *cmd) {
+	gtls_error gtls_errno = GNUTLS_E_SUCCESS;
+	gnutls_x509_crt_t otfcert;
+	time_t now;
+	gnutls_x509_subject_alt_name_t altnmtp;
+	int i;
+
+	//
+	// Sanity checks
+	if ((onthefly_issuercrt == NULL) || (onthefly_issuerkey == NULL) || (onthefly_subjectkey == NULL)) {
+		// Not able to supply on-the-fly certificates; try someway else
+		return GNUTLS_E_AGAIN;
+	}
+	if (cmd->cmd.pio_data.pioc_starttls.localid [0] == '\0') {
+		return GNUTLS_E_NO_CERTIFICATE_FOUND;
+	}
+	if (cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].data != NULL) {
+		free (cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].data);
+		cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].data = NULL;
+		cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].size = 0;
+	}
+	
+	//
+	// Create an empty certificate
+	E_g2e ("Failed to initialise on-the-fly certificate",
+		gnutls_x509_crt_init (&otfcert));
+	if (gtls_errno != GNUTLS_E_SUCCESS) {
+		return gtls_errno;
+	}
+
+	//
+	// Fill the certificate with the usual field
+	E_g2e ("Failed to set on-the-fly certificate to non-CA mode",
+		gnutls_x509_crt_set_ca_status (otfcert, 0));
+	E_g2e ("Failed to set on-the-fly certificate version",
+		gnutls_x509_crt_set_version (otfcert, 3));
+	onthefly_serial++;	//TODO// Consider a random byte string
+	E_g2e ("Failed to set on-the-fly serial number",
+		gnutls_x509_crt_set_serial (otfcert, &onthefly_serial, sizeof (onthefly_serial)));
+	// Skip gnutls_x509_crt_set_issuer_by_dn_by_oid(), added when signing
+	time (&now);
+	E_g2e ("Failed to set on-the-fly activation time to now - 2 min",
+		gnutls_x509_crt_set_activation_time (otfcert, now - 120));
+	E_g2e ("Failed to set on-the-fly expiration time to now + 3 min",
+		gnutls_x509_crt_set_expiration_time (otfcert, now + 180));
+	E_g2e ("Setup certificate CN with local identity",
+		gnutls_x509_crt_set_dn_by_oid (otfcert, GNUTLS_OID_X520_COMMON_NAME, 0, cmd->cmd.pio_data.pioc_starttls.localid, strnlen (cmd->cmd.pio_data.pioc_starttls.localid, sizeof (cmd->cmd.pio_data.pioc_starttls.localid)-1))); /* TODO: Consider pioc_lidentry as well? */
+	E_g2e ("Setup certificate OU with TLS Pool on-the-fly",
+		gnutls_x509_crt_set_dn_by_oid (otfcert, GNUTLS_OID_X520_ORGANIZATIONAL_UNIT_NAME, 0, "TLS Pool on-the-fly", 19));
+	if (strchr (cmd->cmd.pio_data.pioc_starttls.localid, '@')) {
+		// localid has the format of an emailAddress
+		altnmtp = GNUTLS_SAN_RFC822NAME;
+	} else {
+		// localid has the format of a dnsName
+		altnmtp = GNUTLS_SAN_DNSNAME;
+	}
+	E_g2e ("Failed to set subjectAltName to localid",
+		gnutls_x509_crt_set_subject_alt_name (otfcert, altnmtp, &cmd->cmd.pio_data.pioc_starttls.localid, strnlen (cmd->cmd.pio_data.pioc_starttls.localid, sizeof (cmd->cmd.pio_data.pioc_starttls.localid) - 1), GNUTLS_FSAN_APPEND));
+	//TODO:SKIP, hoping that signing adds: gnutls_x509_crt_set_authority_key_id()
+	//TODO:SKIP, hoping that a cert without also works: gnutls_x509_crt_set_subjectkey_id()
+	//TODO:SKIP? gnutls_x509_crt_set_extension_by_oid
+	//TODO:      gnutls_x509_crt_set_key_usage
+	//TODO:SKIP? gnutls_x509_crt_set_ca_status
+	for (i=0; i < svcusage_registry_size; i++) {
+		if (strcmp (svcusage_registry [i].service, cmd->cmd.pio_data.pioc_starttls.service) == 0) {
+			const char **walker;
+			E_g2e ("Failed to setup basic key usage during on-the-fly certificate creation",
+				gnutls_x509_crt_set_key_usage (otfcert, svcusage_registry [i].usage));
+			walker = svcusage_registry [i].oids_non_critical;
+			if (walker) {
+				while (*walker) {
+					E_g2e ("Failed to append non-critical extended key purpose during on-the-fly certificate creation",
+						gnutls_x509_crt_set_key_purpose_oid (otfcert, *walker, 0));
+					walker++;
+				}
+			}
+			walker = svcusage_registry [i].oids_critical;
+			if (walker) {
+				while (*walker) {
+					E_g2e ("Failed to append critical extended key purpose during on-the-fly certificate creation",
+						gnutls_x509_crt_set_key_purpose_oid (otfcert, *walker, 1));
+					walker++;
+				}
+			}
+			break;
+		}
+	}
+	E_g2e ("Failed to et the on-the-fly subject key",
+		gnutls_x509_crt_set_key (otfcert, onthefly_subjectkey));
+	/* TODO: The lock below should not be necessary; it is handled by p11-kit
+	 *       or at least it ought to be.  What I found however, was that
+	 *       a client and server would try to use the onthefly_issuerkey
+	 *       at virtually the same time, and then the second call to
+	 *       C_SignInit returns CKR_OPERATION_ACTIVE.  The lock solved this.
+	 *       This makes me frown about server keys stored in PKCS #11...
+	 */
+{gnutls_datum_t data = { 0, 0}; if (gnutls_x509_crt_print (otfcert, GNUTLS_CRT_PRINT_UNSIGNED_FULL, &data) == 0) { fprintf (stderr, "DEBUG: PRESIGCERT: %s\n", data.data); gnutls_free (data.data); } else {fprintf (stderr, "DEBUG: PRESIGCERT failed to print\n"); } }
+	assert (pthread_mutex_lock (&onthefly_signer_lock) == 0);
+	E_g2e ("Failed to sign on-the-fly certificate",
+		gnutls_x509_crt_privkey_sign (otfcert, onthefly_issuercrt, onthefly_issuerkey, GNUTLS_DIG_SHA256, 0));
+	pthread_mutex_unlock (&onthefly_signer_lock);
+
+	//
+	// Construct cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].data+size for this certificate
+	cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].size = 0;
+	if (gtls_errno == GNUTLS_E_SUCCESS) {
+		gtls_errno = gnutls_x509_crt_export (otfcert, GNUTLS_X509_FMT_DER, NULL, &cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].size);
+		if (gtls_errno == GNUTLS_E_SHORT_MEMORY_BUFFER) {
+			// This is as expected, now .size will have been set
+			gtls_errno = GNUTLS_E_SUCCESS;
+		} else {
+			if (gtls_errno = GNUTLS_E_SUCCESS) {
+				// Something must be wrong if we receive OK
+				gtls_errno = GNUTLS_E_INVALID_REQUEST;
+			}
+		}
+		E_g2e ("Error while measuring on-the-fly certificate size",
+			gtls_errno);
+	}
+	uint8_t *ptr = NULL;
+	if (gtls_errno == GNUTLS_E_SUCCESS) {
+		cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].size += 4 + strlen (onthefly_p11uri) + 1;
+		ptr = malloc (cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].size);
+		if (ptr == NULL) {
+			cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].size = 0;
+			gnutls_x509_crt_deinit (otfcert);
+			return GNUTLS_E_MEMORY_ERROR;
+		}
+	}
+	if (ptr != NULL) {
+		size_t restsz;
+		cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].data = ptr;
+		* (uint32_t *) ptr = htonl (LID_TYPE_X509 | LID_ROLE_BOTH);
+		ptr += 4;
+		strcpy (ptr, onthefly_p11uri);
+		ptr += strlen (onthefly_p11uri) + 1;
+		restsz = cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].size - 4 - strlen (onthefly_p11uri) - 1;
+		E_g2e ("Failed to export on-the-fly certificate as a credential",
+			gnutls_x509_crt_export (otfcert, GNUTLS_X509_FMT_DER, ptr, &restsz));
+char *pembuf [10000];
+size_t pemlen = sizeof (pembuf) - 1;
+int exporterror = gnutls_x509_crt_export (otfcert, GNUTLS_X509_FMT_PEM, pembuf, &pemlen);
+if (exporterror == 0) {
+pembuf [pemlen] = '\0';
+fprintf (stderr, "DEBUG: otfcert ::=\n%s\n", pembuf);
+} else {
+fprintf (stderr, "DEBUG: otfcert export to PEM failed with %d, gtls_errno already was %d\n", exporterror, gtls_errno);
+}
+	}
+
+	//
+	// Cleanup the allocated and built structures
+	gnutls_x509_crt_deinit (otfcert);
+
+	//
+	// Return the overall result that might have stopped otf halfway
+	return gtls_errno;
 }
 

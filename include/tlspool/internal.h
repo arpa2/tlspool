@@ -125,6 +125,8 @@ char *cfg_db_disclose (void);
 char *cfg_tls_dhparamfile (void);
 unsigned int cfg_tls_maxpreauth (void);
 uint32_t cfg_facilities (void);
+char *cfg_tls_onthefly_signcert (void);
+char *cfg_tls_onthefly_signkey (void);
 
 
 
