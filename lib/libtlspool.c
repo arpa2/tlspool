@@ -51,8 +51,7 @@ int tlspool_getpid () {
 		char str_pid[256];
 
 		if (read(fd, str_pid, sizeof(str_pid)) != -1) {
-			int winpid = cygwin_internal(CW_CYGWIN_PID_TO_WINPID, atoi(str_pid));
-			return winpid;
+			return atoi(str_pid);
 		}
 	}
 	return -1;
@@ -624,16 +623,14 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		* (int *) CMSG_DATA (cmsg) = cryptfd;	/* cannot close it yet */
 		cmsg->cmsg_len = CMSG_LEN (sizeof (int));
 #else /* ifdef WINDOWS */
-		SOCKET wsock = (SOCKET) get_osfhandle (cryptfd);
-
 		// cmd was already set to 0, including ancilary data simulation
-		if (is_sock(wsock)) {
+		if (1 /*is_sock(wsock)*/) {
 			// Send a socket
 			int pid = tlspool_getpid();
 			cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
-			printf("pid = %d, cryptfd = %d, wsock = %d\n", pid, cryptfd, wsock);
-			if (WSADuplicateSocketW(wsock, pid, &cmd.pio_ancil_data.pioa_socket) == SOCKET_ERROR) {
-				printf("WSADuplicateSocket error = %d", WSAGetLastError());				
+			printf("pid = %d, cryptfd = %d\n", pid, cryptfd);
+			if (cygwin_socket_dup_protocol_info (cryptfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
+				printf("cygwin_socket_dup_protocol_info error\n");
 				// Let SIGPIPE be reported as EPIPE
 				close (cryptfd);
 				registry_update (&entry_reqid, NULL);
@@ -712,13 +709,13 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				SOCKET wsock = (SOCKET) get_osfhandle (plainfd);
 				
 				// cmd was already set to 0, including ancilary data simulation
-				if (is_sock(wsock)) {
+				if (1 /*is_sock(wsock)*/) {
 					// Send a socket
 					int pid = tlspool_getpid();
 					cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
-					printf("pid = %d, plainfd = %d, wsock = %d\n", pid, plainfd, wsock);
-					if (WSADuplicateSocketW(wsock, pid, &cmd.pio_ancil_data.pioa_socket) == SOCKET_ERROR) {
-						printf("WSADuplicateSocket error = %d", WSAGetLastError());				
+					printf("pid = %d, plainfd = %d\n", pid, plainfd);
+					if (cygwin_socket_dup_protocol_info (plainfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
+						printf("cygwin_socket_dup_protocol_info error\n");
 						// Let SIGPIPE be reported as EPIPE
 						close (plainfd);
 						registry_update (&entry_reqid, NULL);
