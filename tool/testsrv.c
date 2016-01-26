@@ -144,6 +144,7 @@ reconnect:
 			perror ("Failed to accept incoming connection");
 			continue;
 		}
+		printf("cnx = %d\n", cnx);
 		tlsdata_now = tlsdata_srv;
 		plainfd = -1;
 		if (-1 == tlspool_starttls (cnx, &tlsdata_now, &plainfd, NULL)) {

@@ -153,7 +153,7 @@ struct tlspool_command {
 	enum anciltype pio_ancil_type;
 	union {
 		HANDLE pioa_filehandle;
-		WSAPROTOCOL_INFO pioa_socket;
+		WSAPROTOCOL_INFOW pioa_socket;
 	} pio_ancil_data;
 #endif
 };

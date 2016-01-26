@@ -339,24 +339,30 @@ int receive_command (int sox, struct command *cmd) {
 
 
 #ifdef WINDOWS
+extern cygwin_socket_from_protocol_info (LPWSAPROTOCOL_INFOW lpProtocolInfo);
+
 /* Receive a command.  Return nonzero on success, zero on failure. */
 int receive_command (int sox, struct command *cmd) {
-	if (recv(sox, &cmd->cmd, sizeof(cmd->cmd), 0) != sizeof(cmd->cmd)) {
+	if (recv(sox, &cmd->cmd, sizeof(cmd->cmd), 0) == -1) {
 		//TODO// Differentiate behaviour based on errno?
 		perror ("Failed to receive command");
 		return 0;	
 	}
 	if (cmd->cmd.pio_ancil_type == ANCIL_TYPE_SOCKET) {
 			if (cmd->passfd == -1) {
-				cmd->passfd = (int) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
-				tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d", cmd->passfd);
+				//WRONG: no support for sockets
+				//HANDLE winsock = (HANDLE) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
+				//cmd->passfd = cygwin_attach_handle_to_fd(NULL, -1, winsock, NULL, GENERIC_READ | GENERIC_WRITE);
+				//tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d, winsock = %d\n", cmd->passfd, winsock);
+				cmd->passfd = cygwin_socket_from_protocol_info(&cmd->cmd.pio_ancil_data.pioa_socket);
+				tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d\n", cmd->passfd);
 			} else {
-				int superfd = (int) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
-				tlog (TLOG_UNIXSOCK, LOG_ERR, "Received superfluous file descriptor as %d", superfd);
-				close (superfd);
+				//int superfd = (int) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
+				//tlog (TLOG_UNIXSOCK, LOG_ERR, "Received superfluous file descriptor as %d", superfd);
+				//close (superfd);
 			}
 	}
-	return 0;
+	return 1;
 }
 #endif /* WINDOWS */
 

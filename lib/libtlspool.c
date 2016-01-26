@@ -11,6 +11,7 @@
 
 #include <unistd.h>
 #include <pthread.h>
+#include <io.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -21,6 +22,7 @@
 #include <tlspool/starttls.h>
 #include <tlspool/commands.h>
 
+#include <sys/cygwin.h>
 
 
 /* The master thread will run the receiving side of the socket that connects
@@ -49,7 +51,8 @@ int tlspool_getpid () {
 		char str_pid[256];
 
 		if (read(fd, str_pid, sizeof(str_pid)) != -1) {
-			return atoi(str_pid);
+			int winpid = cygwin_internal(CW_CYGWIN_PID_TO_WINPID, atoi(str_pid));
+			return winpid;
 		}
 	}
 	return -1;
@@ -475,6 +478,31 @@ int tlspool_ping (pingpool_t *pingdata) {
 	}
 }
 
+#define SIO_ADDRESS_LIST_QUERY 0x48000016
+
+int is_sock(SOCKET winsock) {
+	int rc;
+	char buffer[1024];
+//	PSOCKET_ADDRESS_LIST address_list = (PSOCKET_ADDRESS_LIST) buffer;
+	DWORD cbOutBuffer = sizeof(buffer);       // size of output buffer  
+	DWORD cbBytesReturned; // number of bytes returned
+	
+	rc = WSAIoctl(
+	  winsock,            // descriptor identifying a socket
+	  SIO_ADDRESS_LIST_QUERY,            // dwIoControlCode
+	  NULL,                              // lpvInBuffer
+	  0,                                 // cbInBuffer
+	  (LPVOID) buffer,          // output buffer
+	  cbOutBuffer,            // size of output buffer  
+	  &cbBytesReturned,    // number of bytes returned
+	  NULL, // OVERLAPPED structure
+	  NULL  // completion routine
+	);
+	
+	printf("is_sock winsock = %d, rc = %d\n", winsock, rc);
+	return rc == 0;
+//	printf("iAddressCount = %d", address_list->iAddressCount);
+}
 
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
@@ -596,16 +624,22 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		* (int *) CMSG_DATA (cmsg) = cryptfd;	/* cannot close it yet */
 		cmsg->cmsg_len = CMSG_LEN (sizeof (int));
 #else /* ifdef WINDOWS */
-		BOOL tmp;
-		int len = sizeof(tmp);
+		SOCKET wsock = (SOCKET) get_osfhandle (cryptfd);
 
 		// cmd was already set to 0, including ancilary data simulation
-		if (getsockopt ((SOCKET) cryptfd, SOL_SOCKET, SO_DONTLINGER, (char *) &tmp, &len) != SOCKET_ERROR || WSAGetLastError () != WSAENOTSOCK) {
+		if (is_sock(wsock)) {
 			// Send a socket
 			int pid = tlspool_getpid();
-
 			cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
-			WSADuplicateSocket(cryptfd, pid, &cmd.pio_ancil_data.pioa_socket);			
+			printf("pid = %d, cryptfd = %d, wsock = %d\n", pid, cryptfd, wsock);
+			if (WSADuplicateSocketW(wsock, pid, &cmd.pio_ancil_data.pioa_socket) == SOCKET_ERROR) {
+				printf("WSADuplicateSocket error = %d", WSAGetLastError());				
+				// Let SIGPIPE be reported as EPIPE
+				close (cryptfd);
+				registry_update (&entry_reqid, NULL);
+				// errno inherited from sendmsg()
+				return -1;
+			}
 			//... (..., &cmd.pio_ancil_data.pioa_socket, ...);
 		} else {
 			// Send a file handle
@@ -650,12 +684,14 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				if ((plainfd < 0) && (cmd.pio_cmd == PIOC_PLAINTEXT_CONNECT_V2)) {
 					int soxx [2];
 					//TODO// Setup for TCP, UDP, SCTP
-					if (socketpair (AF_UNIX, SOCK_SEQPACKET, 0, soxx) == 0) {
+					if (socketpair (AF_UNIX, SOCK_STREAM, 0, soxx) == 0) {
+						printf("HFM: socketpair succeeded\n");
 						/* Socketpair created */
 						plainfd = soxx [0];
 						* (int *) privdata = soxx [1];
 					} else {
 						/* Socketpair failed */
+						printf("HFM: socketpair failed\n");
 						cmd.pio_cmd = PIOC_ERROR_V2;
 						cmd.pio_data.pioc_error.tlserrno = errno;
 						plainfd = -1;
@@ -673,16 +709,22 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				* (int *) CMSG_DATA (cmsg) = plainfd;
 				cmsg->cmsg_len = CMSG_LEN (sizeof (int));
 #else /* ifdef WINDOWS */
-				BOOL tmp;
-				int len = sizeof(tmp);
-
+				SOCKET wsock = (SOCKET) get_osfhandle (plainfd);
+				
 				// cmd was already set to 0, including ancilary data simulation
-				if (getsockopt ((SOCKET) cryptfd, SOL_SOCKET, SO_DONTLINGER, (char *) &tmp, &len) != SOCKET_ERROR || WSAGetLastError () != WSAENOTSOCK) {
+				if (is_sock(wsock)) {
 					// Send a socket
 					int pid = tlspool_getpid();
-
 					cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
-					WSADuplicateSocket(cryptfd, pid, &cmd.pio_ancil_data.pioa_socket);			
+					printf("pid = %d, plainfd = %d, wsock = %d\n", pid, plainfd, wsock);
+					if (WSADuplicateSocketW(wsock, pid, &cmd.pio_ancil_data.pioa_socket) == SOCKET_ERROR) {
+						printf("WSADuplicateSocket error = %d", WSAGetLastError());				
+						// Let SIGPIPE be reported as EPIPE
+						close (plainfd);
+						registry_update (&entry_reqid, NULL);
+						// errno inherited from sendmsg()
+						return -1;
+					}
 					//... (..., &cmd.pio_ancil_data.pioa_socket, ...);
 				} else {
 					// Send a file handle

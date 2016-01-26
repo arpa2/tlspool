@@ -2149,6 +2149,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 				(((cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_CLIENT)? GNUTLS_CLIENT: 0) |
 				 ((cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_SERVER)? GNUTLS_SERVER: 0))
 				));
+		printf("HFM: gnutls_init: gtls_errno = %d, session=0x%x\n", gtls_errno, session);
 		if (gtls_errno == GNUTLS_E_SUCCESS) {
 			got_session = 1;
 			gnutls_session_set_ptr (
@@ -2281,6 +2282,7 @@ if (renegotiating) {
 ; // Do not setup cryptfd
 } else
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
+		printf("HFM: session = 0x%x, cryptfd = %d\n", session, cryptfd);
 		gnutls_transport_set_int (session, cryptfd);
 	}
 	if (gtls_errno != GNUTLS_E_SUCCESS) {

@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include <syslog.h>
+#include <sys/socket.h>
 
 #include <tlspool/internal.h>
 
@@ -31,6 +32,11 @@ int main (int argc, char *argv []) {
 	int parsing = 1;
 	int kill_competition = 0;
 
+    int         sockfd;
+
+    sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+    close(sockfd);
+	
 	/*
 	 * Cmdline argument parsing
 	 */
@@ -63,6 +69,7 @@ int main (int argc, char *argv []) {
 	//TODO// setup syslogging
 
 	//UNDO// sigset_t sigblockmask;
+#define DOFORK	
 #ifdef DOFORK	
 	int pid = fork ();
 	switch (pid) {
