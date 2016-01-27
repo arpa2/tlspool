@@ -649,7 +649,11 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				if ((plainfd < 0) && (cmd.pio_cmd == PIOC_PLAINTEXT_CONNECT_V2)) {
 					int soxx [2];
 					//TODO// Setup for TCP, UDP, SCTP
+#ifndef __CYGWIN__
+					if (socketpair (AF_UNIX, SOCK_SEQPACKET, 0, soxx) == 0) {
+#else /* ifdef __CYGWIN__ */
 					if (socketpair (AF_UNIX, SOCK_STREAM, 0, soxx) == 0) {
+#endif /* __CYGWIN__ */
 						// printf("DEBUG: socketpair succeeded\n");
 						/* Socketpair created */
 						plainfd = soxx [0];
