@@ -1,15 +1,18 @@
 /* tlspool/libtlspool.c -- Library function for starttls go-get-it */
 
-
+#include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
-#include <syslog.h>
 #include <assert.h>
 #include <stdint.h>
+#include <limits.h>
+#include <ctype.h>
 
 #include <unistd.h>
 #include <pthread.h>
+#include <fcntl.h>
+#include <syslog.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -37,6 +40,36 @@ static pthread_cond_t updated_poolfd = PTHREAD_COND_INITIALIZER;
 
 static pthread_mutex_t prng_lock = PTHREAD_MUTEX_INITIALIZER;
 
+/* Retrieve the process identity of the TLS Pool from the named file, or fall
+ * back on the default file if the name is set to NULL.  Returns -1 on failure.
+ */
+int tlspool_pid (char *opt_pidfile) {
+	int fd;
+	char str_pid [256];
+	char *endptr;
+	size_t len;
+	unsigned long pid;
+
+	if (opt_pidfile == NULL) {
+		opt_pidfile = TLSPOOL_DEFAULT_PIDFILE_PATH;
+	}
+	fd = open (opt_pidfile, O_RDONLY);
+	if (fd != -1) {
+		len = read (fd, str_pid, sizeof (str_pid) -1);
+		if ((len > 0) && (len < sizeof (str_pid))) {
+			str_pid [len] = '\0';
+			pid = strtoul (str_pid, &endptr, 10);
+			while ((endptr != NULL) && (isspace (*endptr))) {
+				endptr++;
+			}
+			if ((pid >= 0) && (pid <= INT_MAX) && (!*endptr)) {
+				return (int) pid;
+			}
+		}
+		close (fd);
+	}
+	return -1;
+}
 
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
@@ -458,7 +491,6 @@ int tlspool_ping (pingpool_t *pingdata) {
 	}
 }
 
-
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
  *
@@ -570,7 +602,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 	mh.msg_iov = &iov;
 	mh.msg_iovlen = 1;
 	if (!renegotiate) {
-#ifndef WINDOWS
+#ifndef __CYGWIN__
 		mh.msg_control = anc;
 		mh.msg_controllen = sizeof (anc);
 		cmsg = CMSG_FIRSTHDR (&mh);
@@ -578,18 +610,34 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		cmsg->cmsg_type = SCM_RIGHTS;
 		* (int *) CMSG_DATA (cmsg) = cryptfd;	/* cannot close it yet */
 		cmsg->cmsg_len = CMSG_LEN (sizeof (int));
-#else /* ifdef WINDOWS */
+#else /* ifdef __CYGWIN__ */
 		// cmd was already set to 0, including ancilary data simulation
-		if (getsockopt (cryptfd, SOL_SOCKET, SO_DONTLINGER, &tmp, sizeof (tmp) != SOCKET_ERROR) || (WSAGetLastError () != WSAENOTSOCK)) {
+		if (1 /*is_sock(wsock)*/) {
 			// Send a socket
+			int pid = tlspool_pid (NULL);
+			if (pid == -1) {
+				close (cryptfd);
+				registry_update (&entry_reqid, NULL);
+				// errno inherited from tlspool_pid()
+				return -1;
+			}
 			cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
-			... (..., &cmd.pio_ancil_data.pioa_socket, ...);
+			// printf("DEBUG: pid = %d, cryptfd = %d\n", pid, cryptfd);
+			if (cygwin_socket_dup_protocol_info (cryptfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
+				// printf("DEBUG: cygwin_socket_dup_protocol_info error\n");
+				// Let SIGPIPE be reported as EPIPE
+				close (cryptfd);
+				registry_update (&entry_reqid, NULL);
+				// errno inherited from sendmsg()
+				return -1;
+			}
+			//... (..., &cmd.pio_ancil_data.pioa_socket, ...);
 		} else {
 			// Send a file handle
 			cmd.pio_ancil_type = ANCIL_TYPE_FILEHANDLE;
-			... (..., &cmd.pio_ancil_data.pioa_filehandle, ...);
+			//... (..., &cmd.pio_ancil_data.pioa_filehandle, ...);
 		}
-#endif /* WINDOWS */
+#endif /* __CYGWIN__ */
 	}
 	if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
 		// Let SIGPIPE be reported as EPIPE
@@ -627,12 +675,18 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				if ((plainfd < 0) && (cmd.pio_cmd == PIOC_PLAINTEXT_CONNECT_V2)) {
 					int soxx [2];
 					//TODO// Setup for TCP, UDP, SCTP
+#ifndef __CYGWIN__
 					if (socketpair (AF_UNIX, SOCK_SEQPACKET, 0, soxx) == 0) {
+#else /* ifdef __CYGWIN__ */
+					if (socketpair (AF_UNIX, SOCK_STREAM, 0, soxx) == 0) {
+#endif /* __CYGWIN__ */
+						// printf("DEBUG: socketpair succeeded\n");
 						/* Socketpair created */
 						plainfd = soxx [0];
 						* (int *) privdata = soxx [1];
 					} else {
 						/* Socketpair failed */
+						// printf("DEBUG: socketpair failed\n");
 						cmd.pio_cmd = PIOC_ERROR_V2;
 						cmd.pio_data.pioc_error.tlserrno = errno;
 						plainfd = -1;
@@ -641,7 +695,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 			}
 			/* We may now have a value to send in plainfd */
 			if (plainfd >= 0) {
-#ifndef WINDOWS
+#ifndef __CYGWIN__
 				mh.msg_control = anc;
 				mh.msg_controllen = sizeof (anc);
 				cmsg = CMSG_FIRSTHDR (&mh);
@@ -649,19 +703,34 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				cmsg->cmsg_type = SCM_RIGHTS;
 				* (int *) CMSG_DATA (cmsg) = plainfd;
 				cmsg->cmsg_len = CMSG_LEN (sizeof (int));
-#else /* ifdef WINDOWS */
-				cmd.pio_ancil_type = ANCIL_TYPE_NONE;
-				bzero (&cmd.pio_ancil_data, sizeof (cmd.pio_ancil_data));
-				if (getsockopt (cryptfd, SOL_SOCKET, SO_DONTLINGER, &tmp, sizeof (tmp) != SOCKET_ERROR) || (WSAGetLastError () != WSAENOTSOCK)) {
+#else /* ifdef __CYGWIN__ */
+				// cmd was already set to 0, including ancilary data simulation
+				if (1 /*is_sock(wsock)*/) {
 					// Send a socket
+					int pid = tlspool_pid (NULL);
+					if (pid == -1) {
+						close (plainfd);
+						registry_update (&entry_reqid, NULL);
+						// errno inherited from tlspool_pid()
+						return -1;
+					}
 					cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
-					... (..., &cmd.pio_ancil_data.pioa_socket, ...);
+					// printf("DEBUG: pid = %d, plainfd = %d\n", pid, plainfd);
+					if (cygwin_socket_dup_protocol_info (plainfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
+						// printf("DEBUG: cygwin_socket_dup_protocol_info error\n");
+						// Let SIGPIPE be reported as EPIPE
+						close (plainfd);
+						registry_update (&entry_reqid, NULL);
+						// errno inherited from sendmsg()
+						return -1;
+					}
+					//... (..., &cmd.pio_ancil_data.pioa_socket, ...);
 				} else {
 					// Send a file handle
 					cmd.pio_ancil_type = ANCIL_TYPE_FILEHANDLE;
-					... (..., &cmd.pio_ancil_data.pioa_filehandle, ...);
+					//... (..., &cmd.pio_ancil_data.pioa_filehandle, ...);
 				}
-#endif /* WINDOWS */
+#endif /* __CYGWIN__ */
 			}
 			/* Now supply plainfd in the callback response */
 			sentfd = plainfd;

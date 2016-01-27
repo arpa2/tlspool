@@ -208,9 +208,9 @@ int send_command (struct command *cmd, int passfd) {
 		return 1;	// Success guaranteed when nobody is listening
 	}
 	assert (passfd == -1);	// Working passfd code retained but not used
-#ifdef WINDOWS
-	cmd->pio_ancil_type = ANCIL_TYPE_NONE;
-	bzero (&cmd->pio_ancil_data, sizeof (cmd->pio_ancil_data));
+#ifdef __CYGWIN__
+	cmd->cmd.pio_ancil_type = ANCIL_TYPE_NONE;
+	bzero (&cmd->cmd.pio_ancil_data, sizeof (cmd->cmd.pio_ancil_data));
 #endif
 	bzero (anc, sizeof (anc));
 	bzero (&iov, sizeof (iov));
@@ -219,6 +219,7 @@ int send_command (struct command *cmd, int passfd) {
 	iov.iov_len = sizeof (cmd->cmd);
 	mh.msg_iov = &iov;
 	mh.msg_iovlen = 1;
+#ifndef __CYGWIN__
 	if (passfd >= 0) {
 		mh.msg_control = anc;
 		mh.msg_controllen = sizeof (anc);
@@ -228,7 +229,7 @@ int send_command (struct command *cmd, int passfd) {
 		cmsg->cmsg_len = CMSG_LEN (sizeof (int));
 		* (int *) CMSG_DATA (cmsg) = passfd;
 	}
-
+#endif
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Sending command 0x%08x and fd %d to socket %d", cmd->cmd.pio_cmd, passfd, cmd->clientfd);
 	if (sendmsg (cmd->clientfd, &mh, MSG_NOSIGNAL) == -1) {
 		//TODO// Differentiate behaviour based on errno?
@@ -292,7 +293,7 @@ void send_error (struct command *cmd, int tlserrno, char *msg) {
 }
 
 
-#ifndef WINDOWS
+#ifndef __CYGWIN__
 /* Receive a command.  Return nonzero on success, zero on failure. */
 int receive_command (int sox, struct command *cmd) {
 	int newfds [2];
@@ -334,16 +335,36 @@ int receive_command (int sox, struct command *cmd) {
 
 	return 1;
 }
-#endif /* !WINDOWS */
+#endif /* !__CYGWIN__ */
 
 
-#ifdef WINDOWS
+#ifdef __CYGWIN__
+extern cygwin_socket_from_protocol_info (LPWSAPROTOCOL_INFOW lpProtocolInfo);
+
 /* Receive a command.  Return nonzero on success, zero on failure. */
 int receive_command (int sox, struct command *cmd) {
-#warning "receive_command() not yet implemented on Windows"
-	return 0;
+	if (recv(sox, &cmd->cmd, sizeof(cmd->cmd), 0) == -1) {
+		//TODO// Differentiate behaviour based on errno?
+		perror ("Failed to receive command");
+		return 0;	
+	}
+	if (cmd->cmd.pio_ancil_type == ANCIL_TYPE_SOCKET) {
+			if (cmd->passfd == -1) {
+				//WRONG: no support for sockets
+				//HANDLE winsock = (HANDLE) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
+				//cmd->passfd = cygwin_attach_handle_to_fd(NULL, -1, winsock, NULL, GENERIC_READ | GENERIC_WRITE);
+				//tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d, winsock = %d\n", cmd->passfd, winsock);
+				cmd->passfd = cygwin_socket_from_protocol_info(&cmd->cmd.pio_ancil_data.pioa_socket);
+				tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d\n", cmd->passfd);
+			} else {
+				//int superfd = (int) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
+				//tlog (TLOG_UNIXSOCK, LOG_ERR, "Received superfluous file descriptor as %d", superfd);
+				//close (superfd);
+			}
+	}
+	return 1;
 }
-#endif /* WINDOWS */
+#endif /* __CYGWIN__ */
 
 
 /* Check if a command request is a proper callback response.

@@ -157,7 +157,7 @@ void error_db2posix (int db_errno, char *new_errstr) {
 #ifdef DB_NOSERVER_HOME
 	case DB_NOSERVER_HOME:
 #endif
-#ifdef DB_NOSERVER_ID:
+#ifdef DB_NOSERVER_ID
 	case DB_NOSERVER_ID:
 #endif
 	case DB_REP_DUPMASTER:
