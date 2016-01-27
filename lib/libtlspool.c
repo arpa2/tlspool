@@ -40,10 +40,6 @@ static pthread_cond_t updated_poolfd = PTHREAD_COND_INITIALIZER;
 
 static pthread_mutex_t prng_lock = PTHREAD_MUTEX_INITIALIZER;
 
-/*
- * Quick and dirty function to get the PID of the tlspool daemon
- */
-
 int tlspool_getpid () {
 	int fd;
 
@@ -477,32 +473,6 @@ int tlspool_ping (pingpool_t *pingdata) {
 	}
 }
 
-#define SIO_ADDRESS_LIST_QUERY 0x48000016
-
-int is_sock(SOCKET winsock) {
-	int rc;
-	char buffer[1024];
-//	PSOCKET_ADDRESS_LIST address_list = (PSOCKET_ADDRESS_LIST) buffer;
-	DWORD cbOutBuffer = sizeof(buffer);       // size of output buffer  
-	DWORD cbBytesReturned; // number of bytes returned
-	
-	rc = WSAIoctl(
-	  winsock,            // descriptor identifying a socket
-	  SIO_ADDRESS_LIST_QUERY,            // dwIoControlCode
-	  NULL,                              // lpvInBuffer
-	  0,                                 // cbInBuffer
-	  (LPVOID) buffer,          // output buffer
-	  cbOutBuffer,            // size of output buffer  
-	  &cbBytesReturned,    // number of bytes returned
-	  NULL, // OVERLAPPED structure
-	  NULL  // completion routine
-	);
-	
-	printf("is_sock winsock = %d, rc = %d\n", winsock, rc);
-	return rc == 0;
-//	printf("iAddressCount = %d", address_list->iAddressCount);
-}
-
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
  *
@@ -614,7 +584,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 	mh.msg_iov = &iov;
 	mh.msg_iovlen = 1;
 	if (!renegotiate) {
-#ifndef WINDOWS
+#ifndef __CYGWIN__
 		mh.msg_control = anc;
 		mh.msg_controllen = sizeof (anc);
 		cmsg = CMSG_FIRSTHDR (&mh);
@@ -622,7 +592,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		cmsg->cmsg_type = SCM_RIGHTS;
 		* (int *) CMSG_DATA (cmsg) = cryptfd;	/* cannot close it yet */
 		cmsg->cmsg_len = CMSG_LEN (sizeof (int));
-#else /* ifdef WINDOWS */
+#else /* ifdef __CYGWIN__ */
 		// cmd was already set to 0, including ancilary data simulation
 		if (1 /*is_sock(wsock)*/) {
 			// Send a socket
@@ -643,7 +613,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 			cmd.pio_ancil_type = ANCIL_TYPE_FILEHANDLE;
 			//... (..., &cmd.pio_ancil_data.pioa_filehandle, ...);
 		}
-#endif /* WINDOWS */
+#endif /* __CYGWIN__ */
 	}
 	if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
 		// Let SIGPIPE be reported as EPIPE
@@ -697,7 +667,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 			}
 			/* We may now have a value to send in plainfd */
 			if (plainfd >= 0) {
-#ifndef WINDOWS
+#ifndef __CYGWIN__
 				mh.msg_control = anc;
 				mh.msg_controllen = sizeof (anc);
 				cmsg = CMSG_FIRSTHDR (&mh);
@@ -705,7 +675,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				cmsg->cmsg_type = SCM_RIGHTS;
 				* (int *) CMSG_DATA (cmsg) = plainfd;
 				cmsg->cmsg_len = CMSG_LEN (sizeof (int));
-#else /* ifdef WINDOWS */
+#else /* ifdef __CYGWIN__ */
 				SOCKET wsock = (SOCKET) get_osfhandle (plainfd);
 				
 				// cmd was already set to 0, including ancilary data simulation
@@ -728,7 +698,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 					cmd.pio_ancil_type = ANCIL_TYPE_FILEHANDLE;
 					//... (..., &cmd.pio_ancil_data.pioa_filehandle, ...);
 				}
-#endif /* WINDOWS */
+#endif /* __CYGWIN__ */
 			}
 			/* Now supply plainfd in the callback response */
 			sentfd = plainfd;

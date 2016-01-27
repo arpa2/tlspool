@@ -380,7 +380,7 @@ void cfg_socketname (char *item, int itemno, char *value) {
 		//
 		// Note: Only be so kind to unlink when PID file is owned
 		//
-		//unlink (value);
+		unlink (value);
 	}
 	sox = socket (AF_UNIX, SOCK_STREAM, 0);
 	if (sox < 0) {

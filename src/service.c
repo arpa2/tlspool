@@ -208,7 +208,7 @@ int send_command (struct command *cmd, int passfd) {
 		return 1;	// Success guaranteed when nobody is listening
 	}
 	assert (passfd == -1);	// Working passfd code retained but not used
-#ifdef WINDOWS
+#ifdef __CYGWIN__
 	cmd->cmd.pio_ancil_type = ANCIL_TYPE_NONE;
 	bzero (&cmd->cmd.pio_ancil_data, sizeof (cmd->cmd.pio_ancil_data));
 #endif
@@ -219,7 +219,7 @@ int send_command (struct command *cmd, int passfd) {
 	iov.iov_len = sizeof (cmd->cmd);
 	mh.msg_iov = &iov;
 	mh.msg_iovlen = 1;
-#ifndef WINDOWS	
+#ifndef __CYGWIN__
 	if (passfd >= 0) {
 		mh.msg_control = anc;
 		mh.msg_controllen = sizeof (anc);
@@ -293,7 +293,7 @@ void send_error (struct command *cmd, int tlserrno, char *msg) {
 }
 
 
-#ifndef WINDOWS
+#ifndef __CYGWIN__
 /* Receive a command.  Return nonzero on success, zero on failure. */
 int receive_command (int sox, struct command *cmd) {
 	int newfds [2];
@@ -335,10 +335,10 @@ int receive_command (int sox, struct command *cmd) {
 
 	return 1;
 }
-#endif /* !WINDOWS */
+#endif /* !__CYGWIN__ */
 
 
-#ifdef WINDOWS
+#ifdef __CYGWIN__
 extern cygwin_socket_from_protocol_info (LPWSAPROTOCOL_INFOW lpProtocolInfo);
 
 /* Receive a command.  Return nonzero on success, zero on failure. */
@@ -364,7 +364,7 @@ int receive_command (int sox, struct command *cmd) {
 	}
 	return 1;
 }
-#endif /* WINDOWS */
+#endif /* __CYGWIN__ */
 
 
 /* Check if a command request is a proper callback response.
