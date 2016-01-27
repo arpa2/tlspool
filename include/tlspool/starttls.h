@@ -25,7 +25,7 @@
 #define TLSPOOL_DEFAULT_SOCKET_PATH "/var/run/tlspool.sock"
 
 /*
- * Quick and dirty function to get the PID of the tlspool daemon
+ * Get the PID of the tlspool daemon
  */
 
 int tlspool_getpid ();

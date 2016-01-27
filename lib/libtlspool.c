@@ -1,6 +1,6 @@
 /* tlspool/libtlspool.c -- Library function for starttls go-get-it */
 
-
+#include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
@@ -11,7 +11,6 @@
 
 #include <unistd.h>
 #include <pthread.h>
-#include <io.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -22,7 +21,6 @@
 #include <tlspool/starttls.h>
 #include <tlspool/commands.h>
 
-#include <sys/cygwin.h>
 
 
 /* The master thread will run the receiving side of the socket that connects
@@ -598,9 +596,9 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 			// Send a socket
 			int pid = tlspool_getpid();
 			cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
-			printf("pid = %d, cryptfd = %d\n", pid, cryptfd);
+			// printf("DEBUG: pid = %d, cryptfd = %d\n", pid, cryptfd);
 			if (cygwin_socket_dup_protocol_info (cryptfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
-				printf("cygwin_socket_dup_protocol_info error\n");
+				// printf("DEBUG: cygwin_socket_dup_protocol_info error\n");
 				// Let SIGPIPE be reported as EPIPE
 				close (cryptfd);
 				registry_update (&entry_reqid, NULL);
@@ -652,13 +650,13 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 					int soxx [2];
 					//TODO// Setup for TCP, UDP, SCTP
 					if (socketpair (AF_UNIX, SOCK_STREAM, 0, soxx) == 0) {
-						printf("HFM: socketpair succeeded\n");
+						// printf("DEBUG: socketpair succeeded\n");
 						/* Socketpair created */
 						plainfd = soxx [0];
 						* (int *) privdata = soxx [1];
 					} else {
 						/* Socketpair failed */
-						printf("HFM: socketpair failed\n");
+						// printf("DEBUG: socketpair failed\n");
 						cmd.pio_cmd = PIOC_ERROR_V2;
 						cmd.pio_data.pioc_error.tlserrno = errno;
 						plainfd = -1;
@@ -676,16 +674,14 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				* (int *) CMSG_DATA (cmsg) = plainfd;
 				cmsg->cmsg_len = CMSG_LEN (sizeof (int));
 #else /* ifdef __CYGWIN__ */
-				SOCKET wsock = (SOCKET) get_osfhandle (plainfd);
-				
 				// cmd was already set to 0, including ancilary data simulation
 				if (1 /*is_sock(wsock)*/) {
 					// Send a socket
 					int pid = tlspool_getpid();
 					cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
-					printf("pid = %d, plainfd = %d\n", pid, plainfd);
+					// printf("DEBUG: pid = %d, plainfd = %d\n", pid, plainfd);
 					if (cygwin_socket_dup_protocol_info (plainfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
-						printf("cygwin_socket_dup_protocol_info error\n");
+						// printf("DEBUG: cygwin_socket_dup_protocol_info error\n");
 						// Let SIGPIPE be reported as EPIPE
 						close (plainfd);
 						registry_update (&entry_reqid, NULL);
