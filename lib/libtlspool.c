@@ -4,13 +4,15 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
-#include <syslog.h>
 #include <assert.h>
 #include <stdint.h>
-#include <fcntl.h>
+#include <limits.h>
+#include <ctype.h>
 
 #include <unistd.h>
 #include <pthread.h>
+#include <fcntl.h>
+#include <syslog.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -38,15 +40,33 @@ static pthread_cond_t updated_poolfd = PTHREAD_COND_INITIALIZER;
 
 static pthread_mutex_t prng_lock = PTHREAD_MUTEX_INITIALIZER;
 
-int tlspool_getpid () {
+/* Retrieve the process identity of the TLS Pool from the named file, or fall
+ * back on the default file if the name is set to NULL.  Returns -1 on failure.
+ */
+int tlspool_pid (char *opt_pidfile) {
 	int fd;
+	char str_pid [256];
+	char *endptr;
+	size_t len;
+	unsigned long pid;
 
-	if ((fd = open("/var/run/tlspool.pid", O_RDONLY)) != -1) {
-		char str_pid[256];
-
-		if (read(fd, str_pid, sizeof(str_pid)) != -1) {
-			return atoi(str_pid);
+	if (opt_pidfile == NULL) {
+		opt_pidfile = TLSPOOL_DEFAULT_PIDFILE_PATH;
+	}
+	fd = open (opt_pidfile, O_RDONLY);
+	if (fd != -1) {
+		len = read (fd, str_pid, sizeof (str_pid) -1);
+		if ((len > 0) && (len < sizeof (str_pid))) {
+			str_pid [len] = '\0';
+			pid = strtoul (str_pid, &endptr, 10);
+			while ((endptr != NULL) && (isspace (*endptr))) {
+				endptr++;
+			}
+			if ((pid >= 0) && (pid <= INT_MAX) && (!*endptr)) {
+				return (int) pid;
+			}
 		}
+		close (fd);
 	}
 	return -1;
 }
@@ -594,7 +614,13 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		// cmd was already set to 0, including ancilary data simulation
 		if (1 /*is_sock(wsock)*/) {
 			// Send a socket
-			int pid = tlspool_getpid();
+			int pid = tlspool_pid (NULL);
+			if (pid == -1) {
+				close (cryptfd);
+				registry_update (&entry_reqid, NULL);
+				// errno inherited from tlspool_pid()
+				return -1;
+			}
 			cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
 			// printf("DEBUG: pid = %d, cryptfd = %d\n", pid, cryptfd);
 			if (cygwin_socket_dup_protocol_info (cryptfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
@@ -681,7 +707,13 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				// cmd was already set to 0, including ancilary data simulation
 				if (1 /*is_sock(wsock)*/) {
 					// Send a socket
-					int pid = tlspool_getpid();
+					int pid = tlspool_pid (NULL);
+					if (pid == -1) {
+						close (plainfd);
+						registry_update (&entry_reqid, NULL);
+						// errno inherited from tlspool_pid()
+						return -1;
+					}
 					cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
 					// printf("DEBUG: pid = %d, plainfd = %d\n", pid, plainfd);
 					if (cygwin_socket_dup_protocol_info (plainfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {

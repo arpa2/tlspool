@@ -23,12 +23,12 @@
 
 
 #define TLSPOOL_DEFAULT_SOCKET_PATH "/var/run/tlspool.sock"
+#define TLSPOOL_DEFAULT_PIDFILE_PATH "/var/run/tlspool.pid"
 
-/*
- * Get the PID of the tlspool daemon
+/* Retrieve the process identity of the TLS Pool from the named file, or fall
+ * back on the default file if the name is set to NULL.  Returns -1 on failure.
  */
-
-int tlspool_getpid ();
+int tlspool_pid (char *opt_pidfile);
 
 /* Setup the TLS pool socket to use, if it is not the default path name
  * /var/run/tlspool.sock.  The return value is the file descriptor for the
