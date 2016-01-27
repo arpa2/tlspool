@@ -5,7 +5,7 @@ is licensed under GPLv3.  The formal text is as follows:
 
 
 >    TLS Pool daemon code.
->    Copyright (C) 2013-2015 Rick van Rein, the ARPA2 project.
+>    Copyright (C) 2013-2016 Rick van Rein, the ARPA2 project.
 
 >    This program is free software: you can redistribute it and/or modify
 >    it under the terms of the GNU General Public License as published by

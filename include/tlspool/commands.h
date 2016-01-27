@@ -572,6 +572,16 @@ typedef struct pioc_lidentry lidentry_t;
 #define PIOF_STARTTLS_RENEGOTIATE		0x00020000
 
 
+/* PIOF_STARTTLS_LOCALID_ONTHEFLY indicates that the localid credentials in the
+ * STARTTLS request should be generated on the fly.  This may restrict the number
+ * of technologies available, and it usually requires the remote end to accept
+ * certificates signed by the TLS Pool, usually under a signing key/certificate
+ * as setup in etc/tlspool.conf with tls_onthefly_signcert and _signkey.  Note
+ * that if these are not configured, the STARTTLS request will usually fail.
+ */
+#define PIOF_STARTTLS_LOCALID_ONTHEFLY		0x00040000
+
+
 
 /*************************** PIOF_LIDENTRY_xxx FLAGS **************************/
 

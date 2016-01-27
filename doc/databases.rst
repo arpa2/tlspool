@@ -94,15 +94,15 @@ Note that the public value differs between key uses; the following forms have
 been defined at this time:
 
   * for ``LID_TYPE_X509`` it is a DER-encoded X.509 certificate without chain that matches the NAI in ``Email`` and/or ``commonName`` fields;  However, when ``LID_CHAINED`` is additionally specified, in which case a chain of certificates to be deliverd to the remote peer may be concatenated to the X.509 certificate.
-  * for ``LID_TYPE_PGP`` it is a binery-encoded public key packet containing:
+  * for ``LID_TYPE_PGP`` it is a binary-encoded public key packet containing:
      - One public key
      - One User ID holding at least the DoNAI between < and >
      - A self-signature binding this User ID to the public key
      - Possibly added signatures binding this User ID to the public key
      - One encryption subkey
      - A self-signature binding the encryption subkey to the public key
-  * no form has been settled for ``LID_TYPE_SRP`` yet.  We will probably be able to use our own flavour, SRP #11, going through PKCS #11 on the client side.  The identity will then probably be the username, salt (including pinning information) and a PKCS #11 URI.
-  * no form has been settled for ``LID_TYPE_KRB5`` yet.  We will probably try to use PKCS #11 for Kerberos as well, by implementing AES in CTS mode on top of the widely supported AES in CBC mode.  There may be additional provisioning for differentiation between a login identity and a pseudonym.
+  * no form has been settled for ``LID_TYPE_SRP`` yet.  We will probably be able to use our own flavour, [SRP #11](http://github.com/arpa2/srp-pkcs11), going through PKCS #11 on the client side.  The identity will then probably be the username, salt (including pinning information), DH public key and a PKCS #11 URI of a DH private key (consisting of exponent, base, modulus).
+  * no form has been settled for ``LID_TYPE_KRB5`` yet.  We will probably try to use PKCS #11 for Kerberos as well, by [implementing AES in CTS mode](http://github.com/arpa2/kerberos-pkcs11) on top of the widely supported AES in CBC mode.  There may be additional provisioning for differentiation between a login identity and a pseudonym.
 
 There are a few more flags in the initial word of an entry:
 
