@@ -311,7 +311,9 @@ void cfg_setvar (char *item, int itemno, char *value) {
 }
 
 void unlink_pidfile (void) {
+#ifndef CONFIG_PARSE_ONLY
 	unlink (configvars [CFGVAR_DAEMON_PIDFILE]);
+#endif
 }
 
 void cfg_pidfile (char *item, int itemno, char *value) {
@@ -322,6 +324,7 @@ void cfg_pidfile (char *item, int itemno, char *value) {
 	}
 	cfg_setvar (item, CFGVAR_DAEMON_PIDFILE, value);
 	atexit (unlink_pidfile);
+#ifndef CONFIG_PARSE_ONLY
 	fh = open (value, O_RDWR | O_CREAT, 0664);
 	char pidbuf [10];
 	if (fh < 0) {
@@ -363,11 +366,13 @@ retry:
 	//
 	// Note: The file remains open -- to sustain the flock on it
 	//
+#endif
 }
 
 void cfg_socketname (char *item, int itemno, char *value) {
 	struct sockaddr_un sun;
 	int sox;
+#ifndef CONFIG_PARSE_ONLY
 	uid_t me = getuid ();
 	gid_t my = getgid ();
 	if (strlen (value) + 1 > sizeof (sun.sun_path)) {
@@ -426,30 +431,35 @@ void cfg_socketname (char *item, int itemno, char *value) {
 		}
 	}
 	register_server_socket (sox);
+#endif
 }
 
 void cfg_user (char *item, int itemno, char *value) {
 #ifdef DEBUG
 	fprintf (stdout, "DEBUG: DECLARE %s AS %s\n", item, value);
 #endif
+#ifndef CONFIG_PARSE_ONLY
 	struct passwd *pwd = getpwnam (value);
 	if (!pwd) {
 		fprintf (stderr, "Failed to find username %s\n", value);
 		exit (1);
 	}
 	setuid (pwd->pw_uid);
+#endif
 }
 
 void cfg_group (char *item, int itemno, char *value) {
 #ifdef DEBUG
 	fprintf (stdout, "DEBUG: DECLARE %s AS %s\n", item, value);
 #endif
+#ifndef CONFIG_PARSE_ONLY
 	struct group *grp = getgrnam (value);
 	if (!grp) {
 		fprintf (stderr, "Failed to find group name %s\n", value);
 		exit (1);
 	}
 	setgid (grp->gr_gid);
+#endif
 }
 
 void cfg_chroot (char *item, int itemno, char *value) {
@@ -493,7 +503,9 @@ void cfg_p11token (char *item, int itemno, char *value) {
 		fprintf (stderr, "You must specify pkcs11_path before any number of pkcs11_token\n");
 		exit (1);
 	}
+#ifndef CONFIG_PARSE_ONLY
 	starttls_pkcs11_provider (configvars [CFGVAR_PKCS11_PATH]);
+#endif
 }
 
 
@@ -505,6 +517,7 @@ void cfg_ldap (char *item, int itemno, char *value) {
 	if (configvars [CFGVAR_LDAP_PROXY]) {
 		fprintf (stderr, "This version ignores additional LDAP proxy servers\n");
 	} else {
+#ifndef CONFIG_PARSE_ONLY
 		fprintf (stderr, "This version ignores all LDAP proxy servers\n");
 		//NOTYET// ldap_handle = NULL;
 		//NOTYET// if (ldap_initialize (&ldap_handle, value) || !ldap_handle) {
@@ -513,6 +526,7 @@ void cfg_ldap (char *item, int itemno, char *value) {
 		//NOTYET// } else {
 		//NOTYET// 	cfg_setvar (item, itemno, value);
 		//NOTYET// }
+#endif
 	}
 }
 
@@ -530,10 +544,12 @@ void cfg_cachehost (char *item, int itemno, char *value) {
 	if (configvars [CFGVAR_CACHE_PORT]) {
 		port = atoi (configvars [CFGVAR_CACHE_PORT]);
 	}
+#ifndef CONFIG_PARSE_ONLY
 	//NOTYET// if (memcached_server_add (cache, value, port)) {
 		fprintf (stderr, "Failed to add memcached server %s\n");
 		exit (1);
 	//NOTYET// }
+#endif
 }
 
 char *cfg_dbenv_dir (void) {

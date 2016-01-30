@@ -30,6 +30,7 @@
 
 
 
+#ifndef DONAI_ONLY_TEXTPROC
 /* Retrieve flags from the credentials structure found in dbh_localid.
  * The function returns non-zero on success (zero indicates syntax error).
  */
@@ -41,8 +42,10 @@ int dbcred_flags (DBT *creddata, uint32_t *flags) {
 	*flags = ntohl (* (uint32_t *) creddata->data);
 	return 1;
 }
+#endif
 
 
+#ifndef DONAI_ONLY_TEXTPROC
 /* Interpret the credentials structure found in dbh_localid.
  * This comes down to splitting the (data,size) structure into fields:
  *  - a 32-bit flags field
@@ -78,8 +81,10 @@ int dbcred_interpret (pool_datum_t *creddata, uint32_t *flags, char **p11priv, u
 	}
 	return 1;
 }
+#endif
 
 
+#ifndef DONAI_ONLY_TEXTPROC
 /* Create an iterator for a given localid value.  Use keys from dhb_lid.
  * The first value is delivered; continue with dbcred_iterate_next().
  *
@@ -95,8 +100,10 @@ db_error dbcred_iterate_from_localid (DBC *cursor, DBT *keydata, DBT *creddata) 
 		cursor->get (cursor, keydata, creddata, DB_SET));
 	return db_errno;
 }
+#endif
 
 
+#ifndef DONAI_ONLY_TEXTPROC
 /* Construct an iterator for a given remoteid selector.  Apply stepwise
  * generalisation to find the most concrete match.  The first value found
  * is delivered; continue with dbcred_iterate_next().
@@ -278,8 +285,10 @@ printf ("DEBUG: Generated  LID-entry menu for %s.\n", remoteid);
 	}
 	return db_errno;
 }
+#endif
 
 
+#ifndef DONAI_ONLY_TEXTPROC
 /* Move an iterator to the next credential data value.  When done, the value
  * returned should be DB_NOTFOUND.
  *
@@ -313,6 +322,7 @@ db_error dbcred_iterate_next (DBC *opt_crs_disclose, DBC *crs_localid, DBT *opt_
 	}
 	return db_errno;
 }
+#endif
 
 
 /* Iterate over selector values that would generalise the donai.  The
