@@ -1,6 +1,6 @@
-AM_CFLAGS = -I$(srcdir)/../include -pthread -DCONFIG_PARSE_ONLY -DDONAI_ONLY_TEXTPROC
+AM_CFLAGS = $(P11KIT_CFLAGS) -I$(srcdir)/../include -pthread -DCONFIG_PARSE_ONLY -DDONAI_ONLY_TEXTPROC
 AM_LDFLAGS = -L$(srcdir)/../lib
-bin_PROGRAMS = tlstunnel testcli testsrv testpeer pingpool lidsel pinentry get_localid set_localid get_disclose set_disclose
+bin_PROGRAMS = tlstunnel testcli testsrv testpeer pingpool lidsel pinentry get_localid set_localid get_disclose set_disclose pgp11_genkey
 tlstunnel_SOURCES = tlstunnel.c tlstunnel-chat.c
 tlstunnel_LDADD = ../lib/libtlspool.la
 testcli_SOURCES = testcli.c
@@ -23,3 +23,5 @@ get_disclose_SOURCES = get_disclose.c ../src/config.c ../src/donai.c
 get_disclose_LDADD = $(BDB_LIBS)
 set_disclose_SOURCES = set_disclose.c ../src/config.c
 set_disclose_LDADD = $(BDB_LIBS)
+pgp11_genkey_SOURCES = pgp11_genkey.c
+pgp11_genkey_LDADD = $(P11KIT_LIBS) -lcrypto

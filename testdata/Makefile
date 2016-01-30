@@ -27,16 +27,14 @@
 # 6. test on-the-fly signing CA certificate: flying-signer@tlspool.arpa2.lab
 #
 
-TARGET_PKCS11=$(PRIVKEYGEN)
-TARGET_CERT=tlspool-test-client-cert.der tlspool-test-server-cert.der tlspool-test-ca-cert.der tlspool-test-flying-signer.der
-TARGET_PGP11=tlspool-test-client-pubkey.pgp tlspool-test-server-pubkey.pgp
-TARGET_DB=localid.db disclose.db
-
 
 #
 # Setting for the configuration file tlspool.conf
+# Setting of the number of RSA private key bits (radically ignoring 2^n trends)
 #
 CONFFILE=$(shell pwd)/../etc/tlspool.conf
+RSABITS=2000
+PGPRSABITS=2048
 
 #
 # Load a few things from tlspool.conf; these are assumed present while testing
@@ -44,16 +42,20 @@ CONFFILE=$(shell pwd)/../etc/tlspool.conf
 P11PIN=$(shell sed < $(CONFFILE) -n 's/^pkcs11_pin //p')
 P11LIB=$(shell sed < $(CONFFILE) -n 's/^pkcs11_path //p')
 P11URI=$(shell sed < $(CONFFILE) -n 's/^pkcs11_token pkcs11:/pkcs11:/p')
+DMNUSR=$(shell sed < $(CONFFILE) -n 's/^daemon_user //p')
+DMNGRP=$(shell sed < $(CONFFILE) -n 's/^daemon_group //p')
 
 #
 # Embellish p11tool command; if fixed, provide the PKCS #11 PIN automatically
 #
 ifeq ($(P11PIN),)
 P11TOOL=p11tool --provider $(P11LIB) --login
-CERTTOOL=certtool --provider $(P11LIB) --outder
+CERTTOOL=certtool --provider $(P11LIB)
+PGPTOOL=../tool/pgp11_genkey
 else
 P11TOOL=GNUTLS_PIN=$(P11PIN) p11tool --provider $(P11LIB) --login
-CERTTOOL=GNUTLS_PIN=$(P11PIN) certtool --provider $(P11LIB) --outder
+CERTTOOL=GNUTLS_PIN=$(P11PIN) certtool --provider $(P11LIB)
+PGPTOOL=GNUTLS_PIN=$(P11PIN) ../tool/pgp11_genkey
 endif
 
 #
@@ -95,15 +97,21 @@ endif
 # General rules for cleaning and filling (together, rebuilding) parts
 #
 
-.PHONY: all rebuild-pkcs11 rebuild-certs rebuild-pgp rebuild-db
-.PHONY:       clean-pkcs11   clean-certs   clean-pgp   clean-db
-.PHONY:      refill-pkcs11  refill-certs  refill-pgp  refill-db
+TARGET_PKCS11=$(PRIVKEYGEN)
+TARGET_CERT=tlspool-test-client-cert.der tlspool-test-server-cert.der tlspool-test-ca-cert.der tlspool-test-flying-signer.der
+TARGET_PGP=tlspool-test-client-pubkey.pgp tlspool-test-server-pubkey.pgp
+TARGET_DB=localid.db disclose.db
+TARGET_DBE=tlspool.env
 
-all: fill-pkcs11 fill-certs fill-pgp fill-db
+.PHONY: all rebuild-pkcs11 rebuild-cert rebuild-pgp rebuild-db
+.PHONY:       clean-pkcs11   clean-cert   clean-pgp   clean-db
+.PHONY:      refill-pkcs11  refill-cert  refill-pgp  refill-db
+
+all: fill-pkcs11 fill-cert fill-pgp fill-db
 
 rebuild-pkcs11: clean-pkcs11 fill-pkcs11
 
-rebuild-certs: clean-certs fill-certs
+rebuild-cert: clean-cert fill-cert
 
 rebuild-pgp: clean-pgp fill-pgp
 
@@ -120,20 +128,22 @@ clean-pkcs11:
 
 fill-pkcs11: $(PRIVKEYGEN)
 
-clean-certs:
+clean-cert:
 	rm -f $(TARGET_CERT)
 
-fill-certs: $(TARGET_CERT)
+fill-cert: $(TARGET_CERT)
 
 clean-pgp:
-	rm -f $(TARGET_PGP11)
+	rm -f $(TARGET_PGP)
 
-fill-pgp: $(TARGET_PGP11)
+fill-pgp: $(TARGET_PGP)
 
 clean-db:
 	rm -f $(TARGET_DB)
+	mkdir -p $(TARGET_DBE)
+	rm -rf $(TARGET_DBE)/*
 
-fill-db: $(TARGET_DB)
+fill-db: $(TARGET_DBE) $(TARGET_DB)
 
 
 #
@@ -150,34 +160,34 @@ fill-db: $(TARGET_DB)
 # Could alternatively do:
 #
 # $(P11TOOL) --initialize '$(P11URI)'
-# $(P11TOOL) --generate-rsa --bits 2048 --label objXlabel --id objXid --outfile xxx.pem '$(P11URI)'
+# $(P11TOOL) --generate-rsa --bits $(RSABITS) --label objXlabel --id objXid --outfile xxx.pem '$(P11URI)'
 # ...
 
 .PHONY: privkey1 privkey2 privkey3 privkey4 privkey5
 
 privkey1:
 	@echo 'Generating private key #1 on PKCS #11 token'
-	$(P11TOOL) --generate-rsa --bits 2048 --label=obj1label '$(P11URI)'
+	$(P11TOOL) --generate-rsa --bits $(PGPRSABITS) --label=obj1label --id=obj1id --outfile=/dev/null '$(P11URI)'
 
 privkey2:
 	@echo 'Generating private key #2 on PKCS #11 token'
-	$(P11TOOL) --generate-rsa --bits 2048 --label=obj2label '$(P11URI)'
+	$(P11TOOL) --generate-rsa --bits $(PGPRSABITS) --label=obj2label --id=obj2id --outfile=/dev/null '$(P11URI)'
 
 privkey3:
 	@echo 'Generating private key #3 on PKCS #11 token'
-	$(P11TOOL) --generate-rsa --bits 2048 --label=obj3label '$(P11URI)'
+	$(P11TOOL) --generate-rsa --bits $(RSABITS) --label=obj3label --id=obj3id --outfile=/dev/null '$(P11URI)'
 
 privkey4:
 	@echo 'Generating private key #4 on PKCS #11 token'
-	$(P11TOOL) --generate-rsa --bits 2048 --label=obj4label '$(P11URI)'
+	$(P11TOOL) --generate-rsa --bits $(RSABITS) --label=obj4label --id=obj4id --outfile=/dev/null '$(P11URI)'
 
 privkey5:
 	@echo 'Generating private key #5 on PKCS #11 token'
-	$(P11TOOL) --generate-rsa --bits 2048 --label=obj5label '$(P11URI)'
+	$(P11TOOL) --generate-rsa --bits $(RSABITS) --label=obj5label --id=obj5id --outfile=/dev/null '$(P11URI)'
 
 privkey6:
 	@echo 'Generating private key #6 on PKCS #11 token'
-	$(P11TOOL) --generate-rsa --bits 2048 --label=obj6label '$(P11URI)'
+	$(P11TOOL) --generate-rsa --bits $(RSABITS) --label=obj6label --id=obj6id --outfile=/dev/null '$(P11URI)'
 
 
 #
@@ -187,31 +197,31 @@ privkey6:
 # Key 1: OpenPGP Client Certificate
 tlspool-test-client-pubkey.pgp:
 	echo Using PRIVKEY1, '$(PRIVKEY1)'
-	#TODO# tlspool-test-client-pubkey.pgp from PRIVKEY1
+	$(PGPTOOL) $(P11LIB) '$(PRIVKEY1)' 'OpenPGP Test Client <testcli@tlspool.arpa2.lab>' $@
 	#TODO# $(CERTTOOL) --pgp-certificate-info --infile $@ --inraw > $(@:.pgp=.txt)
 
 # Key 2: OpenPGP Server Certificate
 tlspool-test-server-pubkey.pgp:
 	echo Using PRIVKEY2, '$(PRIVKEY2)'
-	#TODO# tlspool-test-client-pubkey.pgp from PRIVKEY2
+	$(PGPTOOL) $(P11LIB) '$(PRIVKEY2)' 'OpenPGP Test Server <testsrv@tlspool.arpa2.lab>' $@
 	#TODO# $(CERTTOOL) --pgp-certificate-info --infile $@ --inraw > $(@:.pgp=.txt)
 
 # Key 3: X.509 Client Certificate
 tlspool-test-client-cert.der: tlspool-test-client-cert.template
 	echo Using PRIVKEY3, '$(PRIVKEY3)'
-	$(CERTTOOL) --outfile $@ --generate-self-signed --load-privkey='$(PRIVKEY3)' --template=$<
-	$(CERTTOOL) --certificate-info --infile $@ --inder > $(@:.der=.txt)
+	$(CERTTOOL) --outfile $@ --outder --generate-self-signed --load-privkey='$(PRIVKEY3)' --template=$<
+	$(CERTTOOL) --certificate-info --infile $@ --inder # > $(@:.der=.txt)
 
 # Key 4: X.509 Server Certificate
 tlspool-test-server-cert.der: tlspool-test-server-cert.template
 	echo Using PRIVKEY4, '$(PRIVKEY4)'
-	$(CERTTOOL) --outfile $@ --generate-self-signed --load-privkey='$(PRIVKEY4)' --template=$<
-	$(CERTTOOL) --certificate-info --infile $@ --inder > $(@:.der=.txt)
+	$(CERTTOOL) --outfile $@ --outder --generate-self-signed --load-privkey='$(PRIVKEY4)' --template=$<
+	$(CERTTOOL) --certificate-info --infile $@ --inder # > $(@:.der=.txt)
 
 # Key 5: Test CA (for chained certificates)
 tlspool-test-ca-cert.der: tlspool-test-ca-cert.template
 	echo Using PRIVKEY5, '$(PRIVKEY5)'
-	$(CERTTOOL) --outfile $@ --generate-self-signed --load-privkey='$(PRIVKEY5)' --template=$<
+	$(CERTTOOL) --outfile $@ --outder --generate-self-signed --load-privkey='$(PRIVKEY5)' --template=$<
 	$(CERTTOOL) --certificate-info --infile $@ --inder > $(@:.der=.txt)
 
 #TODO# # Based on key 5: certificate chain
@@ -222,22 +232,28 @@ tlspool-test-ca-cert.der: tlspool-test-ca-cert.template
 
 tlspool-test-flying-signer.der: tlspool-test-flying-signer.template
 	echo Using PRIVKEY6, '$(PRIVKEY6)'
-	$(CERTTOOL) --outfile $@ --generate-self-signed --load-privkey='$(PRIVKEY6)' --template=$<
+	$(CERTTOOL) --outfile $@ --outder --generate-self-signed --load-privkey='$(PRIVKEY6)' --template=$<
 	$(CERTTOOL) --certificate-info --infile $@ --inder > $(@:.der=.txt)
 
 #
 # Create localid.db from scratch
 #
 
+tlspool.env:
+	mkdir -p $@
+	chown $(DMNUSR):$(DMNGRP) $@
+
 localid.db:
 	../tool/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab OpenPGP,client '$(PRIVKEY1)' tlspool-test-client-pubkey.pgp
 	../tool/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab OpenPGP,server '$(P11URI);id=obj2id;object=obj2label;object-type=private' tlspool-test-server-pubkey.pgp
 	../tool/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab x.509,client '$(P11URI);id=obj3id;object=obj3label;object-type=private' tlspool-test-client-cert.der
 	../tool/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab x.509,server '$(P11URI);id=obj4id;object=obj4label;object-type=private' tlspool-test-server-cert.der
+	chown $(DMNUSR):$(DMNGRP) $@
 
 disclose.db:
 	../tool/set_disclose $(CONFFILE) @.arpa2.lab testcli@tlspool.arpa2.lab testsrv@tlspool.arpa2.lab
 	../tool/set_disclose $(CONFFILE) .arpa2.lab tlspool.arpa2.lab
+	chown $(DMNUSR):$(DMNGRP) $@
 
 clean:
 	rm -f *.der localid.db disclose.db
