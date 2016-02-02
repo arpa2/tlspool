@@ -87,6 +87,7 @@ class Handler (BaseHTTPRequestHandler):
 		srvtlsdata = {
 			'flags': tlspool.PIOF_STARTTLS_LOCALROLE_CLIENT |
 				 tlspool.PIOF_STARTTLS_REMOTEROLE_SERVER |
+				 tlspool.PIOF_STARTTLS_FORK |
 				 tlspool.PIOF_STARTTLS_DETACH,
 			'remoteid': servername,
 			'ipproto': socket.IPPROTO_TCP,
@@ -107,11 +108,13 @@ class Handler (BaseHTTPRequestHandler):
 		# The plaintext connections from the client and server will
 		# be connected.
 		#
-		clitls = self.wfile.fileno ()
+		clitls = self.wfile
 		clitlsdata = {
 			'flags': tlspool.PIOF_STARTTLS_LOCALROLE_SERVER |
 				 tlspool.PIOF_STARTTLS_REMOTEROLE_CLIENT |
+				 tlspool.PIOF_STARTTLS_FORK |
 				 tlspool.PIOF_STARTTLS_DETACH |
+				 tlspool.PIOF_STARTTLS_IGNORE_REMOTEID |
 				 tlspool.PIOF_STARTTLS_LOCALID_ONTHEFLY,
 			'localid': servername,
 			'ipproto': socket.IPPROTO_TCP,
@@ -120,6 +123,9 @@ class Handler (BaseHTTPRequestHandler):
 			'plainfd': clitxt,
 		}
 		if tlspool.starttls (clitls, clitlsdata, cliprivdata) != 0:
+			print 'Failed to setup STARTTLS on the client side'
+			return
+		else:
 			return
 
 
@@ -131,7 +137,7 @@ class ThreadedHTTPServer (ThreadingMixIn, HTTPServer):
 #TODO# Threading is not currently implemented in the Python tlspool module.
 #TODO# Use a plain server for now!
 if __name__ == '__main__':
-	sockaddr = ('localhost', 8080)
+	sockaddr = ('0.0.0.0', 8080)
 	#TODO# server = ThreadedHTTPServer ( sockaddr, Handler)
 	server = HTTPServer ( sockaddr, Handler)
 	print 'HTTPS proxy started on %s:%d -- stoppable with Ctrl-C' % sockaddr

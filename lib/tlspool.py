@@ -262,11 +262,12 @@ def starttls (cryptfd, tlsdata, privdata, namedconnect=None):
 	pfd = socket (None)
 	sentfd = -1
 	try:
+		print 'TODO: setup cmd'
 		cmdcode = PIOC_STARTTLS_V2
 		tlsdefaults = {
 			'localid': '',
 			'remoteid': '',
-			'flags': 0x00000209,	# local=client, remote=server, SNI
+			'flags': 0x00000009,	# local=client, remote=server
 			'localflags': 0x00000000,
 			'ipproto': syssocket.IPPROTO_TCP,
 			'stream': 0,
@@ -293,16 +294,21 @@ def starttls (cryptfd, tlsdata, privdata, namedconnect=None):
 					tlsdata ['service'],
 					tlsdata ['timeout'])
 		cmd = struct.pack ('376s', cmd)
+		print 'TODO: packed cmd'
 		#TODO# For WINDOWS, we need to attach a data structure to cmd
 		anc = [ (syssocket.SOL_SOCKET,
 			 syssocket.SCM_RIGHTS,
 			 array.array ("i", [cryptfd.fileno()])) ]
+		print 'TODO: ancillirated cmd'
 		sentfd = cryptfd
+		print 'TODO: sending cmd'
 		pfd.sendmsg ([cmd], anc)
+		print 'TODO: sent cmd'
 		processing = True
 		while processing:
 			#TODO# For WINDOWS, we need to receive more bytes for passfd
 			([msg], _, _, _) = pfd.recvmsg (376)
+			print 'TODO: received response of size', len (msg)
 			(reqid, cbid, cmdcode,
 				tlsdata ['flags'],
 				tlsdata ['localflags'],
@@ -314,6 +320,7 @@ def starttls (cryptfd, tlsdata, privdata, namedconnect=None):
 				tlsdata ['service'],
 				tlsdata ['timeout']
 			) = struct.unpack ('HHI' + 'IIBH128s128s16s32sI', msg [:328])
+			print 'response cmdcode is 0x%08x' % cmdcode
 			if cmdcode == PIOC_ERROR_V2:
 				(reqid, cbid, cmdcode,
 					tlserrno,
