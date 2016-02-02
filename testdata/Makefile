@@ -67,36 +67,43 @@ endif
 PRIVKEY1=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj1label/!d' -e 's/^[ \t]*URL: //')
 ifeq ($(PRIVKEY1),)
 PRIVKEYGEN += privkey1
+PRIVKEY1=$(P11URI);id=%30%31;label=obj1label;type=private
 endif
 
 PRIVKEY2=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj2label/!d' -e 's/^[ \t]*URL: //')
 ifeq ($(PRIVKEY2),)
 PRIVKEYGEN += privkey2
+PRIVKEY2=$(P11URI);id=%30%32;label=obj2label;type=private
 endif
 
 PRIVKEY3=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj3label/!d' -e 's/^[ \t]*URL: //')
 ifeq ($(PRIVKEY3),)
 PRIVKEYGEN += privkey3
+PRIVKEY3=$(P11URI);id=%30%33;label=obj3label;type=private
 endif
 
 PRIVKEY4=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj4label/!d' -e 's/^[ \t]*URL: //')
 ifeq ($(PRIVKEY4),)
 PRIVKEYGEN += privkey4
+PRIVKEY4=$(P11URI);id=%30%34;label=obj4label;type=private
 endif
 
 PRIVKEY5=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj5label/!d' -e 's/^[ \t]*URL: //')
 ifeq ($(PRIVKEY5),)
 PRIVKEYGEN += privkey5
+PRIVKEY5=$(P11URI);id=%30%35;label=obj5label;type=private
 endif
 
 PRIVKEY6=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj6label/!d' -e 's/^[ \t]*URL: //')
 ifeq ($(PRIVKEY6),)
 PRIVKEYGEN += privkey6
+PRIVKEY6=$(P11URI);id=%30%36;label=obj6label;type=private
 endif
 
 PRIVKEY7=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj7label/!d' -e 's/^[ \t]*URL: //')
 ifeq ($(PRIVKEY7),)
 PRIVKEYGEN += privkey7
+PRIVKEY7=$(P11URI);id=%30%37;label=obj7label;type=private
 endif
 
 
@@ -117,10 +124,19 @@ TARGET_DBE=tlspool.env
 all: fill-pkcs11 fill-cert fill-pgp fill-db
 
 rebuild-pkcs11: clean-pkcs11 fill-pkcs11
+	#
+	# You should continue with "make rebuild-cert rebuild-pgp rebuild-db"
+	#
 
 rebuild-cert: clean-cert fill-cert
+	#
+	# You should continue with "make rebuild-db"
+	#
 
 rebuild-pgp: clean-pgp fill-pgp
+	#
+	# You should continue with "make rebuild-db"
+	#
 
 rebuild-db: clean-db fill-db
 
@@ -146,9 +162,11 @@ clean-pgp:
 fill-pgp: $(TARGET_PGP)
 
 clean-db:
+	if pidof tlspool ; then echo First stop TLS Pool ; exit 1 ; fi
 	rm -f $(TARGET_DB)
 	mkdir -p $(TARGET_DBE)
-	rm -rf $(TARGET_DBE)/*
+	rm -f $(TARGET_DBE)/*
+	rmdir $(TARGET_DBE)
 
 fill-db: $(TARGET_DBE) $(TARGET_DB)
 
@@ -265,18 +283,17 @@ localid.db: tlspool.env
 	../tool/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab OpenPGP,server '$(PRIVKEY2)' tlspool-test-server-pubkey.pgp
 	../tool/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab x.509,client '$(PRIVKEY3)' tlspool-test-client-cert.der
 	../tool/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab x.509,server '$(PRIVKEY4)' tlspool-test-server-cert.der
-	../tool/set_localid $(CONFFILE) tlspool.arpa2.lab x.509,server '$(PRIVKEY7)' tlspool-test-webhost-cert.der
+	../tool/set_localid $(CONFFILE) tlspool.arpa2.lab x.509,server,client '$(PRIVKEY7)' tlspool-test-webhost-cert.der
 	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
 
 disclose.db: tlspool.env localid.db
 	../tool/set_disclose $(CONFFILE) @.arpa2.lab testcli@tlspool.arpa2.lab testsrv@tlspool.arpa2.lab
-	../tool/set_disclose $(CONFFILE) .arpa2.lab tlspool.arpa2.lab
+	../tool/set_disclose $(CONFFILE) . tlspool.arpa2.lab
 	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
 
-clean:
-	rm -f *.der *.asc *.pem*.pgp localid.db disclose.db
-	#TODO# rm -f *.pem
-	#TODO# rm -f tlspool.env/*
+clean: clean-db
+	rm -f *.der *.pgp
+	rm -f *.pem *.asc
 
 anew: clean all
 
