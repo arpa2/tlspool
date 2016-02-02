@@ -185,6 +185,12 @@ db_disclose ../disclose.db
 # objects; so there is no problem if multiple tokens are identified by
 # one URI.  The major concern would be to cover them all.
 #
+# Specifically when using SoftHSMv2, be sure to verify that permissions
+# are properly setup for the TLS Pool.  When testdata/Makefile can access
+# the token as the running user, that does not imply that the settings for
+# daemon_user and daemon_group provide access to the PKCS #11 token from
+# the TLS Pool.
+#
 
 pkcs11_path /usr/local/lib/softhsm/cygsofthsm.dll
 pkcs11_pin 1234

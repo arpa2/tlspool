@@ -69,7 +69,7 @@ static CK_FUNCTION_LIST *fun = NULL;
  * If sha256ctx is provided, it will be updated with the public key info
  * as used in various self-signature types.
  */
-unsigned int add_userid_pkt (char *buf, unsigned int pos, char *userid, CK_SESSION_HANDLE hsm, SHA256_CTX *sha) {
+unsigned int add_userid_pkt (uint8_t *buf, unsigned int pos, char *userid, CK_SESSION_HANDLE hsm, SHA256_CTX *sha) {
 	unsigned int txtlen = strlen (userid);
 	unsigned int pktlen = txtlen;
 	uint8_t hashtag [5];
@@ -92,7 +92,7 @@ unsigned int add_userid_pkt (char *buf, unsigned int pos, char *userid, CK_SESSI
 	}
 	buf [pos++] = 0xc0 | 13;
 	if (txtlen < 192) {
-		buf [pos++] = pktlen;
+		buf [pos++] = txtlen;
 		pktlen += 2;
 	} else {
 		buf [pos++] = ((txtlen - 192) >>   8) + 192;
@@ -101,12 +101,12 @@ unsigned int add_userid_pkt (char *buf, unsigned int pos, char *userid, CK_SESSI
 	}
 	memcpy (buf + pos, userid, txtlen);
 	pos += txtlen;
-	if ((ckr = fun->C_SignUpdate (hsm, buf + pos - pktlen, pktlen)) != CKR_OK) {
+	if ((ckr = fun->C_SignUpdate (hsm, buf + pos - txtlen, txtlen)) != CKR_OK) {
 		fprintf (stderr, "%08x: Failed to attach UserID text to signature\n", ckr);
 		exit (1);
 	}
 	if (sha) {
-		SHA256_Update (sha, buf + pos - pktlen, pktlen);
+		SHA256_Update (sha, buf + pos - txtlen, txtlen);
 	}
 	return pos;
 }
@@ -126,7 +126,7 @@ unsigned int add_userid_pkt (char *buf, unsigned int pos, char *userid, CK_SESSI
  * While generating the public key packet, the fingerprint of the public
  * key will also be determined.
  */
-unsigned int add_pubkey_rsa_pkt (char *buf, unsigned int pos, uint8_t *modulus, unsigned int modulus_len, uint8_t *pubexp, unsigned int pubexp_len, CK_SESSION_HANDLE hsm, SHA256_CTX *sha, uint8_t fingerprint [20], int subkey) {
+unsigned int add_pubkey_rsa_pkt (uint8_t *buf, unsigned int pos, uint8_t *modulus, unsigned int modulus_len, uint8_t *pubexp, unsigned int pubexp_len, CK_SESSION_HANDLE hsm, SHA256_CTX *sha, uint8_t fingerprint [20], int subkey) {
 	unsigned int keylen = 6 + 2 + modulus_len + 2 + pubexp_len;
 	time_t now;
 	uint8_t hashtag [3];
@@ -247,7 +247,7 @@ unsigned int add_signature_sha256rsa_pkt (uint8_t *buf, unsigned int pos, int si
 	buf [pos++] = (now      ) & 0xff;
 	buf [pos++] = 2;	/* Hashed subpacket: Key flags */
 	buf [pos++] = 27;
-	buf [pos++] = (sigtype == 0x18)? 0x0c: 0x21;	/* No signing 0x02 */
+	buf [pos++] = (sigtype == 0x18)? 0x0c: 0x23;	/* With signing 0x02 */
 	if ((ckr = fun->C_SignUpdate (hsm, buf + startpos, pos - startpos)) != CKR_OK) {
 		fprintf (stderr, "%08x: Failed to append signed subpackets to signature\n", ckr);
 		exit (1);
@@ -311,7 +311,6 @@ unsigned int add_signature_sha256rsa_pkt (uint8_t *buf, unsigned int pos, int si
  */
 unsigned int construct_pubkey_rsa_packet (uint8_t *buf, uint8_t fpr [20], uint8_t *modulus, unsigned int modulus_len, uint8_t *pubexp, unsigned int pubexp_len, char *userid, CK_SESSION_HANDLE hsm, CK_OBJECT_HANDLE privkey) {
 	unsigned int pos = 0;
-	//TODO// Lookup pubkey data ourselves
 	CK_MECHANISM sigmech = { CKM_SHA256_RSA_PKCS, NULL_PTR, 0 };
 	CK_RV ckr;
 	SHA256_CTX sha, keysha;
@@ -357,7 +356,7 @@ unsigned int construct_pubkey_rsa_packet (uint8_t *buf, uint8_t fpr [20], uint8_
  *
  * The structure returned must be freed with free() when done.
  */
-void pubkey_file (uint8_t **file, unsigned int *file_len, uint8_t fingerprint [20], char *userid, CK_SESSION_HANDLE hsm, CK_OBJECT_HANDLE TODO_pubkey, CK_OBJECT_HANDLE privkey) {
+void pubkey_file (uint8_t **file, unsigned int *file_len, uint8_t fingerprint [20], char *userid, CK_SESSION_HANDLE hsm, CK_OBJECT_HANDLE privkey) {
 	unsigned int flen2;
 	CK_KEY_TYPE keytype;
 	CK_BYTE modulus [(2048+7)/8];
@@ -368,8 +367,20 @@ void pubkey_file (uint8_t **file, unsigned int *file_len, uint8_t fingerprint [2
 		{ CKA_MODULUS,         &modulus, sizeof (modulus) },
 		{ CKA_PUBLIC_EXPONENT, &pubexp,  sizeof (pubexp ) }
 	};
-	if ((ckr = fun->C_GetAttributeValue (hsm, privkey, template, 2)) != CKR_OK) {
+	if ((ckr = fun->C_GetAttributeValue (hsm, privkey, template, 3)) != CKR_OK) {
 		fprintf (stderr, "%08x: Failed to obtain public key attributes for private key %d\n", ckr, privkey);
+		exit (1);
+	}
+	if (template [0].ulValueLen != sizeof (keytype)) {
+		fprintf (stderr, "Key type of funny size: %d not %d\n", template [0].ulValueLen, sizeof (keytype));
+		exit (1);
+	}
+	if (template [1].ulValueLen != sizeof (modulus)) {
+		fprintf (stderr, "Modulus of funny size: %d not %d\n", template [1].ulValueLen, sizeof (modulus));
+		exit (1);
+	}
+	if (template [2].ulValueLen != sizeof (pubexp )) {
+		fprintf (stderr, "Public exponent of funny size: %d not %d\n", template [2].ulValueLen, sizeof (pubexp ));
 		exit (1);
 	}
 	if (keytype != CKK_RSA) {
@@ -420,55 +431,10 @@ int main (int argc, char *argv []) {
 	char *outfnm = NULL;
 
 	//
-	// PKCS #11 template variables
+	// PKCS #11 communication variables
 	//
-	CK_OBJECT_HANDLE  TODO_pubkey = CK_INVALID_HANDLE;
 	CK_OBJECT_HANDLE privkey = CK_INVALID_HANDLE;
-	CK_OBJECT_HANDLE  pgpkey = CK_INVALID_HANDLE;
-	CK_OBJECT_CLASS dataobjtp = CKO_DATA;
-	CK_BYTE_PTR openpgp = "OpenPGP";
-	CK_OBJECT_CLASS certobjtp = CKO_CERTIFICATE;
-	CK_CERTIFICATE_TYPE certtp = CKC_OPENPGP;
-	CK_MECHANISM mechanism = {
-		CKM_RSA_PKCS_KEY_PAIR_GEN, NULL_PTR, 0
-	};
-	CK_ULONG modulusBits = 2048;
-	CK_BYTE publicExponent [] = { 1, 0, 1 };
-	CK_BYTE_PTR subject [] = { };
-	CK_BYTE id [20];
-	CK_BBOOL true = CK_TRUE;
-	CK_ATTRIBUTE pubkeytemplate [] = {
-		{ CKA_ENCRYPT, &true, sizeof(true) },
-		{ CKA_VERIFY, &true, sizeof(true) },
-		{ CKA_WRAP, &true, sizeof(true) },
-		{ CKA_MODULUS_BITS, &modulusBits, sizeof(modulusBits) },
-		{ CKA_PUBLIC_EXPONENT, publicExponent, sizeof ( publicExponent) }
-	};
-	CK_ATTRIBUTE privkeytemplate [] = {
-		{ CKA_TOKEN, &true, sizeof(true) },
-		{ CKA_PRIVATE, &true, sizeof(true) },
-		{ CKA_SUBJECT, subject, sizeof(subject) },
-		{ CKA_ID, id, sizeof(id) },
-		{ CKA_SENSITIVE, &true, sizeof(true) },
-		{ CKA_DECRYPT, &true, sizeof(true) },
-		{ CKA_SIGN, &true, sizeof(true) },
-		{ CKA_UNWRAP, &true, sizeof(true) }
-	};
-	CK_ATTRIBUTE newidtemplate [] = {
-		{ CKA_ID, &id, sizeof (id) }
-	};
-	CK_ATTRIBUTE pgpkeytemplate [] = {
-		{ CKA_CLASS, &dataobjtp, sizeof (dataobjtp) },
-		{ CKA_CLASS, &certobjtp, sizeof (certobjtp) },
-		{ CKA_TOKEN, &true, sizeof (true) },
-		{ CKA_LABEL, subject, sizeof (subject) },
-		{ CKA_SUBJECT, subject, sizeof (subject) },
-		{ CKA_APPLICATION, openpgp, strlen (openpgp) },
-		{ CKA_ID, id, sizeof (id) },
-		{ CKA_VALUE, NULL, 0 },
-		{ CKA_CERTIFICATE_TYPE, &certtp, sizeof (certtp) }
-	};
-printf ("DEBUG: Size of CKA_CERTIFICATE_TYPE is %d, value is %lx and contains %lx\n", sizeof (certtp), certtp, CKC_VENDOR_DEFINED);
+	CK_BYTE fingerprint [20];
 
 	//
 	// Commandline processing
@@ -487,14 +453,6 @@ printf ("DEBUG: Size of CKA_CERTIFICATE_TYPE is %d, value is %lx and contains %l
 	p11obj = argv [2];
 	userid = argv [3];
 	outfnm = argv [4];
-	//
-	//TODO:OLD// privkeytemplate [3].pValue = argv [1];
-	//TODO:OLD// privkeytemplate [3].ulValueLen = strlen (argv [1]);
-	//TODO:OLD// strncpy (tokenlabel, argv [2], 32);
-	//TODO:OLD// strncat (tokenlabel, "                                ", 32);
-	//TODO:OLD// email = dn2email (argv [1], 1);
-	//TODO:OLD// printf ("Mapped DN to email address %s\n", email);
-	//TODO// Map argv [1] to a DER-encoded DN byte array in subject
 
 	//
 	// Parse the pkcs11: URI with p11-kit
@@ -597,19 +555,10 @@ printf ("DEBUG: Size of CKA_CERTIFICATE_TYPE is %d, value is %lx and contains %l
 		exit (1);
 	}
 
-	//OLD// //
-	//OLD// // Generate key pair on PKCS #11 token
-	//OLD// //
-	//OLD// if ((ckr = fun->C_GenerateKeyPair (session, &mechanism, pubkeytemplate, 5, privkeytemplate, 8, &TODO_pubkey, &privkey)) != CKR_OK) {
-	//OLD// 	fprintf (stderr, "%08x: Failed to generate key pair\n", ckr);
-	//OLD// 	exit (1);
-	//OLD// }
-	//OLD// printf ("Created key pair.  Public %d, private %d.\n", TODO_pubkey, privkey);
-
 	//
 	// Construct an OpenPGP public key "file" with one signed UserID
 	//
-	pubkey_file (&file, &file_len, id, userid, session, TODO_pubkey, privkey);
+	pubkey_file (&file, &file_len, fingerprint, userid, session, privkey);
 	FILE *fh = fopen (outfnm, "w");
 	if (fh == NULL) {
 		fprintf (stderr, "Failed to open output file \"%s\"\n", outfnm);
@@ -622,34 +571,6 @@ printf ("DEBUG: Size of CKA_CERTIFICATE_TYPE is %d, value is %lx and contains %l
 	fclose (fh);
 	printf ("Constructed PGP public key and wrote its %d bytes to \"%s\"\n", file_len, outfnm);
 
-	//
-	// Change the CKA_ID attribute for the public and private key
-	//
-	if ((ckr = fun->C_SetAttributeValue (session, privkey, newidtemplate, 1)) != CKR_OK) {
-		fprintf (stderr, "%08x: Failed to update CKA_ID on private token object\n", ckr);
-		exit (1);
-	}
-	//TODO:NOPUB// if ((ckr = fun->C_SetAttributeValue (session, TODO_pubkey, newidtemplate, 1)) != CKR_OK) {
-	//TODO:NOPUB// 	fprintf (stderr, "%08x: Failed to update CKA_ID on public token object\n", ckr);
-	//TODO:NOPUB// 	exit (1);
-	//TODO:NOPUB// }
-
-	//TODO:OLD// //
-	//TODO:OLD// // Store the PGP key in a Data Object in PKCS #11
-	//TODO:OLD// //
-	//TODO:OLD// pgpkeytemplate [4].pValue = file;
-	//TODO:OLD// pgpkeytemplate [4].ulValueLen = file_len;
-	//TODO:OLD// pgpkeytemplate [2].pValue = argv [1];
-	//TODO:OLD// pgpkeytemplate [2].ulValueLen = strlen (argv [1]);
-//TODO:OLD// {int i;for (i=0;i<5;i++) printf ("DEBUG: pgpkeytemplate[%d]=%.*s=%d\n", i, pgpkeytemplate [i].ulValueLen, pgpkeytemplate [i].pValue, pgpkeytemplate [i].ulValueLen);}
-	//TODO:OLD// if ((ckr = fun->C_CreateObject (session, pgpkeytemplate, 6, &pgpkey)) != CKR_OK) {
-	//TODO:OLD// 	fprintf (stderr, "%08x: Failed to store PGP public key object on token\n", ckr);
-	//TODO:OLD// 	exit (1);
-	//TODO:OLD// }
-	//TODO:OLD// printf ("Created PGP public key object %d on token\n", pgpkey);
-
-	// TODO: Construct and add X.509 certificate
-	// TODO: Upload to LDAP
 	//
 	// Cleanup and teardown
 	//

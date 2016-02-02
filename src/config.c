@@ -589,6 +589,7 @@ unsigned int cfg_tls_maxpreauth (void) {
 }
 
 char *cfg_tls_onthefly_signcert (void) {
+	// Require a signing key to return the certificate
 	if (configvars [CFGVAR_TLS_ONTHEFLY_SIGNKEY]) {
 		return configvars [CFGVAR_TLS_ONTHEFLY_SIGNCERT];
 	} else {
@@ -597,6 +598,7 @@ char *cfg_tls_onthefly_signcert (void) {
 }
 
 char *cfg_tls_onthefly_signkey (void) {
+	// Require a certificate to return the signing key
 	if (configvars [CFGVAR_TLS_ONTHEFLY_SIGNCERT]) {
 		return configvars [CFGVAR_TLS_ONTHEFLY_SIGNKEY];
 	} else {

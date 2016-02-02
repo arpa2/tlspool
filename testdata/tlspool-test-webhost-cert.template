@@ -70,6 +70,8 @@ expiration_days = 70
 # A dnsname in case of a WWW server.
 #dns_name = "www.none.org"
 #dns_name = "www.morethanone.org"
+dns_name = "tlspool.arpa2.lab"
+dns_name = "localhost"
 
 # A subject alternative name URI
 #uri = "http://www.example.com"
@@ -78,7 +80,7 @@ expiration_days = 70
 #ip_address = "192.168.1.1"
 
 # An email in case of a person
-email = "testsrv@tlspool.arpa2.lab"
+# email = "testsrv@tlspool.arpa2.lab"
 
 # Challenge password used in certificate requests
 # challenge_password = 123456
@@ -102,7 +104,7 @@ ca
 #tls_www_client
 
 # Whether this certificate will be used for a TLS server
-#tls_www_server
+tls_www_server
 
 # Whether this certificate will be used to sign data (needed
 # in TLS DHE ciphersuites).

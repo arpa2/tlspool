@@ -1728,7 +1728,7 @@ int setup_starttls_credentials (void) {
 	//TODO// gnutls_kdh_server_credentials_t srv_kdhcred = NULL;
 	//TODO// gnutls_kdh_server_credentials_t cli_kdhcred = NULL;
 	int gtls_errno = GNUTLS_E_SUCCESS;
-	int gtls_errno_stack0;
+	int gtls_errno_stack0 = GNUTLS_E_SUCCESS;
 
 	//
 	// Construct anonymous server credentials

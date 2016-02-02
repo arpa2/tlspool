@@ -78,7 +78,7 @@ expiration_days = 70
 #ip_address = "192.168.1.1"
 
 # An email in case of a person
-email = "testcli@@tlspool.arpa2.lab"
+email = "testcli@tlspool.arpa2.lab"
 
 # Challenge password used in certificate requests
 # challenge_password = 123456
