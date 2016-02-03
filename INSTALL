@@ -80,6 +80,8 @@ To create a SoftHSMv2 token, you can use the following command::
 	softhsm2-util --init-token --free --label 'TLS_Pool_dev_data'
 
 This label is configured in the default configuration for the TLS Pool.
+The default configuration works with a PIN 1234; you can choose any
+SO-PIN you like.
 
 You can now build the private keys and from that, certificates that go
 into the databases::
