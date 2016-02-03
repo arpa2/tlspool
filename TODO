@@ -23,12 +23,12 @@ X Thread cleanup with pthread_setcanceltype(), pthread_cleanup_push()
 - Add support for TLS-KDH when GnuTLS offers it
 + Move database environment and names into configuration parameters
 + Move DH params file to a configuration parameter
-- Explain how to generate X.509 and GnuPG certificates with PKCS #11
++ Explain how to generate X.509 and GnuPG certificates with PKCS #11
 + Recognise callbacks with a "same" file handle as session access requests
 + Move PID file handling to daemon.c; make -k switch after new initialisation
 + Add autotools support with bootstrap.sh and subsequent ./configure
 + Port to the FreeBSD platform
-- Port to the Windows platform
++ Port to the Windows platform
 - Port to the Mac OS X platform
 + Consider a thread pool for session passthrough (the current copycat function)
 + Support asynchronous access to the TLS Pool in starttls_xxx() functions

@@ -43,6 +43,10 @@ Then, continue as always::
 	make
 	make install
 
+When your purpose is to test, you will also need a PKCS #11 store for your
+private keys.  Then you can fill PKCS #11 and the databases.
+
+
 Building
 --------
 
@@ -57,6 +61,7 @@ There are three sub-targets with their own Makefiles:
     - "tlstunnel" as a plaintext-to-TLS or TLS-to-plaintext passthrough
     - "webclientdemo.py" and "webserverdemo.py" are Python demonstrations
     - "lidsel" and "pinentry" plug into the TLS Pool's localid and PIN services
+    - "https_proxy.py" demonstrates an intervening HTTPS proxy
 
 The main directory "make" will also make all these subdirectory projects.
 
@@ -64,26 +69,64 @@ The main directory "make" will also make all these subdirectory projects.
 Testing
 -------
 
-The source package includes a "testdata" directory which holds prepared
-databases that you can use for a quick and dirty test.  Your mileage may
-vary though; it was made with BerkeleyDB 4.8 on amd64 hardware, and the
-database files may contain assumptions about that platform.
+The source package includes a "testdata" directory that can be filled
+with databases that you can use for a quick and dirty test.  You will
+need to setup a PKCS #11 repository; we suggest to use SoftHSM from the
+OpenDNSSEC project to get started, you can always try hardware-based
+tokens later on.  The idea of PKCS #11 is that such choices are pluggable.
 
-The databases may also be rebuilt using the Makefile in the directory.
-As this is basically developer's test infra, again, your mileage may vary.
+To create a SoftHSMv2 token, you can use the following command::
 
-The same applies to a softhsm database; it is present, and your mileage
-may vary.  To use it, make sure that `tlspool.conf` points to the library
-for softhsm v1, and setup the softhsm configuration to point to the
-database in the `testdata` directory.  This setup tells the TLS Pool how
-to access the PKCS #11 library, which in turn accesses the test data
-used in the examples below.
+	softhsm2-util --init-token --free --label 'TLS_Pool_dev_data'
+
+This label is configured in the default configuration for the TLS Pool.
+
+You can now build the private keys and from that, certificates that go
+into the databases::
+
+	cd testdata
+	make
+
+(If it fails, please run it again.)
+The databases may also be rebuilt using the Makefile in the directory,
+there are rebuild- clean- and fill- targets for -pkcs11, -cert, -pgp and
+-db that will do this for you.  Note that rebuilding PKCS #11 is heavy,
+it wipes your private key and possibly even the store.
+
+The PKCS #11 data may not be available to your TLS Pool if it runs under
+another user, such as the default setup for daemon user "tlspool".  If
+that is the case, you may need to locate your PKCS #11 store and run
+the command; this is for SoftHSMv2::
+
+	useradd tlspool
+	chown -R tlspool:tlspool testdata
+
+	chown -R tlspool:tlspool /var/lib/softhsm/tokens/XXX
 
 The following test demonstrates proper working of the TLS Pool based on
 the testdata and under the warnings above:
 
-	useradd tlspool
-	chown -R tlspool:tlspool testdata
+	# terminal 1
+	cd src
+	./tlspool -kc ../etc/tlspool.conf
+
+	# terminal 2
+	cd src
+	../tool/testsrv
+
+	# termainl 3
+	cd src
+	../tool/testcli
+
+This will setup a TLS connection over localhost:12345 and provide a simple
+line-by-line chat session between terminals 2 and 3, while showing debugging
+output from the TLS Pool in terminal 1.  The test client and server are
+written to test more functionality as well, and they show some of it too,
+namely key agreement based on the master key, which show as matching
+"PRNG bytes" in terminals 2 and 3.
+
+A somewhat more complicated test is to actually wrap an existing service
+with tunnels:
 
 	cd src
 	./tlspool -kc ../etc/tlspool.conf
