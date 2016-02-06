@@ -122,7 +122,7 @@ int main (int argc, char *argv []) {
 		exit (1);
 	}
 	if (argc == 5) {
-		outfile = open (argv [4], O_WRONLY | O_CREAT | O_TRUNC);
+		outfile = open (argv [4], O_WRONLY | O_CREAT | O_TRUNC, 0644);
 		if (outfile < 0) {
 			perror ("Failed to open output file");
 			exit (1);
