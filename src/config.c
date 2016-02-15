@@ -546,7 +546,7 @@ void cfg_cachehost (char *item, int itemno, char *value) {
 	}
 #ifndef CONFIG_PARSE_ONLY
 	//NOTYET// if (memcached_server_add (cache, value, port)) {
-		fprintf (stderr, "Failed to add memcached server %s\n");
+		fprintf (stderr, "Failed to add memcached server %s:%d\n", value, port);
 		exit (1);
 	//NOTYET// }
 #endif
