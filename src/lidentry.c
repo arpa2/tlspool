@@ -1,8 +1,6 @@
 /* tlspool/lidentry.c -- A client of the TLS Pool that can choose localids. */
 
 
-#include <config.h>
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>

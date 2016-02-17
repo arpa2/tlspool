@@ -1,8 +1,6 @@
 /* tlspool/manage.c -- Management setup in local databases */
 
 
-#include <config.h>
-
 #include <syslog.h>
 #include <errno.h>
 

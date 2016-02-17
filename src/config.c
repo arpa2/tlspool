@@ -1,7 +1,5 @@
 /* tlspool/config.c -- Parse & Process the configuration file */
 
-#include <config.h>
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>

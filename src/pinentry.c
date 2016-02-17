@@ -1,8 +1,6 @@
 /* tlspool/pinentry.c -- Connect to the local tlspool and enter PINs. */
 
 
-#include <config.h>
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>

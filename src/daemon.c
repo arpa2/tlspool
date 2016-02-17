@@ -1,7 +1,5 @@
 /* tlspool/daemon.c -- Daemon setup code */
 
-#include <config.h>
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <signal.h>

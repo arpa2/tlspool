@@ -1,7 +1,5 @@
 /* tlspool/service.c -- TLS pool service, socket handling, command dispatcher */
 
-#include <config.h>
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
