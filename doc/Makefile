@@ -5,7 +5,8 @@ DOCS = socketprotocol.rst databases.rst identities.rst pkcs11.rst validation.md 
 	startxxx.md p2p-tls.md tool/ircproxy-explained.md \
 	localid-selection.md anonymising-precursor.md
 
-LICS = LICENSE-DAEMON.MD LICENSE-DOCS.MD LICENSE-USERSPACE.MD
+LICS = COPYRIGHT.MD LICENSE-DAEMON.MD LICENSE-DOCS.MD LICENSE-USERSPACE.MD \
+	README INSTALL TODO
 
 MAN3 = tlspool_socket tlspool_starttls \
 	tlspool_ping tlspool_prng \
