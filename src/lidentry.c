@@ -339,7 +339,7 @@ success_t lidentry_inquiry_callback (char remoteid [128], int maxlevels, char lo
 	//TODO// Claim the callback sequence resource (or confirm holding it)
 	retval = lidentry_cbseq_claim (&cmd);  // Idempotent claim
 	if (retval != 1) {
-		tlog (LOG_USER, LOG_DEBUG, "No LID entry command registered, so no callback made (unchanged localid)");
+		tlog (TLOG_USER, LOG_DEBUG, "No LID entry command registered, so no callback made (unchanged localid)");
 		return 1;
 	}
 	//
