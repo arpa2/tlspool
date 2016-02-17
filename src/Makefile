@@ -30,7 +30,7 @@ tlspool: $(OBJS)
 clean:
 	rm -f $(OBJS) $(TARGETS)
 
-install:
+install: all
 	install tlspool "$(PREFIX)/sbin/"
 
 uninstall:

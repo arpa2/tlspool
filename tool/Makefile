@@ -81,7 +81,7 @@ $(tlspool_LIB):
 clean:
 	rm -f $(OBJS) $(TARGETS)
 
-install:
+install: all
 	install $(TARGETS) "$(PREFIX)/sbin/"
 
 uninstall:

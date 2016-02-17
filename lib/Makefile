@@ -33,7 +33,7 @@ tlspool.pyc: tlspool.py
 clean:
 	rm -f $(OBJS) *.lo *.la $(TARGETS)
 
-install:
+install: all
 	install libtlspool.so libtlspool.a "$(PREFIX)/lib/"
 	@echo #
 	@echo # Python libraries not yet installed

@@ -1,7 +1,5 @@
 
-BUILDDIRS=src lib tool
-
-#TODO# Add doc/ as well -- after building man pages
+BUILDDIRS=src lib tool doc
 
 .PHONEY: all install clean distclean
 
@@ -11,7 +9,7 @@ all:
 	@echo '# NOTE: You may need to "make testdata" for some tool/* programs'
 	@echo '#'
 
-install:
+install: all
 	for dir in $(BUILDDIRS); do make -C "$$dir" install ; done
 
 uninstall:
@@ -24,5 +22,5 @@ clean:
 	@echo '#'
 
 distclean: clean
-	make -C testdata clean
+	make -C testdata clean-pkcs11 clean-cert clean-pgp clean-db
 
