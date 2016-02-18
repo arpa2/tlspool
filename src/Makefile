@@ -8,7 +8,7 @@ CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS)
 
 LDFLAGS =
 
-LIBS = $(GNUTLS_LIBS) $(P11KIT_LIBS) $(BDB_LIBS) $(TASN1_LIBS)
+LIBS = $(GNUTLS_LIBS) $(P11KIT_LIBS) $(BDB_LIBS) $(TASN1_LIBS) -lpthread
 
 GNUTLS_CFLAGS = $(shell pkg-config --cflags gnutls)
 GNUTLS_LIBS   = $(shell pkg-config --libs   gnutls)
