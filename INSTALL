@@ -27,17 +27,13 @@ these dependencies when only a bit is kwown to be required.  That's the
 sort of maturity that this project has not reached yet.
 
 
-First-time setup
+First-time build
 ----------------
 
 Create a user and group "tlspool" if you wish to drop privileges to a
 separate account.
 
-Run the script bootstrap.sh to initiate the autotools environment::
-
-	sh bootstrap.sh
-
-Then, continue as always::
+Use the common building approach:
 
 	./configure
 	make
@@ -47,8 +43,8 @@ When your purpose is to test, you will also need a PKCS #11 store for your
 private keys.  Then you can fill PKCS #11 and the databases.
 
 
-Building
---------
+Build details
+-------------
 
 There are three sub-targets with their own Makefiles:
 
@@ -71,11 +67,11 @@ Testing
 
 The source package includes a "testdata" directory that can be filled
 with databases that you can use for a quick and dirty test.  You will
-need to setup a PKCS #11 repository; we suggest to use SoftHSM from the
+need to setup a PKCS #11 repository; we suggest to use SoftHSMv2 from the
 OpenDNSSEC project to get started, you can always try hardware-based
 tokens later on.  The idea of PKCS #11 is that such choices are pluggable.
 
-To create a SoftHSMv2 token, you can use the following command::
+To create a SoftHSM token, you can use the following command::
 
 	softhsm2-util --init-token --free --label 'TLS_Pool_dev_data'
 
