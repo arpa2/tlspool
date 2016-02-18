@@ -21,6 +21,8 @@ all:
 
 install: all
 	mkdir -p "$(PREFIX)/share/doc/tlspool/"
+	mkdir -p "$(PREFIX)/share/man/man3/"
+	mkdir -p "$(PREFIX)/share/man/man8/"
 	for l in $(LICS); do install "../$$l" "${PREFIX}/share/doc/tlspool/"; done
 	for d in $(DOCS); do install "$$d" "$(PREFIX)/share/doc/tlspool/"; done
 	for m in $(MAN8); do install "man/$$m.man" "$(PREFIX)/share/man/man8/$$m.8"; done
