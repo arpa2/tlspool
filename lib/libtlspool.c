@@ -56,6 +56,7 @@ int tlspool_pid (char *opt_pidfile) {
 	fd = open (opt_pidfile, O_RDONLY);
 	if (fd != -1) {
 		len = read (fd, str_pid, sizeof (str_pid) -1);
+		close (fd);
 		if ((len > 0) && (len < sizeof (str_pid))) {
 			str_pid [len] = '\0';
 			pid = strtoul (str_pid, &endptr, 10);
@@ -66,7 +67,6 @@ int tlspool_pid (char *opt_pidfile) {
 				return (int) pid;
 			}
 		}
-		close (fd);
 	}
 	return -1;
 }

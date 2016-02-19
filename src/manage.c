@@ -84,7 +84,7 @@ success_t setup_management (void) {
 	u_int32_t flags = 0;
 	DB_TXN *tract = NULL;
 	char *dbenv_dir;
-	int db_errno;
+	int db_errno = 0;
 
 	dbenv_dir = cfg_dbenv_dir ();
 	if (dbenv_dir != NULL) {
