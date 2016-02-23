@@ -93,6 +93,7 @@ int main (int argc, char *argv []) {
 		setup_starttls ();
 		setup_pinentry ();
 		setup_ctlkey ();
+		setup_validate ();
 		// Run the TLS Pool service's main routine
 		run_service ();
 		// Cleanup for shutdown of the TLS Pool
@@ -103,6 +104,7 @@ int main (int argc, char *argv []) {
 		cleanup_service ();
 		cleanup_management ();
 		cleanup_error ();
+		cleanup_validate ();
 		tlog (TLOG_DAEMON, LOG_DEBUG, "Orderly shutdown seems to have worked");
 		tlog (TLOG_DAEMON, LOG_INFO, "TLS Pool stopped");
 		break;

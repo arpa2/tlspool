@@ -1,7 +1,7 @@
 TARGETS = tlspool
 
 OBJS = daemon.o config.o manage.o service.o cache.o pinentry.o lidentry.o \
-	starttls.o donai.o remote.o error.o ctlkey.o
+	starttls.o donai.o remote.o error.o ctlkey.o validate.o
 
 CFLAGS += -pthread -I ../include
 CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS)
@@ -31,7 +31,7 @@ clean:
 	rm -f $(OBJS) $(TARGETS)
 
 install: all
-	install tlspool "$(PREFIX)/sbin/"
+	install $(TARGETS) "$(PREFIX)/sbin/"
 
 uninstall:
-	rm -f "$(PREFIX)/sbin/tlspool"
+	for t in $(TARGETS); do rm -f "$(PREFIX)/sbin/$$t"; done

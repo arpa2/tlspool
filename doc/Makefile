@@ -27,6 +27,9 @@ install: all
 	for d in $(DOCS); do install "$$d" "$(PREFIX)/share/doc/tlspool/"; done
 	for m in $(MAN8); do install "man/$$m.man" "$(PREFIX)/share/man/man8/$$m.8"; done
 	for m in $(MAN3); do install "man/$$m.man" "$(PREFIX)/share/man/man3/$$m.3"; done
+	@echo #
+	@echo # You may need to run makewhatis or similar to update manual page caches
+	@echo #
 
 uninstall:
 	for m in $(MAN3); do rm -f "$(PREFIX)/share/man/man3/$$m.3"; done

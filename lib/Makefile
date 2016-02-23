@@ -38,6 +38,8 @@ install: all
 	@echo #
 	@echo # Python libraries not yet installed
 	@echo #
+	@echo # You may need to run ldconfig to update the ld.so cache
+	@echo #
 
 uninstall:
 	rm -f "$(PREFIX)/lib/libtlspool.so"
