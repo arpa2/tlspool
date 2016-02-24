@@ -39,7 +39,6 @@ int main (int argc, char *argv []) {
 	char *action;
 	int ok;
 	struct valexp *ve;
-	int parsed;
 	//
 	// Check arguments
 	setup_validate ();
@@ -74,8 +73,7 @@ int main (int argc, char *argv []) {
 		exit (1);
 	}
 	output_valexp ("Allocd: \"%s\"\n", ve);
-	parsed = 0;
-	expand_cases (inexpr [0], strlen (inexpr [0]), 0, &parsed, ve, 0, 1, 0);
+	expand_cases (inexpr [0], ve);
 	output_valexp ("Parsed: \"%s\"\n", ve);
 	free (inexpr [0]);
 	for (i=2; i<argc; i++) {

@@ -1,8 +1,7 @@
 
 TARGETS = testcli testsrv tlstunnel \
 	pingpool lidsel pinentry \
-	get_localid set_localid get_disclose set_disclose pgp11_genkey \
-	valexprun
+	get_localid set_localid get_disclose set_disclose pgp11_genkey
 
 OBJS = *.o
 
@@ -25,9 +24,6 @@ donai_SRC = ../src/donai.c
 
 pgp11genkey_CFLAGS = $(P11KIT_CFLAGS)
 pgp11genkey_LIBS = $(P11KIT_LIBS) -lcrypto
-
-valexprun_CFLAGS = -ggdb3
-valexprun_LIBS =
 
 P11KIT_CFLAGS = $(shell pkg-config --cflags p11-kit-1)
 P11KIT_LIBS   = $(shell pkg-config --libs   p11-kit-1)
@@ -75,9 +71,6 @@ set_disclose: set_disclose.c $(config_SRC)
 
 pgp11_genkey: pgp11_genkey.c
 	gcc $(CFLAGS) $(pgp11genkey_CFLAGS) -o "$@" "$<" $(pgp11genkey_LIBS)
-
-valexprun: valexprun.c ../src/validate.c
-	gcc $(CFLAGS) $(valexprun_CFLAGS) -o "$@" "$<" $(valexprun_LIBS)
 
 $(tlspool_LIB):
 	make -C ../lib `basename $(tlspool_LIB)`

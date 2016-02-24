@@ -114,20 +114,25 @@ void cleanup_validate (void) {
 }
 
 
+/* The error codes (binary and ternary) that replace instructions that have
+ * shown a syntax error during processing by count_cases().
+ * These codes could be anything that does not clash with other entries.
+ */
+#define ERR_BINOP	0x02
+#define ERR_TERNOP	0x03
+
 /* Internal operator codes and flags, will replace operator number and are
  * recognisable by the highest bit being set.
  */
 #define OPC_MASK	0xe0
-#define OPC_SUM		0x80
-#define OPC_PROD	0xa0
+#define OPC_OR		0x80
+#define OPC_AND		0xa0
 #define OPC_IF		0xc0
-#define OPC_ERROR	0xe0
 
-#define OPF_ZERO_FIRST	0x01	/* for use with OPC_IF, OPC_SUM, OPC_PROD */
-#define OPF_ZERO_SECOND	0x02	/* for use with OPC_IF, OPC_SUM, OPC_PROD */
-#define OPF_ZERO_UP	0x04	/* for use with OPC_IF, OPC_SUM, OPC_PROD */
-#define OPF_ZERO_PTEST	0x08	/* for use with OPC_IF                    */
-#define OPF_ZERO_NTEST	0x10	/* for use with OPC_IF                    */
+#define OPF_ZERO_FIRST	0x01	/* for use with OPC_IF, OPC_OR, OPC_AND */
+#define OPF_ZERO_SECOND	0x02	/* for use with OPC_IF, OPC_OR, OPC_AND */
+#define OPF_ONE_FIRST	0x04	/* for use with OPC_IF, OPC_OR, OPC_AND */
+#define OPF_ONE_SECOND	0x08	/* for use with OPC_IF, OPC_OR, OPC_AND */
 
 
 /* Count the number of cases in a validation expression; that is, after
@@ -155,7 +160,7 @@ void cleanup_validate (void) {
  * indicate trivia found while counting, namely whether left/right
  * branches have zero cases, and whether zero cases trickle up.  This
  * information is of great use for the interleaving algorithm.  This
- * also means that count_cases() needs to run before expand_cases().
+ * also means that count_cases() needs to run before expand_cases_rec().
  *
  * Even though the tree is modified, count_cases() can still pass
  * through it, provided that it did not return -1 before.  This means
@@ -176,6 +181,8 @@ static int count_cases (char *valexpstr, int vallen, int invert, int *parsed) {
 	int pars0,          pars1, pars2;
 	uint8_t *opcp;
 	uint8_t  opc;
+	uint8_t zero_1st = invert? OPF_ONE_FIRST:  OPF_ZERO_FIRST;
+	uint8_t zero_2nd = invert? OPF_ONE_SECOND: OPF_ZERO_SECOND;
 	int retval = -1;
 	//
 	// Ensure that the validation expression is non-empty
@@ -187,12 +194,10 @@ static int count_cases (char *valexpstr, int vallen, int invert, int *parsed) {
 	opc = *opcp;
 	switch (opc) {
 	case '&':
+		opc = OPC_AND;
+		break;
 	case '|':
-		if (opc == (invert? '&': '|')) {
-			opc = OPC_SUM;
-		} else {
-			opc = OPC_PROD;
-		}
+		opc = OPC_OR;
 		break;
 	case '?':
 		opc = OPC_IF;
@@ -206,30 +211,26 @@ static int count_cases (char *valexpstr, int vallen, int invert, int *parsed) {
 	//
 	// Find one of | or & or ~ or ?
 	switch (opc) {
-	case OPC_SUM:
-	case OPC_PROD:
+	case OPC_OR:
+	case OPC_AND:
 		case1 = count_cases (valexpstr, vallen, invert, &pars1);
 		vallen -= pars1;
 		case2 = count_cases (valexpstr, vallen, invert, &pars2);
 		*parsed = 1 + pars1 + pars2;
 		if ((case1 == -1) || (case2 == -1)) {
-			*opcp = OPC_ERROR;
-			retval = -1;
-		} else if (opc == OPC_SUM) {
-			*opcp = OPC_SUM;
+			*opcp = ERR_BINOP;
+			return -1;
+		} else if (opc == (invert? OPC_AND: OPC_OR)) {
 			retval = case1 + case2;
 		} else {
-			*opcp = OPC_PROD;
 			retval = case1 * case2;
 		}
+		*opcp = opc;
 		if (case1 == 0) {
-			*opcp |= OPF_ZERO_FIRST;
+			*opcp |= zero_1st;
 		}
 		if (case2 == 0) {
-			*opcp |= OPF_ZERO_SECOND;
-		}
-		if (retval == 0) {
-			*opcp |= OPF_ZERO_UP;
+			*opcp |= zero_2nd;
 		}
 		return retval;
 	case OPC_IF:
@@ -245,29 +246,23 @@ static int count_cases (char *valexpstr, int vallen, int invert, int *parsed) {
 		// Recombine "eti?" as "et&ti&ei~&||"
 		// Note the test is not inverted, but the case's outcomes are
 		if ((case0p == -1) || (case0n == -1) || (case1 == -1) || (case2 == -1)) {
-			*opcp = OPC_ERROR;	// Note: Ternary error op :'-(
+			*opcp = ERR_TERNOP;
 			return -1;
 		}
 		*opcp = OPC_IF;
 		if (case1 == 0) {
-			*opcp |= OPF_ZERO_FIRST;
+			*opcp |= zero_1st;
 		}
 		if (case2 == 0) {
-			*opcp |= OPF_ZERO_SECOND;
-		}
-		if (case0p == 0) {
-			*opcp |= OPF_ZERO_PTEST;
-		}
-		if (case0n == 0) {
-			*opcp |= OPF_ZERO_NTEST;
+			*opcp |= zero_2nd;
 		}
 		retval = (case1 * case0p) + (case2 * case0n) + (case1 * case2);
-		if (retval == 0) {
-			*opcp |= OPF_ZERO_UP;
-		}
 		return retval;
-	case OPC_ERROR:
-		*opcp = OPC_ERROR;
+	case ERR_BINOP:
+		*opcp = ERR_BINOP;
+		return -1;
+	case ERR_TERNOP:
+		*opcp = ERR_TERNOP;
 		return -1;
 	case '~':
 		case1 = count_cases (valexpstr, vallen, !invert, &pars1);
@@ -540,7 +535,11 @@ static int explicit_interleave (struct valexp_case *accu,   int acculen,
  * In the first operand of a sum operator, zero cases is never harmful
  * because there will be no attempts to write from such an operand.
  * If a product has zero cases for either or both operands, it will be
- * known because its OPF_ZERO_UP flag was set during count_cases().
+ * known because its OPF_ZERO_FIRST and/or OPF_ZERO_SECOND flag was set
+ * during count_cases() or, in case that the analysis took place in an
+ * inverted form, OPF_ONE_FIRST and/or OPF_ONE_SECOND.  In case of an
+ * IF construct eti? the THEN variation counts as _FIRST and the ELSE
+ * as SECOND; this constructs mostly requires recomputation anyway.
  *
  * A product initiates the remaining space by setting it all to zero, to
  * signify TRUE.  It then applies its first operand, and learns about the
@@ -579,7 +578,7 @@ static int explicit_interleave (struct valexp_case *accu,   int acculen,
  * the count_cases() function has been used to construct ve, and that
  * its outcome was verified to be syntactically correct.
  */
-static int expand_cases (char *valexpstr, int vallen, int invert, int *parsed,
+static int expand_cases_rec (char *valexpstr, int vallen, int invert, int *parsed,
 				struct valexp *ve,
 				int offset, int runlen, int tbc) {
 	uint8_t stacktop;
@@ -590,6 +589,10 @@ static int expand_cases (char *valexpstr, int vallen, int invert, int *parsed,
 	int   sz0,          sz1,   sz2;
 	int i;
 	int opcount = 0;
+	uint8_t opc_sum;
+	uint8_t opc_prod;
+	uint8_t zero_1st;
+	uint8_t zero_2nd;
 	//
 	// Consider the last character, or the last operator/operand applied
 	do {
@@ -601,15 +604,32 @@ static int expand_cases (char *valexpstr, int vallen, int invert, int *parsed,
 		}
 		invert = !invert;
 	} while (1);
-	assert (stacktop != OPC_ERROR);
-	assert (((stacktop & 0x80) == 0x00) || ((stacktop & OPF_ZERO_UP) == 0x00));
+	if (invert) {
+		opc_sum  = OPC_AND;
+		opc_prod = OPC_OR;
+		zero_1st = OPF_ONE_FIRST;
+		zero_2nd = OPF_ONE_SECOND;
+	} else {
+		opc_sum  = OPC_OR;
+		opc_prod = OPC_AND;
+		zero_1st = OPF_ZERO_FIRST;
+		zero_2nd = OPF_ZERO_SECOND;
+	}
+	//
+	// expand_cases_rec() should not be called on erroneous syntax strings
+	assert (stacktop != ERR_BINOP);
+	assert (stacktop != ERR_TERNOP);
+	//
+	// expand_cases_rec() should not be called to produce 0 cases
+	assert (((stacktop & OPC_MASK) != opc_prod) || ((stacktop & (zero_1st | zero_2nd)) == 0x00));
+	assert (((stacktop & OPC_MASK) != opc_sum ) || ((stacktop & (zero_1st | zero_2nd)) != (zero_1st | zero_2nd)));
 	//
 	// Now continue in a way determined by the last character
-	if ((stacktop & OPC_MASK) == OPC_SUM) {
+	if ((stacktop & OPC_MASK) == opc_sum) {
 		// SUM; create a separate space for each alternative
-		if (stacktop & OPF_ZERO_SECOND) {
+		if (stacktop & zero_2nd) {
 			tbc1 = tbc;
-		} else if (stacktop & OPF_ZERO_FIRST) {
+		} else if (stacktop & zero_1st) {
 			tbc1 = 0;	// Not actually used
 		} else {
 			// Both operands expect to have "runlen" pre-created,
@@ -621,33 +641,33 @@ static int expand_cases (char *valexpstr, int vallen, int invert, int *parsed,
 				 (runlen + tbc) * sizeof (struct valexp_case));
 			tbc1 = runlen + tbc;
 		}
-		if (stacktop & OPF_ZERO_FIRST) {
+		if (stacktop & zero_1st) {
 			case1 = count_cases (valexpstr, vallen, invert, &pars1);
 		} else {
-			case1 = expand_cases (valexpstr, vallen, invert, &pars1,
+			case1 = expand_cases_rec (valexpstr, vallen, invert, &pars1,
 					ve, offset, runlen, tbc1);
 		}
 		offset += case1;
 		vallen -= pars1;
-		if (stacktop & OPF_ZERO_SECOND) {
+		if (stacktop & zero_2nd) {
 			case2 = count_cases (valexpstr, vallen, invert, &pars2);
 		} else {
-			case2 = expand_cases (valexpstr, vallen, invert, &pars2,
+			case2 = expand_cases_rec (valexpstr, vallen, invert, &pars2,
 					ve, offset, runlen, tbc);
 		}
 		*parsed = opcount + pars1 + pars2;
 		return case1 + case2;
-	} else if ((stacktop & OPC_MASK) == OPC_PROD) {
+	} else if ((stacktop & OPC_MASK) == opc_prod) {
 		// PRODUCT; use one space and put both operands into it
-		assert ((stacktop & (OPF_ZERO_FIRST | OPF_ZERO_SECOND)) == 0);
+		assert ((stacktop & (zero_1st | zero_1st)) == 0);
 		//
 		// Clone the free space into which the first operand writes
-		case1 = expand_cases (valexpstr, vallen, invert, &pars1,
+		case1 = expand_cases_rec (valexpstr, vallen, invert, &pars1,
 				ve, offset, runlen, tbc);
 		vallen -= pars1;
 		//
 		// Integrate the second operand into the same space
-		case2 = expand_cases (valexpstr, vallen, invert, &pars2,
+		case2 = expand_cases_rec (valexpstr, vallen, invert, &pars2,
 				ve, offset, runlen * case1, 0);
 		*parsed = opcount + pars1 + pars2;
 		return case1 * case2;
@@ -680,13 +700,20 @@ static int expand_cases (char *valexpstr, int vallen, int invert, int *parsed,
 		// Post: #0;#1;#2;???=run[runlen];???[tbc];???
 		case0p = count_cases (valexpstr, vallen, 0, &pars0);
 		case0n = count_cases (valexpstr, vallen, 1, &pars0);
-		case1  = count_cases (valexpstr, vallen - pars0, invert, &pars1);
-		case2  = count_cases (valexpstr, vallen - pars0 - pars1, invert, &pars2);
-printf ("case0n = %d, case0p = %d, case1 = %d, case2 = %d\n", case0n, case0p, case1, case2);
+		if (stacktop & (zero_1st | zero_2nd) == (zero_1st & zero_2nd)) {
+			// Note, need &pars1 below when zero_2nd is false
+			case1 = 0;
+		} else {
+			case1  = count_cases (valexpstr, vallen - pars0, invert, &pars1);
+		}
+		if (stacktop & zero_2nd) {
+			case2 = 0;
+		} else {
+			case2  = count_cases (valexpstr, vallen - pars0 - pars1, invert, &pars2);
+		}
 		sz0 = runlen * case1 * case0p;
 		sz1 = runlen * case2 * case0n;
 		sz2 = runlen * case1 * case2;
-printf ("sz0 = %d, sz1 = %d, sz2 = %d\n", sz0, sz1, sz2);
 		assert (sz0 + sz1 + sz2 > 0);
 		//
 		//
@@ -761,7 +788,7 @@ printf ("sz0 = %d, sz1 = %d, sz2 = %d\n", sz0, sz1, sz2);
 		if (sz2 > 0) {
 			// Multiply e[case2] into #2[1]
 			// #2 := 1*e[case2<sz2] = e[case2<sz2]
-			assert (case2 == expand_cases (
+			assert (case2 == expand_cases_rec (
 				valexpstr, vallen - pars0 - pars1,
 				invert, &pars2,
 				ve, offset + sz0 + sz1, runlen, 0));
@@ -777,7 +804,7 @@ printf ("sz0 = %d, sz1 = %d, sz2 = %d\n", sz0, sz1, sz2);
 		} else if (sz1 > 0) {
 			// Multiply e[case2] directly into #1[runlen]
 			// #1 := run*e[runlen*case2<sz1]
-			assert (case2 == expand_cases (
+			assert (case2 == expand_cases_rec (
 				valexpstr, vallen - pars0 - pars1,
 				invert, &pars2,
 				ve, offset + sz0, runlen, 0));
@@ -794,7 +821,7 @@ printf ("sz0 = %d, sz1 = %d, sz2 = %d\n", sz0, sz1, sz2);
 		if (sz0 > 0) {
 			// Multiply t[case1] into #0[runlen]
 			// #0 := run*t[runlen*case1<sz0]
-			assert (case1 == expand_cases (
+			assert (case1 == expand_cases_rec (
 				valexpstr, vallen - pars0,
 				invert, &pars1,
 				ve, offset, runlen, 0));
@@ -810,7 +837,7 @@ printf ("sz0 = %d, sz1 = %d, sz2 = %d\n", sz0, sz1, sz2);
 		} else if (sz2 > 0) {
 			// Multiply t[case1] directly into #2[runlen*case2]
 			// #2 := run*e*t[runlen*case2*case1<sz2]
-			assert (case1 == expand_cases (
+			assert (case1 == expand_cases_rec (
 				valexpstr, vallen - pars0,
 				invert, &pars1,
 				ve, offset + sz0 + sz1, runlen * case2, 0));
@@ -826,12 +853,10 @@ printf ("sz0 = %d, sz1 = %d, sz2 = %d\n", sz0, sz1, sz2);
 		if (sz0 > 0) {
 			// Multiply "i+" into #0 (so, with invert forced to 0)
 			// #0 := run*t*i+[runlen*case1*case0p<sz0 == sz0]
-printf ("expand case0p with vallen=%d, pars0.pre=%d...", vallen, pars0);
-			assert (case0p == expand_cases (
+			assert (case0p == expand_cases_rec (
 				valexpstr, vallen,
 				0, &pars0,
 				ve, offset, runlen * case1, 0 /*TODO:REALLY0?*/));
-printf (" parse0.post = %d --> %d\n", pars0, case0p);
 		}
 		// 
 		// Interleave i-[case0n] into #1
@@ -844,12 +869,10 @@ printf (" parse0.post = %d --> %d\n", pars0, case0p);
 		if (sz1 > 0) {
 			// Multiply "i-" into #1 (so, with invert forced to 1)
 			// #1 := run*e*i-[runlen*case2*case0n<sz1 == sz1]
-printf ("expand case0n with vallen=%d, pars0.pre=%d...", vallen, pars0);
-			assert (case0n == expand_cases (
+			assert (case0n == expand_cases_rec (
 				valexpstr, vallen,
 				1, &pars0,
 				ve, offset + sz0, runlen * case2, 0 /*TODO:REALLY0?*/));
-printf (" parse0.post = %d --> %d\n", pars0, case0n);
 		}
 		//
 		// Finish up, return
@@ -880,6 +903,21 @@ printf (" parse0.post = %d --> %d\n", pars0, case0n);
 		*parsed = opcount;
 		return runlen;
 	}
+}
+
+
+/* The expand_cases() interface is the way to invoke expand_cases_rec()
+ * without making trivial mistakes with the recursion arguments, or calling
+ * it while knowing that only 0 cases are needed.
+ */
+static int expand_cases (char *valexpstr, struct valexp *ve) {
+	int parsed = 0;
+	if (ve->numcases == 0) {
+		// No work to do; at the same time, guard _rec constraints
+		return 0;
+	}
+	return expand_cases_rec (valexpstr, strlen (valexpstr), 0,
+		&parsed, ve, 0, 1, 0);
 }
 
 

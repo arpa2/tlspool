@@ -1,0 +1,3 @@
+Input:  "1a&~"
+Allocd: "1"
+Parsed: "~a"

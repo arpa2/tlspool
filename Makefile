@@ -1,5 +1,5 @@
 
-BUILDDIRS=src lib tool doc
+BUILDDIRS=src lib tool doc test
 
 .PHONEY: all install clean distclean
 

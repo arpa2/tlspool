@@ -1,0 +1,3 @@
+Input:  "ac&d|~"
+Allocd: "1 | 1"
+Parsed: "~dc | ~ad"
