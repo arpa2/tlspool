@@ -4,19 +4,19 @@ BUILDDIRS=src lib tool doc test
 .PHONEY: all install clean distclean
 
 all:
-	for dir in $(BUILDDIRS); do make -C "$$dir" ; done
+	@$(foreach dir,$(BUILDDIRS),make -C '$(dir)' all && ) echo Built all
 	@echo '#'
 	@echo '# NOTE: You may need to "make testdata" for some tool/* programs'
 	@echo '#'
 
 install: all
-	for dir in $(BUILDDIRS); do make -C "$$dir" install ; done
+	@$(foreach dir,$(BUILDDIRS),make -C '$(dir)' install && ) echo Installed
 
 uninstall:
-	for dir in $(BUILDDIRS); do make -C "$$dir" uninstall ; done
+	@$(foreach dir,$(BUILDDIRS),make -C '$(dir)' uninstall && ) echo Uninstalled
 
 clean:
-	for dir in $(BUILDDIRS); do make -C "$$dir" clean ; done
+	@$(foreach dir,$(BUILDDIRS),make -C '$(dir)' clean && ) echo Cleaned
 	@echo '#'
 	@echo '# NOTE: Kept key material, use "make distclean" if you REALLY want to clean it'
 	@echo '#'

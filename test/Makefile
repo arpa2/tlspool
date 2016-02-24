@@ -35,9 +35,7 @@ clean:
 	rm -f $(OBJS) $(TARGETS)
 	rm -f valexp/*.gen
 
-install: all
-	install $(TARGETS) "$(PREFIX)/sbin/"
+install:
 
 uninstall:
-	for t in $(TARGETS); do rm -f "$(PREFIX)/sbin/$$t" ; done
 

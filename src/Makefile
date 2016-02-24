@@ -34,4 +34,5 @@ install: all
 	install $(TARGETS) "$(PREFIX)/sbin/"
 
 uninstall:
-	for t in $(TARGETS); do rm -f "$(PREFIX)/sbin/$$t"; done
+	@($foreach t,$(TARGETS),rm -f '$(PREFIX)/sbin/$t' && ) echo Removed TLS Pool daemon
+

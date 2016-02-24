@@ -23,19 +23,19 @@ install: all
 	mkdir -p "$(PREFIX)/share/doc/tlspool/"
 	mkdir -p "$(PREFIX)/share/man/man3/"
 	mkdir -p "$(PREFIX)/share/man/man8/"
-	for l in $(LICS); do install "../$$l" "${PREFIX}/share/doc/tlspool/"; done
-	for d in $(DOCS); do install "$$d" "$(PREFIX)/share/doc/tlspool/"; done
-	for m in $(MAN8); do install "man/$$m.man" "$(PREFIX)/share/man/man8/$$m.8"; done
-	for m in $(MAN3); do install "man/$$m.man" "$(PREFIX)/share/man/man3/$$m.3"; done
+	@$(foreach l,$(LICS),install '../$l' '$(PREFIX)/share/doc/tlspool/' && ) echo Installed license documents
+	@$(foreach d,$(DOCS),install '$d' '$(PFEFIX)/share/doc/tlspool/' && ) echo Installed technical documentation
+	@$(foreach d,$(MAN8),install 'man/$m.man' '$(PREFIX)/share/man/man8/$m.8' && ) echo Installed man page section 8
+	@$(foreach d,$(MAN3),install 'man/$m.man' '$(PREFIX)/share/man/man3/$m.3' && ) echo Installed man page section 3
 	@echo #
 	@echo # You may need to run makewhatis or similar to update manual page caches
 	@echo #
 
 uninstall:
-	for m in $(MAN3); do rm -f "$(PREFIX)/share/man/man3/$$m.3"; done
-	for m in $(MAN8); do rm -f "$(PREFIX)/share/man/man8/$$m.8"; done
-	for d in $(DOCS); do rm -f "$(PREFIX)/share/doc/tlspool/`basename $$d`"; done
-	for l in $(LICS); do rm -f "$(PREFIX)/share/doc/tlspool/$$l"; done
+	@($foreach $m,$(MAN3),rm -f '$(PREFIX)/share/man/man3/$m.3' && ) echo Uninstalled man page section 3
+	@($foreach $m,$(MAN8),rm -f '$(PREFIX)/share/man/man8/$m.8' && ) echo Uninstalled man page section 8
+	@($foreach $d,$(DOCS),rm -f "$(PREFIX)/share/doc/tlspool/`basename '$d'` && ) echo Uninstalled technical documentation
+	@($foreach $l,$(LICS),rm -f '$(PREFIX)/share/doc/tlspool/$l' && ) echo Uninstalled license documents
 	rmdir --ignore-fail-on-non-empty "$(PREFIX)/share/doc/tlspool/"
 
 clean:
