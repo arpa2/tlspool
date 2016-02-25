@@ -1,0 +1,55 @@
+VALIDATION EXPRESSION: "1"
+
+SIGNAL VECTOR: "~"
+Input:  "1"
+FINAL OUTCOME: VALIDATED
+Parsed value: "1"
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "a"
+Input:  "1"
+FINAL OUTCOME: VALIDATED
+Parsed value: "1"
+Setting predicate 'a' to True
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "ad"
+Input:  "1"
+FINAL OUTCOME: VALIDATED
+Parsed value: "1"
+Setting predicate 'a' to True
+Interm value: "1"
+Setting predicate 'd' to True
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "a~d"
+Input:  "1"
+FINAL OUTCOME: VALIDATED
+Parsed value: "1"
+Setting predicate 'a' to True
+Interm value: "1"
+Interm value: "1"
+Setting predicate 'd' to False
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "~da"
+Input:  "1"
+FINAL OUTCOME: VALIDATED
+Parsed value: "1"
+Interm value: "1"
+Setting predicate 'd' to False
+Interm value: "1"
+Setting predicate 'a' to False
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+COMPLETED 5 TESTS ON "1"

@@ -1,0 +1,11 @@
+VALIDATION EXPRESSION: "1~"
+
+SIGNAL VECTOR: "~"
+Input:  "1~"
+FINAL OUTCOME: FAILED
+Parsed value: "0"
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+COMPLETED 1 TESTS ON "1~"

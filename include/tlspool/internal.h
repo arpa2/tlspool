@@ -373,4 +373,130 @@ success_t lidentry_inquiry_callback (char remoteid [128], int maxlevels, char lo
 void setup_lidentry (void);
 void cleanup_lidentry (void);
 
+
+/********** VALIDATE.C FUNCTIONS **********/
+
+
+struct valexp;
+
+
+/* Setup the validation processing module.  This involves mapping the rather
+ * unhandy valexpvarchars to a direct char-to-bitnum map.
+ */
+void setup_validate (void);
+
+
+/* Cleanup the validation processing module.
+ */
+void cleanup_validate (void);
+
+
+/* Support functions supplied by validation expression handlers.
+ * Ideally, the handlers have asynchronous functions operated by handler_start()
+ * and handler_stop().  The validation framework guarantees that it will never
+ * call handler_start() more than once for a given registered handler_data, and
+ * that it will call handler_stop() on all those before proceeding to
+ * handler_final() to provide the final result of the validation process.
+ * After handler_final(), there will be no more callbacks from the
+ * validation framework.
+ *
+ * After calling handler_start() and before ending handler_stop(), it is
+ * possible for the handler to report outcomes of the individual tests.
+ *
+ * Note that a sub-optimal implementation can be made by putting synchronous
+ * code into handler_start(), letting it report its outcome and ignoring
+ * handler_stop().  In light of potential timeouts, this can lead to long
+ * waiting times detectable to users.
+ */
+
+struct valexp_handling {
+	void (*handler_start) (void *handler_data, struct valexp *ve, char pred);
+	void (*handler_stop ) (void *handler_data, struct valexp *ve, char pred);
+	void (*handler_final) (void *handler_data, struct valexp *ve, bool value);
+};
+
+
+/* This is where a validation expression gets registered with the validation
+ * processing framework.  The expressions are provided as a NULL-terminated
+ * array of NUL-terminated strings, along with an uninitialised struct valexp
+ * and a (void *) that will be used for callbacks to the handler functions.
+ *
+ * Every successful call to valexp_register() must be ended with a call to
+ * valexp_unregister() to indicate that the using program has taken notice
+ * of the termination of the processing by this module.  Before making this
+ * call, there will usually be a notice to the handler function handle_final()
+ * with the final value derived by this module, which may be taken as an
+ * indication that the valexp module is ready with the work.  It is not
+ * necessar however, to wait for this; if no such call has been made yet,
+ * then it will be called later on.  Please note that the handle_final()
+ * call may already be made during valexp_register(), as a result of the
+ * and_expressions to evaluate to a definative value without delay.
+ *
+ * The client program will invoke valexp_unregister() when it wants to
+ * terminate processing.  At this time, any pending computations will be
+ * stopped, and a final result (failure, under the assumption of a timeout)
+ * will be reported if this has not been done yet.
+ *
+ * MODIFICATION NOTE:
+ * Although it is a diversion from common API logic, this routine may modify
+ * the and_expression strings.  This is done to collect knowledge from the
+ * static analysis of these strings.  The way in which this is done is
+ * thread-safe, so global and/or static variables pose no problems even when
+ * they are vigorously reused, but it is useful to understand that the strings
+ * are not kept in tact.
+ *
+ * THREADING NOTE:
+ * It is assumed that all invocations for this struct valexp will be made
+ * from the same thread that invokes this function.  This greatly benefits
+ * code simplicity.
+ */
+struct valexp *valexp_register (char **and_expressions,
+				struct valexp_handling *handler_functions,
+				void *handler_data);
+
+
+/* Every valexp_register() is undone with a call to valexp_unregister().
+ * This makes the validation framework round off any pending checks and report
+ * a final result, if this has not been done yet.
+ *
+ * THREADING NOTE:
+ * It is assumed that this call is made by the same thread that registered
+ * the validation expression, meaning that no threading occurs within the
+ * handling of a validation expression.  This greatly benefits code simplicity.
+ */
+void valexp_unregister (struct valexp *ve);
+
+
+/* Report the outcome of an individual predicate in a validation expression.
+ * This may be done asynchronously, between the invocation of the handler_start()
+ * and handler_stop() functions for the registered valexp.  It is not possible
+ * to change the value for a predicate at a later time.
+ *
+ * THREADING NOTE:
+ * It is assumed that this call is made by the same thread that registered
+ * the validation expression, meaning that no threading occurs within the
+ * handling of a validation expression.  This greatly benefits code simplicity.
+ */
+void valexp_setpredicate (struct valexp *ve, char predicate, bool value);
+
+
+/* Pretty-print a valexp-structure.  This can be used to output the
+ * folded-out structure, which may be helpful for debugging purposes.
+ *
+ * The printed structure is in infix notation, where AND is printed as
+ * concatenation of letters and where ~ precedes the characters that
+ * need to be all inverted.  The AND-combinations are ORed by a
+ * separating "|" with a white space on each side.  Special cases may
+ * be written as 0 or 1, namely an empty case or a an empty case list.
+ *
+ * This structure can be potent for debugging, when used to print
+ * developing structures as to-be-resolved constraints are removed.
+ *
+ * This function must be called with buflen >= 4 so there is always
+ * room to end with "...", which  is what this function will do at the
+ * end of the buffer when buflen would otherwise be exceeded.
+ */
+void snprint_valexp (char *buf, int buflen, struct valexp *ve);
+
+
 #endif //TLSPOOL_INTERNAL_H

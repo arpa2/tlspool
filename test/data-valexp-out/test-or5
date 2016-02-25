@@ -1,0 +1,342 @@
+VALIDATION EXPRESSION: "ac&d|"
+
+SIGNAL VECTOR: "~"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Interm value: "d | ac"
+Result value: "d | ac"
+Stopping handler for 'a'
+Stopping handler for 'd'
+Stopping handler for 'c'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "a"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "d | c"
+Result value: "d | c"
+Stopping handler for 'd'
+Stopping handler for 'c'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "c"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'c' to True
+Stopping handler for 'c'
+Interm value: "d | a"
+Result value: "d | a"
+Stopping handler for 'a'
+Stopping handler for 'd'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "d"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'd' to True
+Stopping handler for 'a'
+Stopping handler for 'd'
+Stopping handler for 'c'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "ac"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "d | c"
+Setting predicate 'c' to True
+Stopping handler for 'd'
+Stopping handler for 'c'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "dc"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'd' to True
+Stopping handler for 'a'
+Stopping handler for 'd'
+Stopping handler for 'c'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Setting predicate 'c' to True
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "ad"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "d | c"
+Setting predicate 'd' to True
+Stopping handler for 'd'
+Stopping handler for 'c'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "a~d"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "d | c"
+Interm value: "d | c"
+Setting predicate 'd' to False
+Stopping handler for 'd'
+Interm value: "c"
+Result value: "c"
+Stopping handler for 'c'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "d~a"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'd' to True
+Stopping handler for 'a'
+Stopping handler for 'd'
+Stopping handler for 'c'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Interm value: "1"
+Setting predicate 'a' to False
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "a~c"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "d | c"
+Interm value: "d | c"
+Setting predicate 'c' to False
+Stopping handler for 'c'
+Interm value: "d"
+Result value: "d"
+Stopping handler for 'd'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "c~a"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'c' to True
+Stopping handler for 'c'
+Interm value: "d | a"
+Interm value: "d | a"
+Setting predicate 'a' to False
+Stopping handler for 'a'
+Interm value: "d"
+Result value: "d"
+Stopping handler for 'd'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "d~c"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'd' to True
+Stopping handler for 'a'
+Stopping handler for 'd'
+Stopping handler for 'c'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Interm value: "1"
+Setting predicate 'c' to False
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "c~d"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'c' to True
+Stopping handler for 'c'
+Interm value: "d | a"
+Interm value: "d | a"
+Setting predicate 'd' to False
+Stopping handler for 'd'
+Interm value: "a"
+Result value: "a"
+Stopping handler for 'a'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "acd"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "d | c"
+Setting predicate 'c' to True
+Stopping handler for 'd'
+Stopping handler for 'c'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Setting predicate 'd' to True
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "a~cd"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "d | c"
+Interm value: "d | c"
+Setting predicate 'c' to False
+Stopping handler for 'c'
+Interm value: "d"
+Setting predicate 'd' to False
+Stopping handler for 'd'
+FINAL OUTCOME: FAILED
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "a~c~d"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "d | c"
+Interm value: "d | c"
+Setting predicate 'c' to False
+Stopping handler for 'c'
+Interm value: "d"
+Interm value: "d"
+Setting predicate 'd' to True
+Stopping handler for 'd'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "ac~d"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "d | c"
+Setting predicate 'c' to True
+Stopping handler for 'd'
+Stopping handler for 'c'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Interm value: "1"
+Setting predicate 'd' to False
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "ca~d"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'c' to True
+Stopping handler for 'c'
+Interm value: "d | a"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Stopping handler for 'd'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Interm value: "1"
+Setting predicate 'd' to False
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "c~d~a"
+Input:  "ac&d|"
+Starting handler for 'a'
+Starting handler for 'd'
+Starting handler for 'c'
+Parsed value: "d | ac"
+Setting predicate 'c' to True
+Stopping handler for 'c'
+Interm value: "d | a"
+Interm value: "d | a"
+Setting predicate 'd' to False
+Stopping handler for 'd'
+Interm value: "a"
+Interm value: "a"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+COMPLETED 19 TESTS ON "ac&d|"

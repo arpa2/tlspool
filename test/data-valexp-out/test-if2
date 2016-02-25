@@ -1,0 +1,100 @@
+VALIDATION EXPRESSION: "e0i?"
+
+SIGNAL VECTOR: "e"
+Input:  "e0i?"
+Starting handler for 'i'
+Starting handler for 'e'
+Parsed value: "e~i"
+Setting predicate 'e' to True
+Stopping handler for 'e'
+Interm value: "~i"
+Result value: "~i"
+Stopping handler for 'i'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "et"
+Input:  "e0i?"
+Starting handler for 'i'
+Starting handler for 'e'
+Parsed value: "e~i"
+Setting predicate 'e' to True
+Stopping handler for 'e'
+Interm value: "~i"
+Setting predicate 't' to True
+Interm value: "~i"
+Result value: "~i"
+Stopping handler for 'i'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "ei"
+Input:  "e0i?"
+Starting handler for 'i'
+Starting handler for 'e'
+Parsed value: "e~i"
+Setting predicate 'e' to True
+Stopping handler for 'e'
+Interm value: "~i"
+Setting predicate 'i' to True
+Stopping handler for 'i'
+FINAL OUTCOME: FAILED
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "eti"
+Input:  "e0i?"
+Starting handler for 'i'
+Starting handler for 'e'
+Parsed value: "e~i"
+Setting predicate 'e' to True
+Stopping handler for 'e'
+Interm value: "~i"
+Setting predicate 't' to True
+Interm value: "~i"
+Setting predicate 'i' to True
+Stopping handler for 'i'
+FINAL OUTCOME: FAILED
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "e~ti"
+Input:  "e0i?"
+Starting handler for 'i'
+Starting handler for 'e'
+Parsed value: "e~i"
+Setting predicate 'e' to True
+Stopping handler for 'e'
+Interm value: "~i"
+Interm value: "~i"
+Setting predicate 't' to False
+Interm value: "~i"
+Setting predicate 'i' to False
+Stopping handler for 'i'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "~e~ti"
+Input:  "e0i?"
+Starting handler for 'i'
+Starting handler for 'e'
+Parsed value: "e~i"
+Interm value: "e~i"
+Setting predicate 'e' to False
+Stopping handler for 'i'
+Stopping handler for 'e'
+FINAL OUTCOME: FAILED
+Interm value: "0"
+Interm value: "0"
+Setting predicate 't' to True
+Interm value: "0"
+Setting predicate 'i' to True
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+COMPLETED 6 TESTS ON "e0i?"

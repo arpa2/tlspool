@@ -1,0 +1,127 @@
+VALIDATION EXPRESSION: "A~P~|~"
+
+SIGNAL VECTOR: "~"
+Input:  "A~P~|~"
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "AP"
+Interm value: "AP"
+Result value: "AP"
+Stopping handler for 'A'
+Stopping handler for 'P'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "A"
+Input:  "A~P~|~"
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "AP"
+Setting predicate 'A' to True
+Stopping handler for 'A'
+Interm value: "P"
+Result value: "P"
+Stopping handler for 'P'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "P"
+Input:  "A~P~|~"
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "AP"
+Setting predicate 'P' to True
+Stopping handler for 'P'
+Interm value: "A"
+Result value: "A"
+Stopping handler for 'A'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "AP"
+Input:  "A~P~|~"
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "AP"
+Setting predicate 'A' to True
+Stopping handler for 'A'
+Interm value: "P"
+Setting predicate 'P' to True
+Stopping handler for 'P'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "PA"
+Input:  "A~P~|~"
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "AP"
+Setting predicate 'P' to True
+Stopping handler for 'P'
+Interm value: "A"
+Setting predicate 'A' to True
+Stopping handler for 'A'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "A~P"
+Input:  "A~P~|~"
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "AP"
+Setting predicate 'A' to True
+Stopping handler for 'A'
+Interm value: "P"
+Interm value: "P"
+Setting predicate 'P' to False
+Stopping handler for 'P'
+FINAL OUTCOME: FAILED
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "P~A"
+Input:  "A~P~|~"
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "AP"
+Setting predicate 'P' to True
+Stopping handler for 'P'
+Interm value: "A"
+Interm value: "A"
+Setting predicate 'A' to False
+Stopping handler for 'A'
+FINAL OUTCOME: FAILED
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "~"
+Input:  "A~P~|~"
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "AP"
+Interm value: "AP"
+Result value: "AP"
+Stopping handler for 'A'
+Stopping handler for 'P'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "~"
+Input:  "A~P~|~"
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "AP"
+Interm value: "AP"
+Result value: "AP"
+Stopping handler for 'A'
+Stopping handler for 'P'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+COMPLETED 9 TESTS ON "A~P~|~"

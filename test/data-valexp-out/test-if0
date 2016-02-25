@@ -1,0 +1,231 @@
+VALIDATION EXPRESSION: "ETad&?"
+
+SIGNAL VECTOR: "ET"
+Input:  "ETad&?"
+Starting handler for 'a'
+Starting handler for 'T'
+Starting handler for 'd'
+Starting handler for 'E'
+Parsed value: "aTd | E~d | E~a | TE"
+Setting predicate 'E' to True
+Stopping handler for 'E'
+Interm value: "aTd | ~d | ~a | T"
+Setting predicate 'T' to True
+Stopping handler for 'a'
+Stopping handler for 'T'
+Stopping handler for 'd'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "Ta"
+Input:  "ETad&?"
+Starting handler for 'a'
+Starting handler for 'T'
+Starting handler for 'd'
+Starting handler for 'E'
+Parsed value: "aTd | E~d | E~a | TE"
+Setting predicate 'T' to True
+Stopping handler for 'T'
+Interm value: "ad | E~d | E~a | E"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "d | E~d | E"
+Result value: "d | E~d | E"
+Stopping handler for 'd'
+Stopping handler for 'E'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "Td"
+Input:  "ETad&?"
+Starting handler for 'a'
+Starting handler for 'T'
+Starting handler for 'd'
+Starting handler for 'E'
+Parsed value: "aTd | E~d | E~a | TE"
+Setting predicate 'T' to True
+Stopping handler for 'T'
+Interm value: "ad | E~d | E~a | E"
+Setting predicate 'd' to True
+Stopping handler for 'd'
+Interm value: "a | E | E~a"
+Result value: "a | E | E~a"
+Stopping handler for 'a'
+Stopping handler for 'E'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "Tad"
+Input:  "ETad&?"
+Starting handler for 'a'
+Starting handler for 'T'
+Starting handler for 'd'
+Starting handler for 'E'
+Parsed value: "aTd | E~d | E~a | TE"
+Setting predicate 'T' to True
+Stopping handler for 'T'
+Interm value: "ad | E~d | E~a | E"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "d | E~d | E"
+Setting predicate 'd' to True
+Stopping handler for 'd'
+Stopping handler for 'E'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "Ed"
+Input:  "ETad&?"
+Starting handler for 'a'
+Starting handler for 'T'
+Starting handler for 'd'
+Starting handler for 'E'
+Parsed value: "aTd | E~d | E~a | TE"
+Setting predicate 'E' to True
+Stopping handler for 'E'
+Interm value: "aTd | ~d | ~a | T"
+Setting predicate 'd' to True
+Stopping handler for 'd'
+Interm value: "aT | T | ~a"
+Result value: "aT | T | ~a"
+Stopping handler for 'a'
+Stopping handler for 'T'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "Ea"
+Input:  "ETad&?"
+Starting handler for 'a'
+Starting handler for 'T'
+Starting handler for 'd'
+Starting handler for 'E'
+Parsed value: "aTd | E~d | E~a | TE"
+Setting predicate 'E' to True
+Stopping handler for 'E'
+Interm value: "aTd | ~d | ~a | T"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "Td | ~d | T"
+Result value: "Td | ~d | T"
+Stopping handler for 'T'
+Stopping handler for 'd'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "Ead"
+Input:  "ETad&?"
+Starting handler for 'a'
+Starting handler for 'T'
+Starting handler for 'd'
+Starting handler for 'E'
+Parsed value: "aTd | E~d | E~a | TE"
+Setting predicate 'E' to True
+Stopping handler for 'E'
+Interm value: "aTd | ~d | ~a | T"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "Td | ~d | T"
+Setting predicate 'd' to True
+Stopping handler for 'd'
+Interm value: "T | T"
+Result value: "T | T"
+Stopping handler for 'T'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "Ea~d"
+Input:  "ETad&?"
+Starting handler for 'a'
+Starting handler for 'T'
+Starting handler for 'd'
+Starting handler for 'E'
+Parsed value: "aTd | E~d | E~a | TE"
+Setting predicate 'E' to True
+Stopping handler for 'E'
+Interm value: "aTd | ~d | ~a | T"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "Td | ~d | T"
+Interm value: "Td | ~d | T"
+Setting predicate 'd' to False
+Stopping handler for 'T'
+Stopping handler for 'd'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "Ed~a"
+Input:  "ETad&?"
+Starting handler for 'a'
+Starting handler for 'T'
+Starting handler for 'd'
+Starting handler for 'E'
+Parsed value: "aTd | E~d | E~a | TE"
+Setting predicate 'E' to True
+Stopping handler for 'E'
+Interm value: "aTd | ~d | ~a | T"
+Setting predicate 'd' to True
+Stopping handler for 'd'
+Interm value: "aT | T | ~a"
+Interm value: "aT | T | ~a"
+Setting predicate 'a' to False
+Stopping handler for 'a'
+Stopping handler for 'T'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "E~da"
+Input:  "ETad&?"
+Starting handler for 'a'
+Starting handler for 'T'
+Starting handler for 'd'
+Starting handler for 'E'
+Parsed value: "aTd | E~d | E~a | TE"
+Setting predicate 'E' to True
+Stopping handler for 'E'
+Interm value: "aTd | ~d | ~a | T"
+Interm value: "aTd | ~d | ~a | T"
+Setting predicate 'd' to False
+Stopping handler for 'a'
+Stopping handler for 'T'
+Stopping handler for 'd'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Setting predicate 'a' to False
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "~E~Tad"
+Input:  "ETad&?"
+Starting handler for 'a'
+Starting handler for 'T'
+Starting handler for 'd'
+Starting handler for 'E'
+Parsed value: "aTd | E~d | E~a | TE"
+Interm value: "aTd | E~d | E~a | TE"
+Setting predicate 'E' to False
+Stopping handler for 'E'
+Interm value: "aTd"
+Interm value: "aTd"
+Setting predicate 'T' to True
+Stopping handler for 'T'
+Interm value: "ad"
+Setting predicate 'a' to True
+Stopping handler for 'a'
+Interm value: "d"
+Setting predicate 'd' to True
+Stopping handler for 'd'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+COMPLETED 11 TESTS ON "ETad&?"

@@ -1,0 +1,99 @@
+VALIDATION EXPRESSION: "1a|~"
+
+SIGNAL VECTOR: "~"
+Input:  "1a|~"
+FINAL OUTCOME: FAILED
+Parsed value: "0"
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "a"
+Input:  "1a|~"
+FINAL OUTCOME: FAILED
+Parsed value: "0"
+Setting predicate 'a' to True
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "d"
+Input:  "1a|~"
+FINAL OUTCOME: FAILED
+Parsed value: "0"
+Setting predicate 'd' to True
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "ad"
+Input:  "1a|~"
+FINAL OUTCOME: FAILED
+Parsed value: "0"
+Setting predicate 'a' to True
+Interm value: "0"
+Setting predicate 'd' to True
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "da"
+Input:  "1a|~"
+FINAL OUTCOME: FAILED
+Parsed value: "0"
+Setting predicate 'd' to True
+Interm value: "0"
+Setting predicate 'a' to True
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "a~d"
+Input:  "1a|~"
+FINAL OUTCOME: FAILED
+Parsed value: "0"
+Setting predicate 'a' to True
+Interm value: "0"
+Interm value: "0"
+Setting predicate 'd' to False
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "d~a"
+Input:  "1a|~"
+FINAL OUTCOME: FAILED
+Parsed value: "0"
+Setting predicate 'd' to True
+Interm value: "0"
+Interm value: "0"
+Setting predicate 'a' to False
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "~da"
+Input:  "1a|~"
+FINAL OUTCOME: FAILED
+Parsed value: "0"
+Interm value: "0"
+Setting predicate 'd' to False
+Interm value: "0"
+Setting predicate 'a' to False
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "~ad"
+Input:  "1a|~"
+FINAL OUTCOME: FAILED
+Parsed value: "0"
+Interm value: "0"
+Setting predicate 'a' to False
+Interm value: "0"
+Setting predicate 'd' to False
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+COMPLETED 9 TESTS ON "1a|~"

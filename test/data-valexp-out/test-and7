@@ -1,0 +1,107 @@
+VALIDATION EXPRESSION: "PF|FA|&"
+
+SIGNAL VECTOR: "P"
+Input:  "PF|FA|&"
+Starting handler for 'F'
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "FA | F | AP | FP"
+Setting predicate 'P' to True
+Stopping handler for 'P'
+Interm value: "FA | F | A | F"
+Result value: "FA | F | A | F"
+Stopping handler for 'F'
+Stopping handler for 'A'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "AP"
+Input:  "PF|FA|&"
+Starting handler for 'F'
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "FA | F | AP | FP"
+Setting predicate 'A' to True
+Stopping handler for 'A'
+Interm value: "F | F | P | FP"
+Setting predicate 'P' to True
+Stopping handler for 'F'
+Stopping handler for 'P'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "PAF"
+Input:  "PF|FA|&"
+Starting handler for 'F'
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "FA | F | AP | FP"
+Setting predicate 'P' to True
+Stopping handler for 'P'
+Interm value: "FA | F | A | F"
+Setting predicate 'A' to True
+Stopping handler for 'F'
+Stopping handler for 'A'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Setting predicate 'F' to True
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "F"
+Input:  "PF|FA|&"
+Starting handler for 'F'
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "FA | F | AP | FP"
+Setting predicate 'F' to True
+Stopping handler for 'F'
+Stopping handler for 'A'
+Stopping handler for 'P'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "FA"
+Input:  "PF|FA|&"
+Starting handler for 'F'
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "FA | F | AP | FP"
+Setting predicate 'F' to True
+Stopping handler for 'F'
+Stopping handler for 'A'
+Stopping handler for 'P'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Setting predicate 'A' to True
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "A~P~F"
+Input:  "PF|FA|&"
+Starting handler for 'F'
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "FA | F | AP | FP"
+Setting predicate 'A' to True
+Stopping handler for 'A'
+Interm value: "F | F | P | FP"
+Interm value: "F | F | P | FP"
+Setting predicate 'P' to False
+Stopping handler for 'P'
+Interm value: "F | F"
+Interm value: "F | F"
+Setting predicate 'F' to True
+Stopping handler for 'F'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+COMPLETED 6 TESTS ON "PF|FA|&"

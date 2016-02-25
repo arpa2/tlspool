@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include <assert.h>
@@ -10,6 +11,11 @@
 #include <syslog.h>
 
 #include <tlspool/internal.h>
+
+
+#ifdef DEBUG
+#   include <pthread.h>
+#endif
 
 
 /* We have a total of 28 validation variables, counting the uppercase and
@@ -88,6 +94,11 @@ struct valexp {
 	int numcases;
 	int numcases_incomplete;
 	valexpreqs_t compute;
+	void *handler_data;
+	struct valexp_handling *handler_functions;
+#ifdef DEBUG
+	pthread_t registering_thread;
+#endif
 	struct valexp_case cases [1];
 };
 
@@ -303,7 +314,7 @@ static int count_cases (char *valexpstr, int vallen, int invert, int *parsed) {
  * expanded expression is returned, that should be cleaned up
  * with free() as soon as it is ready.
  */
-static struct valexp *construct_valexp (char **and_expressions) {
+static struct valexp *allocate_valexp (char **and_expressions) {
 	int allcases = 1;
 	char **andexp;
 	struct valexp *retval = NULL;
@@ -332,7 +343,7 @@ static struct valexp *construct_valexp (char **and_expressions) {
 		tlog (TLOG_TLS, LOG_NOTICE, "Out of memory expanding logic expressions");
 		return NULL;
 	}
-	bzero (retval->cases, memsz);
+	memset (retval, 0, memsz);
 	retval->numcases = allcases;
 	retval->numcases_incomplete = allcases;
 	//
@@ -376,7 +387,7 @@ void snprint_valexp (char *buf, int buflen, struct valexp *ve) {
 	assert (buflen >= 4);
 	//
 	// Iterate over the cases, printing each in turn
-	for (i=0; i<ve->numcases; i++) {
+	for (i=0; i<ve->numcases_incomplete; i++) {
 		int done;
 		valexpreqs_t tmp;
 		//
@@ -435,7 +446,7 @@ void snprint_valexp (char *buf, int buflen, struct valexp *ve) {
 	}
 	//
 	// Handle the (print-wise) exceptional valexp without cases
-	if (ve->numcases == 0) {
+	if (ve->numcases_incomplete == 0) {
 		if (--buflen >= 0) {
 			*buf++ = '0';
 		}
@@ -765,8 +776,9 @@ static int expand_cases_rec (char *valexpstr, int vallen, int invert, int *parse
 			if (sz0 > 0) {
 				// Set #2 to TRUE
 				// #2 := IF sz0>0 THEN 1[1<sz2] ELSE ...
-				bzero (&ve->cases [offset + sz0 + sz1],
-				       sizeof (struct valexp_case));
+				memset (&ve->cases [offset + sz0 + sz1],
+					0,
+					sizeof (struct valexp_case));
 			} else {
 				// Set #2 to run[runlen]
 				// #2 := ... ELSE run[runlen<sz2]
@@ -922,3 +934,253 @@ static int expand_cases (char *valexpstr, struct valexp *ve) {
 
 
 
+/* This is where a validation expression gets registered with the validation
+ * processing framework.  The expressions are provided as a NULL-terminated
+ * array of NUL-terminated strings, along with an uninitialised struct valexp
+ * and a (void *) that will be used for callbacks to the handler functions.
+ *
+ * Every successful call to valexp_register() must be ended with a call to
+ * valexp_unregister() to indicate that the using program has taken notice
+ * of the termination of the processing by this module.  Before making this
+ * call, there will usually be a notice to the handler function handle_final()
+ * with the final value derived by this module, which may be taken as an
+ * indication that the valexp module is ready with the work.  It is not
+ * necessar however, to wait for this; if no such call has been made yet,
+ * then it will be called later on.  Please note that the handle_final()
+ * call may already be made during valexp_register(), as a result of the
+ * and_expressions to evaluate to a definative value without delay.
+ *
+ * The client program will invoke valexp_unregister() when it wants to
+ * terminate processing.  At this time, any pending computations will be
+ * stopped, and a final result (failure, under the assumption of a timeout)
+ * will be reported if this has not been done yet.
+ *
+ * MODIFICATION NOTE:
+ * Although it is a diversion from common API logic, this routine may modify
+ * the and_expression strings.  This is done to collect knowledge from the
+ * static analysis of these strings.  The way in which this is done is
+ * thread-safe, so global and/or static variables pose no problems even when
+ * they are vigorously reused, but it is useful to understand that the strings
+ * are not kept in tact.
+ *
+ * THREADING NOTE:
+ * It is assumed that all invocations for this struct valexp will be made
+ * from the same thread that invokes this function.  This greatly benefits
+ * code simplicity.
+ *
+ * This function returns NULL on failure, otherwise an initialised valexp.
+ */
+struct valexp *valexp_register (char **and_expressions,
+				struct valexp_handling *handler_functions,
+				void *handler_data) {
+	bool found_true;
+	bool found_false;
+	int i;
+	char *predicates;
+	valexpreqs_t all_compute;
+	struct valexp *retval;
+	struct valexp_case *casu;
+	retval = allocate_valexp (and_expressions);
+	if (retval == NULL) {
+		return NULL;
+	}
+#ifdef DEBUG
+	retval->registering_thread = pthread_self ();
+#endif
+	retval->handler_data = handler_data;
+	retval->handler_functions = handler_functions;
+	//TODO// This only handles one expression, cover multiple as well!
+	assert (and_expressions [0] != NULL);
+	assert (and_expressions [1] == NULL);
+	expand_cases (and_expressions [0], retval);
+	found_true = 0;
+	i = retval->numcases;
+	casu = retval->cases + i;
+	all_compute = 0;
+	while (i-- > 0) {
+		casu--;
+		casu->compute = casu->positive | casu->negative;
+		if (casu->compute != 0) {
+			all_compute |= casu->compute;
+		} else {
+			if (casu->negative == 0) {
+				found_true = 1;
+				break;
+			}
+			// Drop this case, bring in the last one
+			*casu = retval->cases [--retval->numcases_incomplete];
+			// We now have setup work to do in the current position;
+			// this work has been visited before (or in this looping);
+			// the number of incomplete cases is reduced to remote the
+			// copied version from its original position in the cases.
+		}
+	}
+	// In the following, the following precedence order is guarded:
+	//  - found_true overrules all; there has been a case returning positive
+	//  - found_false is next; it indicates no cases worth exploring
+	//  - the last resort is to actually start doing some arduous work :)
+	found_false = (!found_true) && (retval->numcases_incomplete == 0);
+	if (found_true) {
+		// Already complete -- the result is true
+		retval->compute = 0;		// signal to later invocations
+		handler_functions->handler_final (handler_data, retval, 1);
+		// And to serve pretty printing of our lazy bail-out:
+		memset (retval->cases, 0, sizeof (struct valexp_case));
+		retval->numcases_incomplete = 1;
+	} else if (found_false) {
+		// Already complete -- the result is false
+		retval->compute = 0;		// signal to later invocations
+		handler_functions->handler_final (handler_data, retval, 0);
+	} else {
+		// Not yet complete -- prepare for work
+		retval->compute = all_compute;	// signal to later invocations
+	}
+	// Now invoke handler_start() on all the bits in retval->compute
+	predicates = valexpvarchars;
+	while (*predicates) {
+		if (all_compute & 0x00000001) {
+			handler_functions->handler_start
+					(handler_data, retval, *predicates);
+		}
+		all_compute >>= 1;
+		predicates++;
+	}
+	// At this point, all handlers in retval->compute were started
+	return retval;
+}
+
+
+/* Every valexp_register() is undone with a call to valexp_unregister().
+ * This makes the validation framework round off any pending checks and report
+ * a final result, if this has not been done yet.  The valexp structure obtained
+ * by registration will be deallocated by this call, so no further reference
+ * must be made to this structure.
+ *
+ * THREADING NOTE:
+ * It is assumed that this call is made by the same thread that registered
+ * the validation expression, meaning that no threading occurs within the
+ * handling of a validation expression.  This greatly benefits code simplicity.
+ */
+void valexp_unregister (struct valexp *ve) {
+	valexpreqs_t all_compute;
+	bool report_failure;
+	char *predicates = valexpvarchars;
+#ifdef DEBUG
+	assert (pthread_equal (ve->registering_thread, pthread_self ()));
+#endif
+	all_compute = ve->compute;
+	ve->compute = 0; // Nothing will be running once we're through; mention that
+	report_failure = (all_compute != 0);
+	while (*predicates) {
+		if (all_compute & 0x00000001) {
+			ve->handler_functions->handler_stop
+						(ve->handler_data, ve, *predicates);
+		}
+		all_compute >>= 1;
+		predicates++;
+	}
+	if (report_failure) {
+		// We seem to have failed and should report that
+		ve->handler_functions->handler_final (ve->handler_data, ve, 0);
+	}
+	// Finally, free the data held by ve because we no longer need it
+	free (ve);
+}
+
+
+/* Report the outcome of an individual predicate in a validation expression.
+ * This may be done asynchronously, between the invocation of the handler_start()
+ * and handler_stop() functions for the registered valexp.  It is not possible
+ * to change the value for a predicate at a later time.
+ *
+ * THREADING NOTE:
+ * It is assumed that this call is made by the same thread that registered
+ * the validation expression, meaning that no threading occurs within the
+ * handling of a validation expression.  This greatly benefits code simplicity.
+ */
+void valexp_setpredicate (struct valexp *ve, char predicate, bool value) {
+	valexpreqs_t newbit;
+	valexpreqs_t newcompute;
+	valexpreqs_t tobestopped;
+	int i;
+	char *predicates;
+	struct valexp_case *casu;
+	bool found_true;
+	bool found_false;
+#ifdef DEBUG
+	assert (pthread_equal (ve->registering_thread, pthread_self ()));
+#endif
+	if (!VALEXP_CHARKNOWN (predicate)) {
+		// Nice try... ignore (but think twice about trusting that caller)
+		return;
+	}
+	newbit = 1 << VALEXP_CHARBIT (predicate);
+	if ((ve->compute & newbit) == 0) {
+		// Already known result... ignore (but think badly of that caller)
+		return;
+	}
+	newcompute = 0;
+	i = ve->numcases_incomplete;
+	casu = ve->cases + i;
+	found_true = 0;
+	while (i-- > 0) {
+		casu--;
+		if (casu->compute & newbit) {
+			// First process the new information
+			if (value) {
+				casu->positive &= ~newbit;
+				found_false = ((casu->negative & newbit) != 0);
+			} else {
+				casu->negative &= ~newbit;
+				found_false = ((casu->positive & newbit) != 0);
+			}
+			casu->compute &= casu->positive | casu->negative;
+			found_true = (casu->compute == 0);
+			assert (!(found_true && found_false));
+			if (found_true) {
+				// This is an OR of cases, so done when found_true
+				break;
+			} else if (found_false) {
+				// Move the last case down to this position;
+				// forget that last position, even if it is here;
+				// we have already handled the newly written case
+				*casu = ve->cases [--ve->numcases_incomplete];
+			} else {
+				// Nothing special, just retain this case;
+				// the new bit (and its predecessors) may be
+				// set by this, and will be cut off before
+				// actually writing them into ve->compute
+				;
+			}
+		}
+		newcompute |= casu->compute;
+	}
+	// If we found_true, we're done; or we might have 0 incomplete cases left
+	if (found_true) {
+		tobestopped = ve->compute;	// Stop everything running
+		// And to serve pretty printing of our lazy bail-out:
+		memset (ve->cases, 0, sizeof (struct valexp_case));
+		ve->numcases_incomplete = 1;
+	} else if (ve->numcases_incomplete == 0) {
+		found_false = 1;
+		tobestopped = ve->compute;	// Stop everything running
+	} else {
+		found_false = 0;
+		tobestopped = (ve->compute & ~newcompute) | newbit;
+	}
+	ve->compute &= ~tobestopped;	// None of these will be computing anymore
+	predicates = valexpvarchars;
+	while (*predicates) {
+		if (tobestopped & 0x00000001) {
+			ve->handler_functions->handler_stop
+					(ve->handler_data, ve, *predicates);
+		}
+		tobestopped >>= 1;
+		predicates++;
+	}
+	if (found_true) {
+		ve->handler_functions->handler_final (ve->handler_data, ve, 1);
+	} else if (found_false) {
+		ve->handler_functions->handler_final (ve->handler_data, ve, 0);
+	}
+}

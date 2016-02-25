@@ -1,0 +1,187 @@
+VALIDATION EXPRESSION: "ET1?"
+
+SIGNAL VECTOR: "ET"
+Input:  "ET1?"
+Starting handler for 'T'
+Starting handler for 'E'
+Parsed value: "T | TE"
+Setting predicate 'E' to True
+Stopping handler for 'E'
+Interm value: "T | T"
+Setting predicate 'T' to True
+Stopping handler for 'T'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "Ta"
+Input:  "ET1?"
+Starting handler for 'T'
+Starting handler for 'E'
+Parsed value: "T | TE"
+Setting predicate 'T' to True
+Stopping handler for 'T'
+Stopping handler for 'E'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Setting predicate 'a' to True
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "Td"
+Input:  "ET1?"
+Starting handler for 'T'
+Starting handler for 'E'
+Parsed value: "T | TE"
+Setting predicate 'T' to True
+Stopping handler for 'T'
+Stopping handler for 'E'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Setting predicate 'd' to True
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "Tad"
+Input:  "ET1?"
+Starting handler for 'T'
+Starting handler for 'E'
+Parsed value: "T | TE"
+Setting predicate 'T' to True
+Stopping handler for 'T'
+Stopping handler for 'E'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Setting predicate 'a' to True
+Interm value: "1"
+Setting predicate 'd' to True
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "Ed"
+Input:  "ET1?"
+Starting handler for 'T'
+Starting handler for 'E'
+Parsed value: "T | TE"
+Setting predicate 'E' to True
+Stopping handler for 'E'
+Interm value: "T | T"
+Setting predicate 'd' to True
+Interm value: "T | T"
+Result value: "T | T"
+Stopping handler for 'T'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "Ea"
+Input:  "ET1?"
+Starting handler for 'T'
+Starting handler for 'E'
+Parsed value: "T | TE"
+Setting predicate 'E' to True
+Stopping handler for 'E'
+Interm value: "T | T"
+Setting predicate 'a' to True
+Interm value: "T | T"
+Result value: "T | T"
+Stopping handler for 'T'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "Ead"
+Input:  "ET1?"
+Starting handler for 'T'
+Starting handler for 'E'
+Parsed value: "T | TE"
+Setting predicate 'E' to True
+Stopping handler for 'E'
+Interm value: "T | T"
+Setting predicate 'a' to True
+Interm value: "T | T"
+Setting predicate 'd' to True
+Interm value: "T | T"
+Result value: "T | T"
+Stopping handler for 'T'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "Ea~d"
+Input:  "ET1?"
+Starting handler for 'T'
+Starting handler for 'E'
+Parsed value: "T | TE"
+Setting predicate 'E' to True
+Stopping handler for 'E'
+Interm value: "T | T"
+Setting predicate 'a' to True
+Interm value: "T | T"
+Interm value: "T | T"
+Setting predicate 'd' to False
+Interm value: "T | T"
+Result value: "T | T"
+Stopping handler for 'T'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "Ed~a"
+Input:  "ET1?"
+Starting handler for 'T'
+Starting handler for 'E'
+Parsed value: "T | TE"
+Setting predicate 'E' to True
+Stopping handler for 'E'
+Interm value: "T | T"
+Setting predicate 'd' to True
+Interm value: "T | T"
+Interm value: "T | T"
+Setting predicate 'a' to False
+Interm value: "T | T"
+Result value: "T | T"
+Stopping handler for 'T'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "E~da"
+Input:  "ET1?"
+Starting handler for 'T'
+Starting handler for 'E'
+Parsed value: "T | TE"
+Setting predicate 'E' to True
+Stopping handler for 'E'
+Interm value: "T | T"
+Interm value: "T | T"
+Setting predicate 'd' to False
+Interm value: "T | T"
+Setting predicate 'a' to False
+Interm value: "T | T"
+Result value: "T | T"
+Stopping handler for 'T'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "~E~Tad"
+Input:  "ET1?"
+Starting handler for 'T'
+Starting handler for 'E'
+Parsed value: "T | TE"
+Interm value: "T | TE"
+Setting predicate 'E' to False
+Stopping handler for 'E'
+Interm value: "T"
+Interm value: "T"
+Setting predicate 'T' to True
+Stopping handler for 'T'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Setting predicate 'a' to True
+Interm value: "1"
+Setting predicate 'd' to True
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+COMPLETED 11 TESTS ON "ET1?"

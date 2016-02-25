@@ -1,0 +1,100 @@
+VALIDATION EXPRESSION: "1ti?"
+
+SIGNAL VECTOR: "e"
+Input:  "1ti?"
+Starting handler for 'i'
+Starting handler for 't'
+Parsed value: "it | ~i | t"
+Setting predicate 'e' to True
+Interm value: "it | ~i | t"
+Result value: "it | ~i | t"
+Stopping handler for 'i'
+Stopping handler for 't'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "et"
+Input:  "1ti?"
+Starting handler for 'i'
+Starting handler for 't'
+Parsed value: "it | ~i | t"
+Setting predicate 'e' to True
+Interm value: "it | ~i | t"
+Setting predicate 't' to True
+Stopping handler for 'i'
+Stopping handler for 't'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "ei"
+Input:  "1ti?"
+Starting handler for 'i'
+Starting handler for 't'
+Parsed value: "it | ~i | t"
+Setting predicate 'e' to True
+Interm value: "it | ~i | t"
+Setting predicate 'i' to True
+Stopping handler for 'i'
+Interm value: "t | t"
+Result value: "t | t"
+Stopping handler for 't'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "eti"
+Input:  "1ti?"
+Starting handler for 'i'
+Starting handler for 't'
+Parsed value: "it | ~i | t"
+Setting predicate 'e' to True
+Interm value: "it | ~i | t"
+Setting predicate 't' to True
+Stopping handler for 'i'
+Stopping handler for 't'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Setting predicate 'i' to True
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "e~ti"
+Input:  "1ti?"
+Starting handler for 'i'
+Starting handler for 't'
+Parsed value: "it | ~i | t"
+Setting predicate 'e' to True
+Interm value: "it | ~i | t"
+Interm value: "it | ~i | t"
+Setting predicate 't' to False
+Stopping handler for 't'
+Interm value: "~i"
+Setting predicate 'i' to False
+Stopping handler for 'i'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "~e~ti"
+Input:  "1ti?"
+Starting handler for 'i'
+Starting handler for 't'
+Parsed value: "it | ~i | t"
+Interm value: "it | ~i | t"
+Setting predicate 'e' to False
+Interm value: "it | ~i | t"
+Interm value: "it | ~i | t"
+Setting predicate 't' to True
+Stopping handler for 'i'
+Stopping handler for 't'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Setting predicate 'i' to True
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+COMPLETED 6 TESTS ON "1ti?"

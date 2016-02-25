@@ -1,0 +1,107 @@
+VALIDATION EXPRESSION: "PF&FA&|"
+
+SIGNAL VECTOR: "P"
+Input:  "PF&FA&|"
+Starting handler for 'F'
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "FA | FP"
+Setting predicate 'P' to True
+Stopping handler for 'P'
+Interm value: "FA | F"
+Result value: "FA | F"
+Stopping handler for 'F'
+Stopping handler for 'A'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "AP"
+Input:  "PF&FA&|"
+Starting handler for 'F'
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "FA | FP"
+Setting predicate 'A' to True
+Stopping handler for 'A'
+Interm value: "F | FP"
+Setting predicate 'P' to True
+Stopping handler for 'P'
+Interm value: "F | F"
+Result value: "F | F"
+Stopping handler for 'F'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "PAF"
+Input:  "PF&FA&|"
+Starting handler for 'F'
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "FA | FP"
+Setting predicate 'P' to True
+Stopping handler for 'P'
+Interm value: "FA | F"
+Setting predicate 'A' to True
+Stopping handler for 'A'
+Interm value: "F | F"
+Setting predicate 'F' to True
+Stopping handler for 'F'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "F"
+Input:  "PF&FA&|"
+Starting handler for 'F'
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "FA | FP"
+Setting predicate 'F' to True
+Stopping handler for 'F'
+Interm value: "A | P"
+Result value: "A | P"
+Stopping handler for 'A'
+Stopping handler for 'P'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "FA"
+Input:  "PF&FA&|"
+Starting handler for 'F'
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "FA | FP"
+Setting predicate 'F' to True
+Stopping handler for 'F'
+Interm value: "A | P"
+Setting predicate 'A' to True
+Stopping handler for 'A'
+Stopping handler for 'P'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "A~P~F"
+Input:  "PF&FA&|"
+Starting handler for 'F'
+Starting handler for 'A'
+Starting handler for 'P'
+Parsed value: "FA | FP"
+Setting predicate 'A' to True
+Stopping handler for 'A'
+Interm value: "F | FP"
+Interm value: "F | FP"
+Setting predicate 'P' to False
+Stopping handler for 'P'
+Interm value: "F"
+Interm value: "F"
+Setting predicate 'F' to True
+Stopping handler for 'F'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+COMPLETED 6 TESTS ON "PF&FA&|"

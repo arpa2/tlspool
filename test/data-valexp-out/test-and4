@@ -1,0 +1,208 @@
+VALIDATION EXPRESSION: "AD|~"
+
+SIGNAL VECTOR: "~"
+Input:  "AD|~"
+Starting handler for 'A'
+Starting handler for 'D'
+Parsed value: "~AD"
+Interm value: "~AD"
+Result value: "~AD"
+Stopping handler for 'A'
+Stopping handler for 'D'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "A"
+Input:  "AD|~"
+Starting handler for 'A'
+Starting handler for 'D'
+Parsed value: "~AD"
+Setting predicate 'A' to True
+Stopping handler for 'A'
+Stopping handler for 'D'
+FINAL OUTCOME: FAILED
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "D"
+Input:  "AD|~"
+Starting handler for 'A'
+Starting handler for 'D'
+Parsed value: "~AD"
+Setting predicate 'D' to True
+Stopping handler for 'A'
+Stopping handler for 'D'
+FINAL OUTCOME: FAILED
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "AD"
+Input:  "AD|~"
+Starting handler for 'A'
+Starting handler for 'D'
+Parsed value: "~AD"
+Setting predicate 'A' to True
+Stopping handler for 'A'
+Stopping handler for 'D'
+FINAL OUTCOME: FAILED
+Interm value: "0"
+Setting predicate 'D' to True
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "DA"
+Input:  "AD|~"
+Starting handler for 'A'
+Starting handler for 'D'
+Parsed value: "~AD"
+Setting predicate 'D' to True
+Stopping handler for 'A'
+Stopping handler for 'D'
+FINAL OUTCOME: FAILED
+Interm value: "0"
+Setting predicate 'A' to True
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "A~D"
+Input:  "AD|~"
+Starting handler for 'A'
+Starting handler for 'D'
+Parsed value: "~AD"
+Setting predicate 'A' to True
+Stopping handler for 'A'
+Stopping handler for 'D'
+FINAL OUTCOME: FAILED
+Interm value: "0"
+Interm value: "0"
+Setting predicate 'D' to False
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "D~A"
+Input:  "AD|~"
+Starting handler for 'A'
+Starting handler for 'D'
+Parsed value: "~AD"
+Setting predicate 'D' to True
+Stopping handler for 'A'
+Stopping handler for 'D'
+FINAL OUTCOME: FAILED
+Interm value: "0"
+Interm value: "0"
+Setting predicate 'A' to False
+Interm value: "0"
+Result value: "0"
+Unregistered validation expression
+
+SIGNAL VECTOR: "~DA"
+Input:  "AD|~"
+Starting handler for 'A'
+Starting handler for 'D'
+Parsed value: "~AD"
+Interm value: "~AD"
+Setting predicate 'D' to False
+Stopping handler for 'D'
+Interm value: "~A"
+Setting predicate 'A' to False
+Stopping handler for 'A'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "~AD"
+Input:  "AD|~"
+Starting handler for 'A'
+Starting handler for 'D'
+Parsed value: "~AD"
+Interm value: "~AD"
+Setting predicate 'A' to False
+Stopping handler for 'A'
+Interm value: "~D"
+Setting predicate 'D' to False
+Stopping handler for 'D'
+FINAL OUTCOME: VALIDATED
+Interm value: "1"
+Result value: "1"
+Unregistered validation expression
+
+SIGNAL VECTOR: "a"
+Input:  "AD|~"
+Starting handler for 'A'
+Starting handler for 'D'
+Parsed value: "~AD"
+Setting predicate 'a' to True
+Interm value: "~AD"
+Result value: "~AD"
+Stopping handler for 'A'
+Stopping handler for 'D'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "d"
+Input:  "AD|~"
+Starting handler for 'A'
+Starting handler for 'D'
+Parsed value: "~AD"
+Setting predicate 'd' to True
+Interm value: "~AD"
+Result value: "~AD"
+Stopping handler for 'A'
+Stopping handler for 'D'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "ad"
+Input:  "AD|~"
+Starting handler for 'A'
+Starting handler for 'D'
+Parsed value: "~AD"
+Setting predicate 'a' to True
+Interm value: "~AD"
+Setting predicate 'd' to True
+Interm value: "~AD"
+Result value: "~AD"
+Stopping handler for 'A'
+Stopping handler for 'D'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "a~d"
+Input:  "AD|~"
+Starting handler for 'A'
+Starting handler for 'D'
+Parsed value: "~AD"
+Setting predicate 'a' to True
+Interm value: "~AD"
+Interm value: "~AD"
+Setting predicate 'd' to False
+Interm value: "~AD"
+Result value: "~AD"
+Stopping handler for 'A'
+Stopping handler for 'D'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+SIGNAL VECTOR: "d~a"
+Input:  "AD|~"
+Starting handler for 'A'
+Starting handler for 'D'
+Parsed value: "~AD"
+Setting predicate 'd' to True
+Interm value: "~AD"
+Interm value: "~AD"
+Setting predicate 'a' to False
+Interm value: "~AD"
+Result value: "~AD"
+Stopping handler for 'A'
+Stopping handler for 'D'
+FINAL OUTCOME: FAILED
+Unregistered validation expression
+
+COMPLETED 14 TESTS ON "AD|~"
