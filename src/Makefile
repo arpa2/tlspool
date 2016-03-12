@@ -10,6 +10,11 @@ LDFLAGS =
 
 LIBS = $(GNUTLS_LIBS) $(P11KIT_LIBS) $(BDB_LIBS) $(TASN1_LIBS) -lpthread
 
+ifdef WITH_SYSTEMD
+CFLAGS += -DHAVE_SYSTEMD
+LIBS   += -lsystemd-daemon
+endif
+
 GNUTLS_CFLAGS = $(shell pkg-config --cflags gnutls)
 GNUTLS_LIBS   = $(shell pkg-config --libs   gnutls)
 P11KIT_CFLAGS = $(shell pkg-config --cflags p11-kit-1)

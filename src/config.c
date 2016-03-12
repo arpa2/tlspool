@@ -20,6 +20,10 @@
 
 //NOTYET// #include <ldap.h>
 
+#ifdef HAVE_SYSTEMD
+#  include <systemd/sd-daemon.h>
+#endif
+
 #include <tlspool/internal.h>
 
 //NOTYET// #include <libmemcached/memcached.h>
@@ -371,6 +375,7 @@ void cfg_socketname (char *item, int itemno, char *value) {
 	struct sockaddr_un sun;
 	int sox;
 #ifndef CONFIG_PARSE_ONLY
+#ifndef HAVE_SYSTEMD
 	uid_t me = getuid ();
 	gid_t my = getgid ();
 	if (strlen (value) + 1 > sizeof (sun.sun_path)) {
@@ -428,6 +433,13 @@ void cfg_socketname (char *item, int itemno, char *value) {
 			exit (1);
 		}
 	}
+#else  /* HAVE_SYSTEMD */
+	if (sd_listen_fds (0) != 1) {
+		fprintf (stderr, "TLS Pool should have received one socket\n");
+		exit (1);
+	}
+	sox = SD_LISTEN_FDS_START + 0;
+#endif /* HAVE_SYSTEMD */
 	register_server_socket (sox);
 #endif
 }

@@ -5,6 +5,7 @@
 #define TLSPOOL_INTERNAL_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #include <tlspool/commands.h>
 

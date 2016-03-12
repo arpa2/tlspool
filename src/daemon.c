@@ -61,7 +61,11 @@ int main (int argc, char *argv []) {
 	//TODO// setup syslogging
 
 	//UNDO// sigset_t sigblockmask;
+#ifdef HAVE_SYSTEMD
+	int pid = -2;	/* Skip setsid() but otherwise proceed */
+#else
 	int pid = fork ();
+#endif
 	switch (pid) {
 	case -1:
 		perror ("Failed to fork daemon");
@@ -69,6 +73,7 @@ int main (int argc, char *argv []) {
 	case 0:
 		// Detach from the startup session
 		setsid ();
+	case -2:
 		//TODO// close the common fd's 0/1/2
 		// Setup a SIGHUP handler to gracefully stop service
 		if (sigaction (SIGHUP, &hupaction, NULL) != 0) {
