@@ -169,13 +169,13 @@ db_disclose ../disclose.db
 # is to run something like
 #
 #	pkcs11-tool --show-info --list-token-slots \
-#		--module=/usr/local/lib/softhsm/libsofthsm.so
+#		--module=/usr/local/lib/softhsm/libsofthsm2.so
 #
 # another method that lists directly usable pkcs11: URIs is
 #
 #	p11tool --login --list-all
 # or
-#	p11tool --login --list-all /usr/local/lib/softhsm/libsofthsm.so
+#	p11tool --login --list-all /usr/local/lib/softhsm/libsofthsm2.so
 #
 # Usually, a token URI contains the manufacturer and token label fields;
 # in addition, it may present the model and serial fields, the latter of
@@ -192,9 +192,9 @@ db_disclose ../disclose.db
 # the TLS Pool.
 #
 
-pkcs11_path /usr/local/lib/softhsm/cygsofthsm.dll
+pkcs11_path /usr/local/lib/softhsm/cygsofthsm2.dll
 pkcs11_pin 1234
-pkcs11_token pkcs11:manufacturer=SoftHSM%20project;model=SoftHSM%20v2
+pkcs11_token pkcs11:model=SoftHSM%20v2;manufacturer=SoftHSM%20project;token=TLS_Pool_dev_data
 
 #
 # The TLS Pool does not have many configuration settings for TLS.
@@ -218,7 +218,7 @@ pkcs11_token pkcs11:manufacturer=SoftHSM%20project;model=SoftHSM%20v2
 # can help faster startup of the TLS Pool.
 #
 
-#tls_dhparamfile ../testdata/tlspool-dh-params.pkcs3
+tls_dhparamfile ../testdata/tlspool-dh-params.pkcs3
 
 #
 # The TLS Pool may welcome an Anonymous Precursor for services whose
@@ -264,9 +264,9 @@ tls_maxpreauth 32768
 # a new setting requires a restart of the TLS Pool.
 #
 
-tls_onthefly_signcert file:../testdata/someca.der
+tls_onthefly_signcert file:../testdata/tlspool-test-flying-signer.der
 # tls_onthefly_signkey pkcs11:model=SoftHSM;manufacturer=SoftHSM;serial=1;token=TLS%20Pool%20testdata;id=obj1id;object=obj1label;object-type=private
-tls_onthefly_signkey pkcs11:model=SoftHSM;manufacturer=SoftHSM;serial=1;token=TLS%20Pool%20testdata;object=obj1label;object-type=private
+tls_onthefly_signkey pkcs11:model=SoftHSM%20v2;manufacturer=SoftHSM%20project;token=TLS_Pool_dev_data;id=%30%36;object=obj6label;type=private
 
 #
 # The TLS Pool uses a local LDAP proxy which resolves distinguishedNames
