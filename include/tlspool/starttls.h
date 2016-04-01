@@ -6,6 +6,9 @@
 
 #include <tlspool/commands.h>
 
+#ifdef __CYGWIN__
+#include <windows.h>
+#endif /* __CYGWIN__ */
 
 
 /*
@@ -30,6 +33,16 @@
  */
 int tlspool_pid (char *opt_pidfile);
 
+/* OS independent pool handle
+ */
+#ifdef __CYGWIN__
+typedef HANDLE pool_handle_t;
+#define INVALID_POOL_HANDLE INVALID_HANDLE_VALUE
+#else /* __CYGWIN__ */
+typedef int pool_handle_t;
+#define INVALID_POOL_HANDLE -1
+#endif /* __CYGWIN__ */
+
 /* Setup the TLS pool socket to use, if it is not the default path name
  * /var/run/tlspool.sock.  The return value is the file descriptor for the
  * pool.  This function can be called again, in which case the argument is
@@ -37,7 +50,19 @@ int tlspool_pid (char *opt_pidfile);
  * be called with NULL in the first call, in which case the default location
  * is used.
  */
-int tlspool_socket (char *path);
+pool_handle_t tlspool_open_poolhandle (char *path);
+
+/* Close a pool handle
+ */
+#ifdef __CYGWIN__
+static inline void tlspool_close_poolhandle (pool_handle_t poolh) {
+	CloseHandle (poolh);
+}
+#else /* __CYGWIN__ */
+static inline void tlspool_close_poolhandle (pool_handle_t poolh) {
+	close (poolh);
+}
+#endif /* __CYGWIN__ */
 
 
 /* The library function for ping, which is called to establish the API

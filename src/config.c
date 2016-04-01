@@ -7,6 +7,14 @@
 #include <string.h>
 #include <limits.h>
 
+#ifdef __CYGWIN__
+#include <windows.h>
+#define WEOF ((wint_t)(0xFFFF))
+
+#define PIPE_TIMEOUT 5000
+#define BUFSIZE 4096
+#endif
+
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/file.h>
@@ -31,6 +39,10 @@
 //NOTYET// static LDAP *ldap_handle;
 
 //NOTYET// static struct memcached_st *cache;
+
+#ifdef __CYGWIN__
+char szPipename[1024];
+#endif
 
 static int kill_old_pid = 0;
 
@@ -372,6 +384,13 @@ retry:
 }
 
 void cfg_socketname (char *item, int itemno, char *value) {
+#ifdef __CYGWIN__
+	if (strlen (value) + 1 > sizeof (szPipename)) {
+		fprintf (stderr, "Socket path too long: %s\n", value);
+		exit (1);
+	}
+	strcpy (szPipename, value);
+#else
 	struct sockaddr_un sun;
 	int sox;
 #ifndef CONFIG_PARSE_ONLY
@@ -441,7 +460,8 @@ void cfg_socketname (char *item, int itemno, char *value) {
 	sox = SD_LISTEN_FDS_START + 0;
 #endif /* HAVE_SYSTEMD */
 	register_server_socket (sox);
-#endif
+#endif /* CONFIG_PARSE_ONLY */
+#endif /* __CYGWIN__ */
 }
 
 void cfg_user (char *item, int itemno, char *value) {

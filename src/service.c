@@ -19,12 +19,44 @@
 #include <tlspool/commands.h>
 #include <tlspool/internal.h>
 
+#ifdef __CYGWIN__
+#include <windows.h>
+#define WEOF ((wint_t)(0xFFFF))
+
+#define PIPE_TIMEOUT 5000
+#define BUFSIZE 4096
+
+#define _tprintf printf
+#define _tmain main
+#endif
+
+#ifdef __CYGWIN__
+typedef struct
+{
+	OVERLAPPED oOverlap;
+	HANDLE hPipeInst;
+	struct tlspool_command chRequest;
+	DWORD cbRead;
+//	struct command chReply;
+	DWORD cbToWrite;
+} PIPEINST, *LPPIPEINST;
+
+VOID DisconnectAndClose(LPPIPEINST);
+BOOL ConnectToNewClient(HANDLE, LPOVERLAPPED);
+VOID GetAnswerToRequest(LPPIPEINST);
+
+VOID WINAPI CompletedWriteRoutine(DWORD, DWORD, LPOVERLAPPED);
+VOID WINAPI CompletedReadRoutine(DWORD, DWORD, LPOVERLAPPED);
+
+extern char szPipename[1024];
+HANDLE hPipe;
+#endif
 
 /* The data stored in this module consists of lists of sockets to listen to
  * for connection setup and command exchange, but not data communication.
  * Commands are received from the various clients and processed, always
  * ensuring exactly one reply.
- * 
+ *
  * Some command requests are actually callbacks in reaction to something
  * the TLS pool sent to an application.  Those callbacks are recognised
  * by their pio_cbid parameter, and after security scrutiny they are passed
@@ -89,7 +121,7 @@ void cleanup_service (void) {
  */
 static struct command *cmdpool = NULL;
 static int cmdpool_len = 1000;
-static struct command *allocate_command_for_clientfd (int fd) {
+static struct command *allocate_command_for_clientfd (pool_handle_t fd) {
 	static int cmdpool_pos = 0;
 	int pos;
 	struct command *cmd;
@@ -128,7 +160,7 @@ static struct command *allocate_command_for_clientfd (int fd) {
  *
  * TODO: This is O(cmdpool_len) so linked lists could help to avoid trouble.
  */
-static void free_commands_by_clientfd (int clientfd) {
+static void free_commands_by_clientfd (pool_handle_t clientfd) {
 	int i;
 	if (cmdpool == NULL) {
 		return;
@@ -146,7 +178,7 @@ static void free_commands_by_clientfd (int clientfd) {
 
 
 /* Register a socket.  It is assumed that first all server sockets register */
-void register_socket (int sox, uint32_t soxinfo_flags) {
+void register_socket (pool_handle_t sox, uint32_t soxinfo_flags) {
 	int flags = fcntl (sox, F_GETFD);
 	flags |= O_NONBLOCK;
 	fcntl (sox, F_SETFD, flags);
@@ -166,22 +198,22 @@ void register_socket (int sox, uint32_t soxinfo_flags) {
 }
 
 
-void register_server_socket (int srvsox) {
+void register_server_socket (pool_handle_t srvsox) {
 	register_socket (srvsox, SOF_SERVER);
 }
 
 
-void register_client_socket (int clisox) {
+void register_client_socket (pool_handle_t clisox) {
 	register_socket (clisox, SOF_CLIENT);
 }
 
 
-static void free_callbacks_by_clientfd (int clientfd);
+static void free_callbacks_by_clientfd (pool_handle_t clientfd);
 
 /* TODO: This may copy information back and thereby avoid processing in the
  * current loop passthrough.  No problem, poll() will show it once more. */
 static void unregister_client_socket_byindex (int soxidx) {
-	int sox = soxpoll [soxidx].fd;
+	pool_handle_t sox = soxpoll [soxidx].fd;
 	free_callbacks_by_clientfd (sox);
 	free_commands_by_clientfd (sox);
 	pinentry_forget_clientfd (sox);
@@ -196,7 +228,6 @@ static void unregister_client_socket_byindex (int soxidx) {
 
 
 int send_command (struct command *cmd, int passfd) {
-	int newfd;
 	char anc [CMSG_SPACE(sizeof (int))];
 	struct iovec iov;
 	struct msghdr mh;
@@ -228,7 +259,7 @@ int send_command (struct command *cmd, int passfd) {
 		* (int *) CMSG_DATA (cmsg) = passfd;
 	}
 #endif
-	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Sending command 0x%08x and fd %d to socket %d", cmd->cmd.pio_cmd, passfd, cmd->clientfd);
+	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Sending command 0x%08x and fd %d to socket %d", cmd->cmd.pio_cmd, passfd, (int) cmd->clientfd);
 	if (sendmsg (cmd->clientfd, &mh, MSG_NOSIGNAL) == -1) {
 		//TODO// Differentiate behaviour based on errno?
 		perror ("Failed to send command");
@@ -293,7 +324,7 @@ void send_error (struct command *cmd, int tlserrno, char *msg) {
 
 #ifndef __CYGWIN__
 /* Receive a command.  Return nonzero on success, zero on failure. */
-int receive_command (int sox, struct command *cmd) {
+int receive_command (pool_handle_t sox, struct command *cmd) {
 	int newfds [2];
 	int newfdcnt = 0;
 	char anc [CMSG_SPACE (sizeof (int))];
@@ -340,11 +371,11 @@ int receive_command (int sox, struct command *cmd) {
 extern cygwin_socket_from_protocol_info (LPWSAPROTOCOL_INFOW lpProtocolInfo);
 
 /* Receive a command.  Return nonzero on success, zero on failure. */
-int receive_command (int sox, struct command *cmd) {
+int receive_command (pool_handle_t sox, struct command *cmd) {
 	if (recv(sox, &cmd->cmd, sizeof(cmd->cmd), 0) == -1) {
 		//TODO// Differentiate behaviour based on errno?
 		perror ("Failed to receive command");
-		return 0;	
+		return 0;
 	}
 	if (cmd->cmd.pio_ancil_type == ANCIL_TYPE_SOCKET) {
 			if (cmd->passfd == -1) {
@@ -462,7 +493,7 @@ struct command *send_callback_and_await_response (struct command *cmdresp, time_
  */
 static void post_callback (struct command *cmd) {
 	uint16_t cbid = cmd->cmd.pio_cbid - 1;
-	cblist [cbid].fd = -1;
+	cblist [cbid].fd = INVALID_POOL_HANDLE;
 	cblist [cbid].followup = cmd;
 	assert (pthread_mutex_lock (&cbfree_mutex) == 0);
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Signaling on the semaphore of callback 0x%08x", &cblist [cbid]);
@@ -485,7 +516,7 @@ static void post_callback (struct command *cmd) {
  * in the TLS Pool when a clientfd is closed by the client (perhaps due to
  * a crash in response to the callback).
  */
-static void free_callbacks_by_clientfd (int clientfd) {
+static void free_callbacks_by_clientfd (pool_handle_t clientfd) {
 	int i;
 	for (i=0; i<1024; i++) {
 //TODO// == clientfd was >= 0 (and managed to get closes sent back to all)
@@ -558,19 +589,19 @@ printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
  *  - to trigger a thread that is hoping writing after EAGAIN
  *  - to read a message and further process it
  */
-void process_activity (int sox, int soxidx, struct soxinfo *soxi, short int revents) {
+void process_activity (pool_handle_t sox, int soxidx, struct soxinfo *soxi, short int revents) {
 	if (revents & POLLOUT) {
 		//TODO// signal waiting thread that it may continue
 		tlog (TLOG_UNIXSOCK, LOG_CRIT, "Eekk!!  Could send a packet?!?  Unregistering client");
 		unregister_client_socket_byindex (soxidx);
-		close (sox);
+		tlspool_close_poolhandle (sox);
 	}
 	if (revents & POLLIN) {
 		if (soxi->flags & SOF_SERVER) {
 			struct sockaddr sa;
 			socklen_t salen = sizeof (sa);
-			int newsox = accept (sox, &sa, &salen);
-			if (newsox != -1) {
+			pool_handle_t newsox = accept (sox, &sa, &salen);
+			if (newsox != INVALID_POOL_HANDLE) {
 				tlog (TLOG_UNIXSOCK, LOG_NOTICE, "Received incoming connection.  Registering it");
 				register_client_socket (newsox);
 			}
@@ -593,8 +624,281 @@ void hangup_service (void) {
 	tlog (TLOG_UNIXSOCK, LOG_NOTICE, "Requested service to hangup soon");
 }
 
+#ifdef __CYGWIN__
+// CompletedWriteRoutine(DWORD, DWORD, LPOVERLAPPED)
+// This routine is called as a completion routine after writing to
+// the pipe, or when a new client has connected to a pipe instance.
+// It starts another read operation.
+
+VOID WINAPI CompletedWriteRoutine(DWORD dwErr, DWORD cbWritten,
+	LPOVERLAPPED lpOverLap)
+{
+	LPPIPEINST lpPipeInst;
+	BOOL fRead = FALSE;
+
+	// lpOverlap points to storage for this instance.
+
+	lpPipeInst = (LPPIPEINST)lpOverLap;
+
+	// The write operation has finished, so read the next request (if
+	// there is no error).
+
+	if ((dwErr == 0) && (cbWritten == lpPipeInst->cbToWrite))
+		fRead = ReadFileEx(
+			lpPipeInst->hPipeInst,
+			&lpPipeInst->chRequest,
+			sizeof(struct tlspool_command),
+			(LPOVERLAPPED)lpPipeInst,
+			(LPOVERLAPPED_COMPLETION_ROUTINE)CompletedReadRoutine);
+
+	// Disconnect if an error occurred.
+
+	if (!fRead)
+		DisconnectAndClose(lpPipeInst);
+}
+
+// CompletedReadRoutine(DWORD, DWORD, LPOVERLAPPED)
+// This routine is called as an I/O completion routine after reading
+// a request from the client. It gets data and writes it to the pipe.
+
+VOID WINAPI CompletedReadRoutine(DWORD dwErr, DWORD cbBytesRead,
+	LPOVERLAPPED lpOverLap)
+{
+	LPPIPEINST lpPipeInst;
+	BOOL fWrite = FALSE;
+
+	// lpOverlap points to storage for this instance.
+
+	lpPipeInst = (LPPIPEINST)lpOverLap;
+
+	// The read operation has finished, so write a response (if no
+	// error occurred).
+
+	if ((dwErr == 0) && (cbBytesRead != 0))
+	{
+		GetAnswerToRequest(lpPipeInst);
+
+		fWrite = WriteFileEx(
+			lpPipeInst->hPipeInst,
+			&lpPipeInst->chRequest,
+			lpPipeInst->cbToWrite,
+			(LPOVERLAPPED)lpPipeInst,
+			(LPOVERLAPPED_COMPLETION_ROUTINE)CompletedWriteRoutine);
+	}
+
+	// Disconnect if an error occurred.
+
+	if (!fWrite)
+		DisconnectAndClose(lpPipeInst);
+}
+
+// DisconnectAndClose(LPPIPEINST)
+// This routine is called when an error occurs or the client closes
+// its handle to the pipe.
+
+VOID DisconnectAndClose(LPPIPEINST lpPipeInst)
+{
+	// Disconnect the pipe instance.
+
+	if (!DisconnectNamedPipe(lpPipeInst->hPipeInst))
+	{
+		printf("DisconnectNamedPipe failed with %d.\n", GetLastError());
+	}
+
+	// Close the handle to the pipe instance.
+
+	CloseHandle(lpPipeInst->hPipeInst);
+
+	// Release the storage for the pipe instance.
+
+	if (lpPipeInst != NULL)
+		GlobalFree(lpPipeInst);
+}
+
+// CreateAndConnectInstance(LPOVERLAPPED)
+// This function creates a pipe instance and connects to the client.
+// It returns TRUE if the connect operation is pending, and FALSE if
+// the connection has been completed.
+
+BOOL CreateAndConnectInstance(LPOVERLAPPED lpoOverlap)
+{
+	hPipe = CreateNamedPipe(
+		szPipename,               // pipe name
+		PIPE_ACCESS_DUPLEX |      // read/write access
+		FILE_FLAG_OVERLAPPED,     // overlapped mode
+		PIPE_TYPE_MESSAGE |       // message-type pipe
+		PIPE_READMODE_MESSAGE |   // message read mode
+		PIPE_WAIT,                // blocking mode
+		PIPE_UNLIMITED_INSTANCES, // unlimited instances
+		BUFSIZE*sizeof(TCHAR),    // output buffer size
+		BUFSIZE*sizeof(TCHAR),    // input buffer size
+		PIPE_TIMEOUT,             // client time-out
+		NULL);                    // default security attributes
+	if (hPipe == INVALID_HANDLE_VALUE)
+	{
+		printf("CreateNamedPipe failed with %d.\n", GetLastError());
+		return 0;
+	}
+
+	// Call a subroutine to connect to the new client.
+
+	return ConnectToNewClient(hPipe, lpoOverlap);
+}
+
+BOOL ConnectToNewClient(HANDLE hPipe, LPOVERLAPPED lpo)
+{
+	BOOL fConnected, fPendingIO = FALSE;
+
+	// Start an overlapped connection for this pipe instance.
+	fConnected = ConnectNamedPipe(hPipe, lpo);
+
+	// Overlapped ConnectNamedPipe should return zero.
+	if (fConnected)
+	{
+		printf("ConnectNamedPipe failed with %d.\n", GetLastError());
+		return 0;
+	}
+
+	switch (GetLastError())
+	{
+		// The overlapped connection in progress.
+	case ERROR_IO_PENDING:
+		fPendingIO = TRUE;
+		break;
+
+		// Client is already connected, so signal an event.
+
+	case ERROR_PIPE_CONNECTED:
+		if (SetEvent(lpo->hEvent))
+			break;
+
+		// If an error occurs during the connect operation...
+	default:
+		printf("ConnectNamedPipe failed with %d.\n", GetLastError());
+		return 0;
+	}
+	return fPendingIO;
+}
+
+VOID GetAnswerToRequest(LPPIPEINST pipe)
+{
+	//_tprintf(TEXT("[%ld] %s\n"), (long) pipe->hPipeInst, pipe->chRequest);
+	////StringCchCopy(pipe->chReply, BUFSIZE, TEXT("Default answer from server"));
+	//strcpy(pipe->chReply, TEXT("Default answer from server"));
+	//pipe->cbToWrite = (lstrlen(pipe->chReply) + 1)*sizeof(TCHAR);
+	
+	
+	union pio_data *d = &pipe->chRequest.pio_data;
+	strcpy (d->pioc_ping.YYYYMMDD_producer, TLSPOOL_IDENTITY_V2);
+	d->pioc_ping.facilities &= facilities;
+	pipe->cbToWrite = sizeof (struct tlspool_command);
+	printf("hallo %d\n", d->pioc_ping.facilities);
+}
+#endif /* __CYGWIN__ */
+
 /* The main service loop.  It uses poll() to find things to act upon. */
 void run_service (void) {
+#ifdef __CYGWIN__
+	HANDLE hConnectEvent;
+	OVERLAPPED oConnect;
+	LPPIPEINST lpPipeInst;
+	DWORD dwWait, cbRet;
+	BOOL fSuccess, fPendingIO;
+
+	// Create one event object for the connect operation.
+
+	hConnectEvent = CreateEvent(
+		NULL,    // default security attribute
+		TRUE,    // manual reset event
+		TRUE,    // initial state = signaled
+		NULL);   // unnamed event object
+
+	if (hConnectEvent == NULL)
+	{
+		printf("CreateEvent failed with %d.\n", GetLastError());
+		return;
+	}
+
+	oConnect.hEvent = hConnectEvent;
+
+	// Call a subroutine to create one instance, and wait for
+	// the client to connect.
+
+	fPendingIO = CreateAndConnectInstance(&oConnect);
+
+	while (1)
+	{
+		// Wait for a client to connect, or for a read or write
+		// operation to be completed, which causes a completion
+		// routine to be queued for execution.
+
+		dwWait = WaitForSingleObjectEx(
+			hConnectEvent,  // event object to wait for
+			INFINITE,       // waits indefinitely
+			TRUE);          // alertable wait enabled
+
+		switch (dwWait)
+		{
+			// The wait conditions are satisfied by a completed connect
+			// operation.
+		case 0:
+			// If an operation is pending, get the result of the
+			// connect operation.
+
+			if (fPendingIO)
+			{
+				fSuccess = GetOverlappedResult(
+					hPipe,     // pipe handle
+					&oConnect, // OVERLAPPED structure
+					&cbRet,    // bytes transferred
+					FALSE);    // does not wait
+				if (!fSuccess)
+				{
+					printf("ConnectNamedPipe (%d)\n", GetLastError());
+					return;
+				}
+			}
+
+			// Allocate storage for this instance.
+
+			lpPipeInst = (LPPIPEINST)GlobalAlloc(
+				GPTR, sizeof(PIPEINST));
+			if (lpPipeInst == NULL)
+			{
+				printf("GlobalAlloc failed (%d)\n", GetLastError());
+				return;
+			}
+
+			lpPipeInst->hPipeInst = hPipe;
+
+			// Start the read operation for this client.
+			// Note that this same routine is later used as a
+			// completion routine after a write operation.
+
+			lpPipeInst->cbToWrite = 0;
+			CompletedWriteRoutine(0, 0, (LPOVERLAPPED)lpPipeInst);
+
+			// Create new pipe instance for the next client.
+
+			fPendingIO = CreateAndConnectInstance(
+				&oConnect);
+			break;
+
+			// The wait is satisfied by a completed read or write
+			// operation. This allows the system to execute the
+			// completion routine.
+
+		case WAIT_IO_COMPLETION:
+			break;
+
+			// An error occurred in the wait function.
+
+		default:
+			printf("WaitForSingleObjectEx (%d)\n", GetLastError());
+			return;
+		}
+	}
+#else /* __CYGWIN__ */
 	int i;
 	int polled;
 	cbfree = NULL;
@@ -605,7 +909,7 @@ void run_service (void) {
 	}
 	for (i=0; i<1024; i++) {
 		cblist [i].next = cbfree;
-		cblist [i].fd = -1; // Mark as unused
+		cblist [i].fd = INVALID_POOL_HANDLE; // Mark as unused
 		pthread_cond_init (&cblist [i].semaphore, NULL);
 		cblist [i].followup = NULL;
 		cbfree = &cblist [i];
@@ -615,7 +919,7 @@ void run_service (void) {
 		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Polled %d sockets, returned %d", num_sox, polled);
 		for (i=0; i<num_sox; i++) {
 			if (soxpoll [i].revents & (POLLHUP|POLLERR|POLLNVAL)) {
-				int sox = soxpoll [i].fd;
+				pool_handle_t sox = soxpoll [i].fd;
 				tlog (TLOG_UNIXSOCK, LOG_NOTICE, "Unregistering socket %d", sox);
 				unregister_client_socket_byindex (i);
 				close (sox);
@@ -633,5 +937,5 @@ void run_service (void) {
 		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Polled %d sockets, returned %d", num_sox, polled);
 		perror ("Failed to poll for activity");
 	}
+#endif /* __CYGWIN__ */
 }
-

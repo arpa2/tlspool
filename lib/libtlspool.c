@@ -24,6 +24,14 @@
 #include <tlspool/commands.h>
 
 
+#ifdef __CYGWIN__
+#define WEOF ((wint_t)(0xFFFF))
+
+#define PIPE_TIMEOUT 5000
+#define BUFSIZE 4096
+
+#define _tprintf printf
+#endif /* __CYGWIN__ */
 
 /* The master thread will run the receiving side of the socket that connects
  * to the TLS Pool.  The have_master_lock is used with _trylock() and will
@@ -34,11 +42,12 @@ static pthread_mutex_t have_master_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void *master_thread (void *path);
 
-static int poolfd = -1;		/* Blocked retrieval with tlspool_socket() */
+static pool_handle_t poolfd = INVALID_POOL_HANDLE;		/* Blocked retrieval with tlspool_socket() */
 
 static pthread_cond_t updated_poolfd = PTHREAD_COND_INITIALIZER;
 
 static pthread_mutex_t prng_lock = PTHREAD_MUTEX_INITIALIZER;
+
 
 /* Retrieve the process identity of the TLS Pool from the named file, or fall
  * back on the default file if the name is set to NULL.  Returns -1 on failure.
@@ -78,8 +87,8 @@ int tlspool_pid (char *opt_pidfile) {
  * on the poolfd.  This is the process that actually contacts the TLS Pool
  * and sets up the poolfd socket.
  */
-int tlspool_socket (char *path) {
-	int poolfdsample = poolfd;
+pool_handle_t tlspool_open_poolhandle (char *path) {
+	pool_handle_t poolfdsample = poolfd;
 	if (poolfdsample < 0) {
 		pthread_mutex_t local_cond_wait = PTHREAD_MUTEX_INITIALIZER;
 		//
@@ -99,9 +108,9 @@ int tlspool_socket (char *path) {
 			if (pthread_create (&thr, NULL, master_thread, (void *) path) != 0) {
 				syslog (LOG_NOTICE, "Failed to create TLS Pool client master thread");
 				pthread_mutex_unlock (&have_master_lock);
-				close (poolfd);
-				poolfd = -1;
-				return -1;
+				tlspool_close_poolhandle (poolfd);
+				poolfd = INVALID_POOL_HANDLE;
+				return INVALID_POOL_HANDLE;
 			}
 			pthread_detach (thr);
 			//
@@ -157,7 +166,7 @@ int tlspool_simultaneous_starttls (void) {
 struct registry_entry {
 	pthread_mutex_t *sig;		/* Wait for master thread's recvmsg() */
 	struct tlspool_command *buf;	/* Buffer to hold received command */
-	int pfd;			/* Client thread's assumed poolfd */
+	pool_handle_t pfd;			/* Client thread's assumed poolfd */
 };
 
 static struct registry_entry **registry;
@@ -227,7 +236,7 @@ static int registry_update (int *reqid, struct registry_entry *entry) {
  * Any outstanding registry entries will be sent an ERROR value at this
  * time.
  */
-static void registry_flush (int poolfd) {
+static void registry_flush (pool_handle_t poolfd) {
 	int regid = tlspool_simultaneous_starttls ();
 	assert (pthread_mutex_lock (&registry_lock) == 0);
 	while (regid-- > 0) {
@@ -285,26 +294,26 @@ static void *master_thread (void *path) {
 		//
 		// If any old socket clients persist, tell them that the
 		// TLS Pool has been disconnected.
-		if (poolfd >= 0) {
-			int poolfdcopy = poolfd;
+		if (poolfd != INVALID_POOL_HANDLE) {
+			pool_handle_t poolfdcopy = poolfd;
 // printf ("DEBUG: Removing old poolfd %d\n", poolfd);
-			poolfd = -1;
-			registry_flush (-1);
-			close (poolfdcopy);
+			poolfd = INVALID_POOL_HANDLE;
+			registry_flush (INVALID_POOL_HANDLE);
+			tlspool_close_poolhandle (poolfdcopy);
 		}
 		//
 		// First, connect to the TLS Pool; upon failure, retry
 		// with 1s, 2s, 4s, 8s, 16s, 32s, 32s, 32s, ... intervals.
 		usec = 1000000;
-		while (poolfd < 0) {
-			int newpoolfd = socket (AF_UNIX, SOCK_STREAM, 0);
-			if (newpoolfd != -1) {
+		while (poolfd == INVALID_POOL_HANDLE) {
+			pool_handle_t newpoolfd = socket (AF_UNIX, SOCK_STREAM, 0);
+			if (newpoolfd != INVALID_POOL_HANDLE) {
 				if (connect (newpoolfd, (struct sockaddr *) &sun, SUN_LEN (&sun)) == 0) {
 // printf ("DEBUG: Succeeded connect() to TLS Pool\n");
 					poolfd = newpoolfd;
 				} else {
-					close (newpoolfd);
-					newpoolfd = -1;
+					tlspool_close_poolhandle (newpoolfd);
+					newpoolfd = INVALID_POOL_HANDLE;
 				}
 			}
 // printf ("DEBUG: Trying new poolfd %d for path %s\n", poolfd, sun.sun_path);
@@ -321,7 +330,7 @@ static void *master_thread (void *path) {
 // printf ("DEBUG: Signalled slave threads with poolfd %d\n", poolfd);
 			//
 			// Wait before repeating, with exponential back-off
-			if (poolfd < 0) {
+			if (poolfd == INVALID_POOL_HANDLE) {
 				usleep (usec);
 				usec <<= 1;
 				if (usec > 32000000) {
@@ -393,12 +402,12 @@ printf ("DEBUG: Sent      PIOC_ERROR_V2 as callback to TLS Pool\n");
  * doing that yet.  Then, wait until a message has been received.
  */
 static void registry_recvmsg (struct registry_entry *entry) {
-	static int lastpoolfd = -1;
+	static pool_handle_t lastpoolfd = INVALID_POOL_HANDLE;
 	//
 	// Detect poolfd socket change for potential dangling recipients
 	if (entry->pfd != lastpoolfd) {
-		lastpoolfd = tlspool_socket (NULL);
-		if ((entry->pfd != lastpoolfd) && (lastpoolfd != -1)) {
+		lastpoolfd = tlspool_open_poolhandle (NULL);
+		if ((entry->pfd != lastpoolfd) && (lastpoolfd != INVALID_POOL_HANDLE)) {
 			// Signal PIOC_ERROR to outdated recipients.
 			// (That will include the current recipient.)
 			registry_flush (lastpoolfd);
@@ -406,7 +415,7 @@ static void registry_recvmsg (struct registry_entry *entry) {
 	}
 	//
 	// Now wait for the registered command structure to be filled
-	// by the master thread.  Note that the call to tlspool_socket()
+	// by the master thread.  Note that the call to tlspool_open_poolhandle()
 	// above is made when this function is first called, and that
 	// routine ensures running of the master thread.
 	assert (pthread_mutex_lock (entry->sig) == 0);
@@ -431,17 +440,139 @@ static void registry_recvmsg (struct registry_entry *entry) {
  * failure, errno will be set.
  */
 int tlspool_ping (pingpool_t *pingdata) {
+#ifdef __CYGWIN__
+	HANDLE hPipe;
+	//struct tlspool_command chBuf;
+	BOOL   fSuccess = FALSE;
+	DWORD  cbRead, cbToWrite, cbWritten, dwMode;
+	LPCTSTR lpszPipename = TEXT("\\\\.\\pipe\\tlspool");
+	struct tlspool_command cmd;
+
+	// Try to open a named pipe; wait for it, if necessary. 
+
+	while (1)
+	{
+		hPipe = CreateFile(
+			lpszPipename,   // pipe name 
+			GENERIC_READ |  // read and write access 
+			GENERIC_WRITE,
+			0,              // no sharing 
+			NULL,           // default security attributes
+			OPEN_EXISTING,  // opens existing pipe 
+			0,              // default attributes 
+			NULL);          // no template file 
+
+		// Break if the pipe handle is valid. 
+		if (hPipe != INVALID_POOL_HANDLE)
+			break;
+
+		// Exit if an error other than ERROR_PIPE_BUSY occurs. 
+		if (GetLastError() != ERROR_PIPE_BUSY)
+		{
+			_tprintf(TEXT("Could not open pipe. GLE=%d\n"), GetLastError());
+			return -1;
+		}
+
+		// All pipe instances are busy, so wait for 20 seconds. 
+		if (!WaitNamedPipe(lpszPipename, 20000))
+		{
+			printf("Could not open pipe: 20 second wait timed out.");
+			return -1;
+		}
+	}	
+	// The pipe connected; change to message-read mode. 
+	dwMode = PIPE_READMODE_MESSAGE;
+	fSuccess = SetNamedPipeHandleState(
+		hPipe,    // pipe handle 
+		&dwMode,  // new pipe mode 
+		NULL,     // don't set maximum bytes 
+		NULL);    // don't set maximum time 
+	if (!fSuccess)
+	{
+		_tprintf(TEXT("SetNamedPipeHandleState failed. GLE=%d\n"), GetLastError());
+		return -1;
+	}
+	ULONG ServerProcessId;
+	if (GetNamedPipeServerProcessId(hPipe, &ServerProcessId)) {
+		printf("GetNamedPipeServerProcessId: ServerProcessId = %ld\n", ServerProcessId);
+	} else {
+		_tprintf(TEXT("GetNamedPipeServerProcessId failed. GLE=%d\n"), GetLastError());
+	}
+	bzero (&cmd, sizeof (cmd));	/* Do not leak old stack info */
+//	cmd.pio_reqid = entry_reqid;
+	cmd.pio_cbid = 0;
+	cmd.pio_cmd = PIOC_PING_V2;
+	memcpy (&cmd.pio_data.pioc_ping, pingdata, sizeof (struct pioc_ping));
+	
+	// Send a message to the pipe server. 
+
+	cbToWrite = sizeof (cmd);
+	_tprintf(TEXT("Sending %d byte cmd\n"), cbToWrite);
+
+	fSuccess = WriteFile(
+		hPipe,                  // pipe handle 
+		&cmd,                   // cmd message 
+		cbToWrite,              // cmd message length 
+		&cbWritten,             // bytes written 
+		NULL);                  // not overlapped 
+
+	if (!fSuccess)
+	{
+		_tprintf(TEXT("WriteFile to pipe failed. GLE=%d\n"), GetLastError());
+		return -1;
+	}
+
+	printf("\nMessage sent to server, receiving reply as follows:\n");
+	do
+	{
+		// Read from the pipe. 
+
+		fSuccess = ReadFile(
+			hPipe,    // pipe handle 
+			&cmd,   // buffer to receive reply 
+			sizeof(struct tlspool_command),  // size of buffer 
+			&cbRead,  // number of bytes read 
+			NULL);    // not overlapped 
+
+		if (!fSuccess && GetLastError() != ERROR_MORE_DATA)
+			break;
+
+	} while (!fSuccess);  // repeat loop if ERROR_MORE_DATA 
+
+	if (!fSuccess)
+	{
+		_tprintf(TEXT("ReadFile from pipe failed. GLE=%d\n"), GetLastError());
+		return -1;
+	}
+	
+	switch (cmd.pio_cmd) {
+	case PIOC_ERROR_V2:
+		/* Bad luck, we failed */
+		syslog (LOG_INFO, "TLS Pool error to tlspool_ping(): %s", cmd.pio_data.pioc_error.message);
+		errno = cmd.pio_data.pioc_error.tlserrno;
+		return -1;
+	case PIOC_PING_V2:
+		/* Wheee!!! we're done */
+		memcpy (pingdata, &cmd.pio_data.pioc_ping, sizeof (pingpool_t));
+		return 0;
+	default:
+		/* V2 protocol error */
+		errno = EPROTO;
+		return -1;
+	}
+
+#else
 	struct tlspool_command cmd;
 	pthread_mutex_t recvwait = PTHREAD_MUTEX_INITIALIZER;
 	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
 	int entry_reqid = -1;
-	int poolfd = -1;
+	int poolfd = INVALID_POOL_HANDLE;
 	struct iovec iov;
 	struct msghdr mh = { 0 };
 
 	/* Prepare command structure */
-	poolfd = tlspool_socket (NULL);
-	if (poolfd == -1) {
+	poolfd = tlspool_open_poolhandle (NULL);
+	if (poolfd == INVALID_POOL_HANDLE) {
 		errno = ENODEV;
 		return -1;
 	}
@@ -489,6 +620,7 @@ int tlspool_ping (pingpool_t *pingdata) {
 		errno = EPROTO;
 		return -1;
 	}
+#endif
 }
 
 /* The library function for starttls, which is normally called through one
@@ -540,7 +672,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 	pthread_mutex_t recvwait = PTHREAD_MUTEX_INITIALIZER;
 	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
 	int entry_reqid = -1;
-	int poolfd = -1;
+	pool_handle_t poolfd = INVALID_POOL_HANDLE;
 	int plainfd = -1;
 	int sentfd = -1;
 	char anc [CMSG_SPACE(sizeof (int))];
@@ -551,8 +683,8 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 	int renegotiate = 0 != (tlsdata->flags & PIOF_STARTTLS_RENEGOTIATE);
 
 	/* Prepare command structure */
-	poolfd = tlspool_socket (NULL);
-	if (poolfd == -1) {
+	poolfd = tlspool_open_poolhandle (NULL);
+	if (poolfd == INVALID_POOL_HANDLE) {
 		close (cryptfd);
 		errno = ENODEV;
 		return -1;
@@ -780,8 +912,8 @@ int _tlspool_control_command (int cmdcode, uint8_t *ctlkey) {
 	int retval;
 
 	/* Prepare command structure */
-	poolfd = tlspool_socket (NULL);
-	if (poolfd == -1) {
+	poolfd = tlspool_open_poolhandle (NULL);
+	if (poolfd == INVALID_POOL_HANDLE) {
 		errno = ENODEV;
 		return -1;
 	}
@@ -877,7 +1009,7 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 	pthread_mutex_t recvwait = PTHREAD_MUTEX_INITIALIZER;
 	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
 	int entry_reqid = -1;
-	int poolfd = -1;
+	pool_handle_t poolfd = INVALID_POOL_HANDLE;
 	struct iovec iov;
 	struct msghdr mh = { 0 };
 
@@ -895,8 +1027,8 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 	
 
 	/* Prepare command structure */
-	poolfd = tlspool_socket (NULL);
-	if (poolfd == -1) {
+	poolfd = tlspool_open_poolhandle (NULL);
+	if (poolfd == INVALID_POOL_HANDLE) {
 		errno = ENODEV;
 		return -1;
 	}

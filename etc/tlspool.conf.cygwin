@@ -32,7 +32,7 @@ daemon_pidfile /var/run/tlspool.pid
 #socket_user tlspool
 #socket_group tlspool
 socket_mode 0666
-socket_name /var/run/tlspool.sock
+socket_name \\.\pipe\tlspool
 
 #
 # The TLS Pool usually drops privileges to a lower-ordered user, as

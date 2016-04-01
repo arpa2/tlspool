@@ -8,6 +8,7 @@
 #include <stdbool.h>
 
 #include <tlspool/commands.h>
+#include <tlspool/starttls.h>
 
 #include <db.h>
 
@@ -27,7 +28,7 @@ typedef struct pool_datum {
  * information for local administrative purposes.
  */
 struct command {
-	int clientfd;
+	pool_handle_t clientfd;
 	int passfd;
 	int claimed;
 	pthread_t handler;
@@ -68,7 +69,7 @@ struct soxinfo {
  */
 struct callback {
 	struct callback *next;		/* Lists, e.g. free list or cbq list */
-	int fd;
+	pool_handle_t fd;           /* client socket receiving callback */
 	pthread_cond_t semaphore;	/* Dependent is waiting for signal */
 	struct command *followup;	/* Link to the callback returned cmd */
 	int timedout;			/* Callback will be ignored, timeout */
