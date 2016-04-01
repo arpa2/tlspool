@@ -89,7 +89,7 @@ int tlspool_pid (char *opt_pidfile) {
  */
 pool_handle_t tlspool_open_poolhandle (char *path) {
 	pool_handle_t poolfdsample = poolfd;
-	if (poolfdsample < 0) {
+	if (poolfdsample == INVALID_POOL_HANDLE) {
 		pthread_mutex_t local_cond_wait = PTHREAD_MUTEX_INITIALIZER;
 		//
 		// Now that we have established a (first) poolfd, start up
@@ -130,7 +130,7 @@ pool_handle_t tlspool_open_poolhandle (char *path) {
 		// shared mutex -- which is why we use a local mutex per
 		// thread: we don't need to wait for unique access.
 		assert (pthread_mutex_lock (&local_cond_wait) == 0);
-		while (poolfdsample = poolfd, poolfdsample < 0) {
+		while (poolfdsample = poolfd, poolfdsample == INVALID_POOL_HANDLE) {
 			pthread_cond_wait (&updated_poolfd, &local_cond_wait);
 		}
 		pthread_mutex_unlock (&local_cond_wait);
@@ -181,7 +181,7 @@ static pthread_mutex_t registry_lock = PTHREAD_MUTEX_INITIALIZER;
  * is reset to -1.
  *
  * The return value is 0 on success, or -1 on failure; the most probable
- * cause for failure is 
+ * cause for failure is
  */
 static int registry_update (int *reqid, struct registry_entry *entry) {
 	static int simu = -1;
@@ -256,6 +256,67 @@ static void registry_flush (pool_handle_t poolfd) {
 	pthread_mutex_unlock (&registry_lock);
 }
 
+#ifdef __CYGWIN__
+static pool_handle_t open_named_pipe (LPCTSTR lpszPipename)
+{
+	HANDLE hPipe;
+	//struct tlspool_command chBuf;
+	BOOL   fSuccess = FALSE;
+	DWORD  dwMode;
+
+	// Try to open a named pipe; wait for it, if necessary.
+
+	while (1)
+	{
+		hPipe = CreateFile(
+			lpszPipename,   // pipe name
+			GENERIC_READ |  // read and write access
+			GENERIC_WRITE,
+			0,              // no sharing
+			NULL,           // default security attributes
+			OPEN_EXISTING,  // opens existing pipe
+			FILE_FLAG_OVERLAPPED, // overlapped
+			NULL);          // no template file
+
+		// Break if the pipe handle is valid.
+		if (hPipe != INVALID_POOL_HANDLE)
+			break;
+
+		// Exit if an error other than ERROR_PIPE_BUSY occurs.
+		if (GetLastError() != ERROR_PIPE_BUSY)
+		{
+			_tprintf(TEXT("Could not open pipe. GLE=%d\n"), GetLastError());
+			return INVALID_POOL_HANDLE;
+		}
+
+		// All pipe instances are busy, so wait for 20 seconds.
+		if (!WaitNamedPipe(lpszPipename, 20000))
+		{
+			printf("Could not open pipe: 20 second wait timed out.");
+			return INVALID_POOL_HANDLE;
+		}
+	}
+	// The pipe connected; change to message-read mode.
+	dwMode = PIPE_READMODE_MESSAGE;
+	fSuccess = SetNamedPipeHandleState(
+		hPipe,    // pipe handle
+		&dwMode,  // new pipe mode
+		NULL,     // don't set maximum bytes
+		NULL);    // don't set maximum time
+	if (!fSuccess)
+	{
+		_tprintf(TEXT("SetNamedPipeHandleState failed. GLE=%d\n"), GetLastError());
+		return INVALID_POOL_HANDLE;
+	}
+	ULONG ServerProcessId;
+	if (GetNamedPipeServerProcessId(hPipe, &ServerProcessId)) {
+		printf("GetNamedPipeServerProcessId: ServerProcessId = %ld\n", ServerProcessId);
+	} else {
+		_tprintf(TEXT("GetNamedPipeServerProcessId failed. GLE=%d\n"), GetLastError());
+	}
+	return hPipe;
+}
+#endif
 
 /* The master thread issues the recv() commands on the TLS Pool socket, and
  * redistributes the result to the registry entries that are waiting for
@@ -282,12 +343,19 @@ static void *master_thread (void *path) {
 	struct cmsghdr *cmsg;
 	struct msghdr mh = { 0 };
 	struct registry_entry *entry;
+#ifdef __CYGWIN__
+	BOOL   fSuccess = FALSE;
+	DWORD  cbRead;
+#endif
 
+#ifndef __CYGWIN__
 	//
 	// Setup path information -- value and size were checked
 	bzero (&sun, sizeof (sun));
 	strcpy (sun.sun_path, (char *) path);
 	sun.sun_family = AF_UNIX;
+#endif
+
 	//
 	// Service forever
 	while (1) {
@@ -306,6 +374,14 @@ static void *master_thread (void *path) {
 		// with 1s, 2s, 4s, 8s, 16s, 32s, 32s, 32s, ... intervals.
 		usec = 1000000;
 		while (poolfd == INVALID_POOL_HANDLE) {
+#ifdef __CYGWIN__
+printf ("DEBUG: path = %s\n", (char *) path);
+			pool_handle_t newpoolfd = open_named_pipe ((LPCTSTR) path);
+// printf ("DEBUG: newpoolfd = %d\n", newpoolfd);
+			if (newpoolfd != INVALID_POOL_HANDLE) {
+				poolfd = newpoolfd;
+			}
+#else
 			pool_handle_t newpoolfd = socket (AF_UNIX, SOCK_STREAM, 0);
 			if (newpoolfd != INVALID_POOL_HANDLE) {
 				if (connect (newpoolfd, (struct sockaddr *) &sun, SUN_LEN (&sun)) == 0) {
@@ -317,6 +393,7 @@ static void *master_thread (void *path) {
 				}
 			}
 // printf ("DEBUG: Trying new poolfd %d for path %s\n", poolfd, sun.sun_path);
+#endif
 			//
 			// Signal a newly set poolfd value to all waiting.
 			// Note that we do not need to claim a mutex first;
@@ -345,6 +422,39 @@ static void *master_thread (void *path) {
 		// back up to the re-connection logic.
 		while (1) {
 			int retval;
+#ifdef __CYGWIN__
+			OVERLAPPED overlapped;
+
+			memset(&overlapped, 0, sizeof(overlapped));
+			overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+			// Read from the pipe.
+			fSuccess = ReadFile(
+				poolfd,       // pipe handle
+				&cmd,         // buffer to receive reply
+				sizeof (cmd), // size of buffer
+				NULL,         // number of bytes read
+				&overlapped); // not overlapped
+
+			if (!fSuccess && GetLastError() == ERROR_IO_PENDING )
+			{
+printf ("DEBUG: Read I/O pending\n");
+				if (WaitForSingleObject(overlapped.hEvent, INFINITE) == WAIT_OBJECT_0)
+				{
+					if (GetOverlappedResult(poolfd, &overlapped, &cbRead, TRUE))
+					{
+printf ("DEBUG: Read %ld bytes from pipe\n", cbRead);
+						fSuccess = TRUE;
+					}
+				}
+			}
+
+			if (!fSuccess)
+			{
+				_tprintf(TEXT("ReadFile from pipe failed. GLE=%d\n"), GetLastError());
+				retval = -1;
+			}
+#else
 			iov.iov_base = &cmd;
 			iov.iov_len = sizeof (cmd);
 			mh.msg_iov = &iov;
@@ -365,6 +475,7 @@ static void *master_thread (void *path) {
 // printf ("DEBUG: recvmsg() returned -1 due to: %s\n", strerror (errno));
 				break;
 			}
+#endif /* __CYGWIN__ */
 			//
 			// Determine where to post the received message
 			entry = registry [cmd.pio_reqid];
@@ -378,7 +489,11 @@ static void *master_thread (void *path) {
 					cmd.pio_cmd = PIOC_ERROR_V2;
 					cmd.pio_data.pioc_error.tlserrno = EPIPE;
 					strncpy (cmd.pio_data.pioc_error.message, "Client prematurely left TLS Pool negotiations", sizeof (cmd.pio_data.pioc_error.message));
+#ifdef __CYGWIN__
+#warning TODO
+#else
 					sendmsg (poolfd, &mh, MSG_NOSIGNAL);
+#endif
 					// Ignore errors
 printf ("DEBUG: Sent      PIOC_ERROR_V2 as callback to TLS Pool\n");
 				}
@@ -440,138 +555,22 @@ static void registry_recvmsg (struct registry_entry *entry) {
  * failure, errno will be set.
  */
 int tlspool_ping (pingpool_t *pingdata) {
-#ifdef __CYGWIN__
-	HANDLE hPipe;
-	//struct tlspool_command chBuf;
-	BOOL   fSuccess = FALSE;
-	DWORD  cbRead, cbToWrite, cbWritten, dwMode;
-	LPCTSTR lpszPipename = TEXT("\\\\.\\pipe\\tlspool");
-	struct tlspool_command cmd;
-
-	// Try to open a named pipe; wait for it, if necessary. 
-
-	while (1)
-	{
-		hPipe = CreateFile(
-			lpszPipename,   // pipe name 
-			GENERIC_READ |  // read and write access 
-			GENERIC_WRITE,
-			0,              // no sharing 
-			NULL,           // default security attributes
-			OPEN_EXISTING,  // opens existing pipe 
-			0,              // default attributes 
-			NULL);          // no template file 
-
-		// Break if the pipe handle is valid. 
-		if (hPipe != INVALID_POOL_HANDLE)
-			break;
-
-		// Exit if an error other than ERROR_PIPE_BUSY occurs. 
-		if (GetLastError() != ERROR_PIPE_BUSY)
-		{
-			_tprintf(TEXT("Could not open pipe. GLE=%d\n"), GetLastError());
-			return -1;
-		}
-
-		// All pipe instances are busy, so wait for 20 seconds. 
-		if (!WaitNamedPipe(lpszPipename, 20000))
-		{
-			printf("Could not open pipe: 20 second wait timed out.");
-			return -1;
-		}
-	}	
-	// The pipe connected; change to message-read mode. 
-	dwMode = PIPE_READMODE_MESSAGE;
-	fSuccess = SetNamedPipeHandleState(
-		hPipe,    // pipe handle 
-		&dwMode,  // new pipe mode 
-		NULL,     // don't set maximum bytes 
-		NULL);    // don't set maximum time 
-	if (!fSuccess)
-	{
-		_tprintf(TEXT("SetNamedPipeHandleState failed. GLE=%d\n"), GetLastError());
-		return -1;
-	}
-	ULONG ServerProcessId;
-	if (GetNamedPipeServerProcessId(hPipe, &ServerProcessId)) {
-		printf("GetNamedPipeServerProcessId: ServerProcessId = %ld\n", ServerProcessId);
-	} else {
-		_tprintf(TEXT("GetNamedPipeServerProcessId failed. GLE=%d\n"), GetLastError());
-	}
-	bzero (&cmd, sizeof (cmd));	/* Do not leak old stack info */
-//	cmd.pio_reqid = entry_reqid;
-	cmd.pio_cbid = 0;
-	cmd.pio_cmd = PIOC_PING_V2;
-	memcpy (&cmd.pio_data.pioc_ping, pingdata, sizeof (struct pioc_ping));
-	
-	// Send a message to the pipe server. 
-
-	cbToWrite = sizeof (cmd);
-	_tprintf(TEXT("Sending %d byte cmd\n"), cbToWrite);
-
-	fSuccess = WriteFile(
-		hPipe,                  // pipe handle 
-		&cmd,                   // cmd message 
-		cbToWrite,              // cmd message length 
-		&cbWritten,             // bytes written 
-		NULL);                  // not overlapped 
-
-	if (!fSuccess)
-	{
-		_tprintf(TEXT("WriteFile to pipe failed. GLE=%d\n"), GetLastError());
-		return -1;
-	}
-
-	printf("\nMessage sent to server, receiving reply as follows:\n");
-	do
-	{
-		// Read from the pipe. 
-
-		fSuccess = ReadFile(
-			hPipe,    // pipe handle 
-			&cmd,   // buffer to receive reply 
-			sizeof(struct tlspool_command),  // size of buffer 
-			&cbRead,  // number of bytes read 
-			NULL);    // not overlapped 
-
-		if (!fSuccess && GetLastError() != ERROR_MORE_DATA)
-			break;
-
-	} while (!fSuccess);  // repeat loop if ERROR_MORE_DATA 
-
-	if (!fSuccess)
-	{
-		_tprintf(TEXT("ReadFile from pipe failed. GLE=%d\n"), GetLastError());
-		return -1;
-	}
-	
-	switch (cmd.pio_cmd) {
-	case PIOC_ERROR_V2:
-		/* Bad luck, we failed */
-		syslog (LOG_INFO, "TLS Pool error to tlspool_ping(): %s", cmd.pio_data.pioc_error.message);
-		errno = cmd.pio_data.pioc_error.tlserrno;
-		return -1;
-	case PIOC_PING_V2:
-		/* Wheee!!! we're done */
-		memcpy (pingdata, &cmd.pio_data.pioc_ping, sizeof (pingpool_t));
-		return 0;
-	default:
-		/* V2 protocol error */
-		errno = EPROTO;
-		return -1;
-	}
-
-#else
 	struct tlspool_command cmd;
 	pthread_mutex_t recvwait = PTHREAD_MUTEX_INITIALIZER;
 	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
 	int entry_reqid = -1;
-	int poolfd = INVALID_POOL_HANDLE;
+	pool_handle_t poolfd = INVALID_POOL_HANDLE;
 	struct iovec iov;
 	struct msghdr mh = { 0 };
+#ifdef __CYGWIN__
+	BOOL   fSuccess = FALSE;
+	DWORD  cbToWrite, cbWritten;
+	OVERLAPPED overlapped;
+#endif
 
 	/* Prepare command structure */
 	poolfd = tlspool_open_poolhandle (NULL);
+printf ("DEBUG: poolfd = %d\n", poolfd);
 	if (poolfd == INVALID_POOL_HANDLE) {
 		errno = ENODEV;
 		return -1;
@@ -589,7 +588,42 @@ int tlspool_ping (pingpool_t *pingdata) {
 	cmd.pio_cbid = 0;
 	cmd.pio_cmd = PIOC_PING_V2;
 	memcpy (&cmd.pio_data.pioc_ping, pingdata, sizeof (struct pioc_ping));
+#ifdef __CYGWIN__
+	/* Send the request */
+	// Send a message to the pipe server.
 
+	cbToWrite = sizeof (cmd);
+	_tprintf(TEXT("Sending %d byte cmd\n"), cbToWrite);
+
+	memset(&overlapped, 0, sizeof(overlapped));
+	overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+	fSuccess = WriteFile(
+		poolfd,                  // pipe handle
+		&cmd,                   // cmd message
+		cbToWrite,              // cmd message length
+		NULL,                  // bytes written
+		&overlapped);            // overlapped
+
+	if (!fSuccess && GetLastError() == ERROR_IO_PENDING )
+	{
+printf ("DEBUG: Write I/O pending\n");
+		if (WaitForSingleObject(overlapped.hEvent, INFINITE) == WAIT_OBJECT_0)
+		{
+			if (GetOverlappedResult(poolfd, &overlapped, &cbWritten, TRUE))
+			{
+printf ("DEBUG: Wrote %ld bytes to pipe\n", cbWritten);
+				fSuccess = TRUE;
+			}
+		}
+	}
+	if (!fSuccess)
+	{
+		_tprintf(TEXT("WriteFile to pipe failed. GLE=%d\n"), GetLastError());
+		return -1;
+	}
+	printf("\nMessage sent to server, receiving reply as follows:\n");
+#else
 	/* Send the request */
 	iov.iov_base = &cmd;
 	iov.iov_len = sizeof (cmd);
@@ -601,7 +635,7 @@ int tlspool_ping (pingpool_t *pingdata) {
 		// errno inherited from sendmsg()
 		return -1;
 	}
-
+#endif
 	/* Await response and process it */
 	registry_recvmsg (&regent);
 	registry_update (&entry_reqid, NULL);
@@ -620,7 +654,6 @@ int tlspool_ping (pingpool_t *pingdata) {
 		errno = EPROTO;
 		return -1;
 	}
-#endif
 }
 
 /* The library function for starttls, which is normally called through one
@@ -771,6 +804,9 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		}
 #endif /* __CYGWIN__ */
 	}
+#ifdef __CYGWIN__
+#warning TODO
+#else
 	if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
 		// Let SIGPIPE be reported as EPIPE
 		close (cryptfd);
@@ -778,6 +814,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		// errno inherited from sendmsg()
 		return -1;
 	}
+#endif /* __CYGWIN__ */
 	sentfd = cryptfd;  /* Close anytime after response and before fn end */
 
 	/* Handle responses until success or error */
@@ -864,6 +901,9 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				}
 #endif /* __CYGWIN__ */
 			}
+#ifdef __CYGWIN__
+#warning TODO
+#else
 			/* Now supply plainfd in the callback response */
 			sentfd = plainfd;
 			if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
@@ -876,6 +916,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				// errno inherited from sendmsg()
 				return -1;
 			}
+#endif /* __CYGWIN__ */
 			break;	// Loop around and try again
 		case PIOC_STARTTLS_V2:
 			/* Wheee!!! we're done */
@@ -932,6 +973,9 @@ int _tlspool_control_command (int cmdcode, uint8_t *ctlkey) {
 	memcpy (&cmd.pio_data.pioc_control.ctlkey, ctlkey, TLSPOOL_CTLKEYLEN);
 // printf ("DEBUG: Using control key %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n", cmd.pio_data.pioc_control.ctlkey [0], cmd.pio_data.pioc_control.ctlkey [1], cmd.pio_data.pioc_control.ctlkey [2], cmd.pio_data.pioc_control.ctlkey [3], cmd.pio_data.pioc_control.ctlkey [4], cmd.pio_data.pioc_control.ctlkey [5], cmd.pio_data.pioc_control.ctlkey [6], cmd.pio_data.pioc_control.ctlkey [7], cmd.pio_data.pioc_control.ctlkey [8], cmd.pio_data.pioc_control.ctlkey [9], cmd.pio_data.pioc_control.ctlkey [10], cmd.pio_data.pioc_control.ctlkey [11], cmd.pio_data.pioc_control.ctlkey [12], cmd.pio_data.pioc_control.ctlkey [13], cmd.pio_data.pioc_control.ctlkey [14], cmd.pio_data.pioc_control.ctlkey [15]);
 
+#ifdef __CYGWIN__
+#warning TODO
+#else
 	/* Send the request */
 	if (send (poolfd, &cmd, sizeof (cmd), MSG_NOSIGNAL) == -1) {
 		// Let SIGPIPE be reported as EPIPE
@@ -939,7 +983,7 @@ int _tlspool_control_command (int cmdcode, uint8_t *ctlkey) {
 		// errno inherited from send()
 		return -1;
 	}
-
+#endif
 	/* Receive the response */
 	registry_recvmsg (&regent);
 	switch (cmd.pio_cmd) {
@@ -969,7 +1013,7 @@ int _tlspool_control_command (int cmdcode, uint8_t *ctlkey) {
  * purposes, such as finding the same session key for both sides deriving from
  * prior key negotiation; the protection of a ctlkey for such applications is
  * important.
- * 
+ *
  * The inputs to this function must adhere to the following restrictions:
  *  - label must not be a NULL pointer, but opt_ctxvalue may be set to NULL
  *    to bypass the use of a context value.  Note that passing an empty string
@@ -1024,7 +1068,7 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 		errno = EINVAL;
 		return -1;
 	}
-	
+
 
 	/* Prepare command structure */
 	poolfd = tlspool_open_poolhandle (NULL);
@@ -1055,6 +1099,9 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 		cmd.pio_data.pioc_prng.in2_len = -1;
 	}
 
+#ifdef __CYGWIN__
+#warning TODO
+#else
 	/* Send the request */
 	iov.iov_base = &cmd;
 	iov.iov_len = sizeof (cmd);
@@ -1066,7 +1113,7 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 		// errno inherited from sendmsg()
 		return -1;
 	}
-
+#endif
 	/* Await response and process it */
 	registry_recvmsg (&regent);
 	registry_update (&entry_reqid, NULL);
@@ -1086,4 +1133,3 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 		return -1;
 	}
 }
-
