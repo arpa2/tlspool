@@ -66,7 +66,7 @@ int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec
 	sun.sun_family = AF_UNIX;
 	strcpy (sun.sun_path, path);
 	pthread_cleanup_push (tlspool_pin_service_closepool, &poolfd);
-	poolfd = socket (AF_UNIX, SOCK_DGRAM, 0);
+	poolfd = socket (AF_UNIX, SOCK_STREAM, 0);
 	if (poolfd < 0) {
 		return -1;
 	}
