@@ -436,8 +436,6 @@ int tlspool_ping (pingpool_t *pingdata) {
 	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
 	int entry_reqid = -1;
 	int poolfd = -1;
-	struct iovec iov;
-	struct msghdr mh = { 0 };
 
 	/* Prepare command structure */
 	poolfd = tlspool_socket (NULL);
@@ -460,11 +458,7 @@ int tlspool_ping (pingpool_t *pingdata) {
 	memcpy (&cmd.pio_data.pioc_ping, pingdata, sizeof (struct pioc_ping));
 
 	/* Send the request */
-	iov.iov_base = &cmd;
-	iov.iov_len = sizeof (cmd);
-	mh.msg_iov = &iov;
-	mh.msg_iovlen = 1;
-	if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
+	if (send (poolfd, &cmd, sizeof (cmd), MSG_NOSIGNAL) == -1) {
 		// Let SIGPIPE be reported as EPIPE
 		registry_update (&entry_reqid, NULL);
 		// errno inherited from sendmsg()
@@ -878,8 +872,6 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
 	int entry_reqid = -1;
 	int poolfd = -1;
-	struct iovec iov;
-	struct msghdr mh = { 0 };
 
 	bzero (prng_buf, prng_len);
 
@@ -924,11 +916,7 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 	}
 
 	/* Send the request */
-	iov.iov_base = &cmd;
-	iov.iov_len = sizeof (cmd);
-	mh.msg_iov = &iov;
-	mh.msg_iovlen = 1;
-	if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
+	if (send (poolfd, &cmd, sizeof (cmd), MSG_NOSIGNAL) == -1) {
 		// Let SIGPIPE be reported as EPIPE
 		registry_update (&entry_reqid, NULL);
 		// errno inherited from sendmsg()
