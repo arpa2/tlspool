@@ -136,6 +136,10 @@ reconnect:
 		}
 		exit (1);
 	}
+#ifdef __CYGWIN__
+	printf("Connected, sleep(1) and then starting TLS\n");
+	sleep(1);
+#endif
 	plainfd = -1;
 	if (-1 == tlspool_starttls (sox, &tlsdata_cli, &plainfd, NULL)) {
 		perror ("Failed to STARTTLS on testcli");
