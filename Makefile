@@ -21,6 +21,8 @@ clean:
 	@echo '# NOTE: Kept key material, use "make distclean" if you REALLY want to clean it'
 	@echo '#'
 
+anew: clean all
+
 distclean: clean
 	make -C testdata clean-pkcs11 clean-cert clean-pgp clean-db
 

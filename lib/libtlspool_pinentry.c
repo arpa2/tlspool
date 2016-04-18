@@ -87,7 +87,7 @@ int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec
 	while (1) {
 
 		/* send the request or, when looping, the callback result */
-printf ("DEBUG: PINENTRY command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.pio_cmd, cmd.pio_cbid, cmd.pio_data.pioc_pinentry.flags);
+//DEBUG// printf ("DEBUG: PINENTRY command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.pio_cmd, cmd.pio_cbid, cmd.pio_data.pioc_pinentry.flags);
 		if (send (poolfd, &cmd, sizeof (cmd), MSG_NOSIGNAL) == -1) {
 			// errno inherited from send()
 			// let SIGPIPE be reported as EPIPE
@@ -106,7 +106,7 @@ printf ("DEBUG: PINENTRY command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.
 			close (poolfd);
 			return -1;
 		}
-printf ("DEBUG: PINENTRY callback command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.pio_cmd, cmd.pio_cbid, cmd.pio_data.pioc_pinentry.flags);
+//DEBUG// printf ("DEBUG: PINENTRY callback command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.pio_cmd, cmd.pio_cbid, cmd.pio_data.pioc_pinentry.flags);
 		switch (cmd.pio_cmd) {
 		case PIOC_PINENTRY_V2:
 			(*cb) (&cmd.pio_data.pioc_pinentry, data);
