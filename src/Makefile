@@ -27,13 +27,15 @@ TASN1_LIBS   = $(shell pkg-config --libs   libtasn1)
 all: $(TARGETS)
 
 tlspool: $(OBJS)
-	gcc $(LDFLAGS) -o "$@" $(OBJS) $(LIBS)
+	gcc -std=gnu11 $(LDFLAGS) -o "$@" $(OBJS) $(LIBS)
 
 .c.o:
-	gcc -c $(CFLAGS) -o "$@" "$<"
+	gcc -std=gnu11 -c $(CFLAGS) -o "$@" "$<"
 
 clean:
 	rm -f $(OBJS) $(TARGETS)
+
+anew: clean all
 
 install: all
 	install $(TARGETS) "$(PREFIX)/sbin/"

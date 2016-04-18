@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdint.h>
 
+#include <unistd.h>
 #include <poll.h>
 #include <errno.h>
 #include <signal.h>
@@ -67,28 +68,28 @@ void runterminal (int chanio) {
 			break;
 		}
 		if (inout [0].revents & POLLIN) {
-			sz = read (0, buf, sizeof (buf), MSG_DONTWAIT);
+			sz = read (0, buf, sizeof (buf));
 			printf ("Read %d bytes, sigcont==%d (should be 0 for proper operation)\n", sz, sigcont);
 			if (sz == -1) {
 				break;
 			} else if (sz == 0) {
 				errno = 0;
 				break;
-			} else if (write (chanio, buf, sz, MSG_DONTWAIT) != sz) {
+			} else if (send (chanio, buf, sz, MSG_DONTWAIT) != sz) {
 				break;
 			} else {
 				printf ("Sent %d bytes\n", sz);
 			}
 		}
 		if (inout [1].revents & POLLIN) {
-			sz = read (chanio, buf, sizeof (buf), MSG_DONTWAIT);
+			sz = recv (chanio, buf, sizeof (buf), MSG_DONTWAIT);
 			printf ("Received %d bytes, sigcont==%d (should be 0 for proper operation)\n", sz, sigcont);
 			if (sz == -1) {
 				break;
 			} else if (sz == 0) {
 				errno = 0;
 				break;
-			} else if (write (1, buf, sz, MSG_DONTWAIT) != sz) {
+			} else if (write (1, buf, sz) != sz) {
 				break;
 			} else {
 				printf ("Printed %d bytes\n", sz);

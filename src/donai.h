@@ -199,6 +199,11 @@ int dbcred_interpret (pool_datum_t *creddata, uint32_t *flags, char **p11priv, u
 int selector_iterate_init (selector_t *iterator, donai_t *donai);
 int selector_iterate_next (selector_t *iterator);
 
+/* Retrieve flags from the credentials structure found in dbh_localid.
+ * The function returns non-zero on success (zero indicates syntax error).
+ */
+int dbcred_flags (DBT *creddata, uint32_t *flags);
+
 /* Print a donai or iterated selector to the given text buffer.  The
  * text will be precisely the same as the originally parsed text.  An
  * iterator may deliver values that are shorter, not longer.  The value

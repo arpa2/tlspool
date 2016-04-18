@@ -15,7 +15,7 @@ OBJS = $(libtlspool_OBJS)
 all: $(TARGETS)
 
 libtlspool.so: $(libtlspool_OBJS)
-	gcc -shared $(LDFLAGS) -o "$@" $(libtlspool_OBJS) $(LIBS)
+	gcc -std=gnu11 -shared $(LDFLAGS) -o "$@" $(libtlspool_OBJS) $(LIBS)
 
 libtlspool.a: $(libtlspool_OBJS)
 	rm -f "$@"
@@ -28,10 +28,12 @@ tlspool.pyc: tlspool.py
 	python -m compileall "$<"
 
 .c.o:
-	gcc -c $(CFLAGS) -o $@ $<
+	gcc -std=gnu11 -c $(CFLAGS) -o $@ $<
 
 clean:
 	rm -f $(OBJS) *.lo *.la $(TARGETS)
+
+anew: clean all
 
 install: all
 	install libtlspool.so libtlspool.a "$(PREFIX)/lib/"

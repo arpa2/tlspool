@@ -23,6 +23,8 @@
 #include <gnutls/pkcs11.h>
 #include <gnutls/abstract.h>
 
+#include <libtasn1.h>
+
 #include <tlspool/internal.h>
 
 
@@ -1357,6 +1359,7 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 	int gtls_errno = 0;
 	int db_errno = 0;
 	int found = 0;
+	gtls_error certificate_onthefly (struct command *cmd);
 
 	//
 	// When applicable, try to create an on-the-fly certificate
@@ -2030,7 +2033,7 @@ static void *starttls_thread (void *cmd_void) {
 	if (cmd == NULL) {
 		send_error (replycmd, EINVAL, "Command structure not received");
 		assert (pthread_detach (pthread_self ()) == 0);
-		return;
+		return NULL;
 	}
 	cmd->session_errno = 0;
 	cmd->anonpre = 0;
@@ -2045,7 +2048,7 @@ static void *starttls_thread (void *cmd_void) {
 		tlog (TLOG_UNIXSOCK, LOG_ERR, "No ciphertext file descriptor supplied to TLS Pool");
 		send_error (replycmd, EINVAL, "No ciphertext file descriptor supplied to TLS Pool");
 		assert (pthread_detach (pthread_self ()) == 0);
-		return;
+		return NULL;
 	}
 */
 	cmd->session_certificate = (intptr_t) (void *) NULL;
@@ -2065,7 +2068,7 @@ fprintf (stderr, "DEBUG: Got a request to renegotiate existing TLS connection\n"
 			send_error (replycmd, EPROTO, "File handle supplied for renegotiation");
 			close (cryptfd);
 			assert (pthread_detach (pthread_self ()) == 0);
-			return;
+			return NULL;
 		}
 		//
 		// First find the ctlkeynode_tls
@@ -2075,7 +2078,7 @@ fprintf (stderr, "DEBUG: Got ckn == 0x%0x\n", (intptr_t) ckn);
 			tlog (TLOG_UNIXSOCK, LOG_ERR, "Failed to find TLS connection for renegotiation by its ctlkey");
 			send_error (replycmd, ESRCH, "Cannot find TLS connection for renegotiation");
 			assert (pthread_detach (pthread_self ()) == 0);
-			return;
+			return NULL;
 		}
 		//
 		// Now cancel the pthread for this process
@@ -2092,7 +2095,7 @@ fprintf (stderr, "DEBUG: pthread_join returned %d\n", errno);
 			ctlkey_unfind (&ckn->regent);
 			assert (pthread_detach (pthread_self ()) == 0);
 			// Do not free the ckn, as the other thread still runs
-			return;
+			return NULL;
 		}
 		//
 		// We are in control!  Assimilate the TLS connection data.
@@ -2147,7 +2150,7 @@ printf ("DEBUG: Client-side invocation flagged as wrong; compensated error\n");
 			}
 		}
 		assert (pthread_detach (pthread_self ()) == 0);
-		return;
+		return NULL;
 	}
 
 	//
@@ -2187,7 +2190,7 @@ printf ("DEBUG: Client-side invocation flagged as wrong; compensated error\n");
 		}
 		manage_txn_rollback (&cmd->txn);
 		assert (pthread_detach (pthread_self ()) == 0);
-		return;
+		return NULL;
 	}
 */
 	//
@@ -2207,7 +2210,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 		}
 		manage_txn_rollback (&cmd->txn);
 		assert (pthread_detach (pthread_self ()) == 0);
-		return;
+		return NULL;
 	}
 
 	//
@@ -2278,7 +2281,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 		}
 		manage_txn_rollback (&cmd->txn);
 		assert (pthread_detach (pthread_self ()) == 0);
-		return;
+		return NULL;
 	}
 
 	//
@@ -2457,7 +2460,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 		}
 		manage_txn_rollback (&cmd->txn);
 		assert (pthread_detach (pthread_self ()) == 0);
-		return;
+		return NULL;
 	}
 	tlog (TLOG_UNIXSOCK | TLOG_TLS, LOG_DEBUG, "TLS handshake started over %d", cryptfd);
 	do {
@@ -2662,7 +2665,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 		}
 		manage_txn_rollback (&cmd->txn);
 		assert (pthread_detach (pthread_self ()) == 0);
-		return;
+		return NULL;
         } else {
 		tlog (TLOG_UNIXSOCK | TLOG_TLS, LOG_INFO, "TLS handshake succeeded over %d", cryptfd);
 		//TODO// extract_authenticated_remote_identity (cmd);
@@ -2698,7 +2701,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 			}
 			manage_txn_rollback (&cmd->txn);
 			assert (pthread_detach (pthread_self ()) == 0);
-			return;
+			return NULL;
 		}
 		cmd->cmd.pio_cmd = oldcmd;
 		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that set plainfd:=%d for lid==\"%s\" and rid==\"%s\"", cmd->passfd, cmd->cmd.pio_data.pioc_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid);
@@ -2726,7 +2729,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 		}
 		manage_txn_rollback (&cmd->txn);
 		assert (pthread_detach (pthread_self ()) == 0);
-		return;
+		return NULL;
 	}
 	//DEFERRED// send_command (replycmd, -1);		// app sent plainfd to us
 
@@ -2829,7 +2832,7 @@ fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
 		got_session = 0;
 	}
 	assert (pthread_detach (pthread_self ()) == 0);
-	return;
+	return NULL;
 }
 
 

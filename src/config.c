@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <sys/file.h>
 #include <sys/un.h>
+#include <sys/stat.h>
 
 #include <syslog.h>
 #include <fcntl.h>

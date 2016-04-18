@@ -45,3 +45,13 @@ success_t setup_management (void);
  */
 void cleanup_management (void);
 
+
+/* Begin a database transaction, if possible; otherwise setup as NULL */
+void manage_txn_begin (DB_TXN **txn);
+
+/* Commit a database transaction, setting it to NULL.  Ignore when NULL. */
+int manage_txn_commit (DB_TXN **txn);
+
+/* Rollback a database transaction, setting it to NULL.  Ignore when NULL. */
+int manage_txn_rollback (DB_TXN **txn);
+
