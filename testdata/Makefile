@@ -112,7 +112,7 @@ endif
 #
 
 TARGET_PKCS11=$(PRIVKEYGEN)
-TARGET_CERT=tlspool-test-client-cert.der tlspool-test-server-cert.der tlspool-test-ca-cert.der tlspool-test-flying-signer.der tlspool-test-webhost-cert.der
+TARGET_CERT=tlspool-test-client-cert.der tlspool-test-server-cert.der tlspool-test-ca-cert.der tlspool-test-flying-signer.der tlspool-test-webhost-cert.der tlspool-test-srp
 TARGET_PGP=tlspool-test-client-pubkey.pgp tlspool-test-server-pubkey.pgp
 TARGET_DB=localid.db disclose.db
 TARGET_DBE=tlspool.env
@@ -269,6 +269,17 @@ tlspool-test-webhost-cert.der: tlspool-test-webhost-cert.template
 	echo Using PRIVKEY7, '$(PRIVKEY7)'
 	$(CERTTOOL) --outfile $@ --outder --generate-self-signed --load-privkey='$(PRIVKEY7)' --template=$<
 	$(CERTTOOL) --certificate-info --infile $@ --inder --outfile $(@:.der=.pem)
+
+
+#
+# SRP credentials are loaded from fixed paths ../testdata/tlspool-test-srp.* for now
+# Yes, this is ugly, we're still hoping to use SRP #11 instead, as defined on
+# https://github.com/arpa2/srp-pkcs11
+#
+
+tlspool-test-srp:
+	chown $(DMNUSR):$(DMNGRP) $@.conf $@.passwd
+
 
 #
 # Create localid.db from scratch
