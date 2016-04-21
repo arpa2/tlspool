@@ -36,7 +36,7 @@ clean:
 anew: clean all
 
 install: all
-	install libtlspool.so libtlspool.a "$(PREFIX)/lib/"
+	install libtlspool.so libtlspool.a "$(DESTDIR)$(PREFIX)/lib/"
 	@echo #
 	@echo # Python libraries not yet installed
 	@echo #
@@ -44,8 +44,8 @@ install: all
 	@echo #
 
 uninstall:
-	rm -f "$(PREFIX)/lib/libtlspool.so"
-	rm -f "$(PREFIX)/lib/libtlspool.a"
+	rm -f "$(DESTDIR)$(PREFIX)/lib/libtlspool.so"
+	rm -f "$(DESTDIR)$(PREFIX)/lib/libtlspool.a"
 	@echo #
 	@echo # Python libraries not yet removed
 	@echo #
