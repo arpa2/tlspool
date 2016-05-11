@@ -316,7 +316,51 @@ static pool_handle_t open_named_pipe (LPCTSTR lpszPipename)
 	}
 	return hPipe;
 }
-#endif
+
+static int np_send_command(struct tlspool_command *cmd) {
+	DWORD  cbToWrite, cbWritten;
+	OVERLAPPED overlapped;
+	BOOL fSuccess;
+
+	/* Send the request */
+	// Send a message to the pipe server.
+
+	cbToWrite = sizeof (struct tlspool_command);
+	_tprintf(TEXT("Sending %d byte cmd\n"), cbToWrite);
+
+	memset(&overlapped, 0, sizeof(overlapped));
+	overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+	fSuccess = WriteFile(
+		poolfd,                  // pipe handle
+		cmd,                    // cmd message
+		cbToWrite,              // cmd message length
+		NULL,                  // bytes written
+		&overlapped);            // overlapped
+
+	if (!fSuccess && GetLastError() == ERROR_IO_PENDING )
+	{
+printf ("DEBUG: Write I/O pending\n");
+		fSuccess = WaitForSingleObject(overlapped.hEvent, INFINITE) == WAIT_OBJECT_0;
+	}
+
+	if (fSuccess) {
+		fSuccess = GetOverlappedResult(poolfd, &overlapped, &cbWritten, TRUE);
+	}
+
+	if (!fSuccess)
+	{
+		_tprintf(TEXT("WriteFile to pipe failed. GLE=%d\n"), GetLastError());
+#warning better errno
+		errno = ENOSYS;
+		return -1;
+	} else {
+printf ("DEBUG: Wrote %ld bytes to pipe\n", cbWritten);
+	}
+printf("DEBUG: Message sent to server, receiving reply as follows:\n");
+	return 0;
+}
+#endif /* __CYGWIN__ */
 
 /* The master thread issues the recv() commands on the TLS Pool socket, and
  * redistributes the result to the registry entries that are waiting for
@@ -439,20 +483,19 @@ printf ("DEBUG: path = %s\n", (char *) path);
 			if (!fSuccess && GetLastError() == ERROR_IO_PENDING )
 			{
 printf ("DEBUG: Read I/O pending\n");
-				if (WaitForSingleObject(overlapped.hEvent, INFINITE) == WAIT_OBJECT_0)
-				{
-					if (GetOverlappedResult(poolfd, &overlapped, &cbRead, TRUE))
-					{
-printf ("DEBUG: Read %ld bytes from pipe\n", cbRead);
-						fSuccess = TRUE;
-					}
-				}
+				fSuccess = WaitForSingleObject(overlapped.hEvent, INFINITE) == WAIT_OBJECT_0;
+			}
+
+			if (fSuccess) {
+				fSuccess = GetOverlappedResult(poolfd, &overlapped, &cbRead, TRUE);
 			}
 
 			if (!fSuccess)
 			{
 				_tprintf(TEXT("ReadFile from pipe failed. GLE=%d\n"), GetLastError());
 				retval = -1;
+			} else {
+printf ("DEBUG: Read %ld bytes from pipe\n", cbRead);
 			}
 #else
 			iov.iov_base = &cmd;
@@ -490,7 +533,7 @@ printf ("DEBUG: Read %ld bytes from pipe\n", cbRead);
 					cmd.pio_data.pioc_error.tlserrno = EPIPE;
 					strncpy (cmd.pio_data.pioc_error.message, "Client prematurely left TLS Pool negotiations", sizeof (cmd.pio_data.pioc_error.message));
 #ifdef __CYGWIN__
-#warning TODO
+					np_send_command (&cmd);
 #else
 					sendmsg (poolfd, &mh, MSG_NOSIGNAL);
 #endif
@@ -564,7 +607,6 @@ int tlspool_ping (pingpool_t *pingdata) {
 	struct msghdr mh = { 0 };
 #ifdef __CYGWIN__
 	BOOL   fSuccess = FALSE;
-	DWORD  cbToWrite, cbWritten;
 	OVERLAPPED overlapped;
 #endif
 
@@ -589,40 +631,11 @@ printf ("DEBUG: poolfd = %d\n", poolfd);
 	cmd.pio_cmd = PIOC_PING_V2;
 	memcpy (&cmd.pio_data.pioc_ping, pingdata, sizeof (struct pioc_ping));
 #ifdef __CYGWIN__
-	/* Send the request */
-	// Send a message to the pipe server.
-
-	cbToWrite = sizeof (cmd);
-	_tprintf(TEXT("Sending %d byte cmd\n"), cbToWrite);
-
-	memset(&overlapped, 0, sizeof(overlapped));
-	overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-
-	fSuccess = WriteFile(
-		poolfd,                  // pipe handle
-		&cmd,                   // cmd message
-		cbToWrite,              // cmd message length
-		NULL,                  // bytes written
-		&overlapped);            // overlapped
-
-	if (!fSuccess && GetLastError() == ERROR_IO_PENDING )
-	{
-printf ("DEBUG: Write I/O pending\n");
-		if (WaitForSingleObject(overlapped.hEvent, INFINITE) == WAIT_OBJECT_0)
-		{
-			if (GetOverlappedResult(poolfd, &overlapped, &cbWritten, TRUE))
-			{
-printf ("DEBUG: Wrote %ld bytes to pipe\n", cbWritten);
-				fSuccess = TRUE;
-			}
-		}
-	}
-	if (!fSuccess)
-	{
-		_tprintf(TEXT("WriteFile to pipe failed. GLE=%d\n"), GetLastError());
+	if (np_send_command (&cmd) == -1) {
+		// errno inherited from np_send_command ()
+		registry_update (&entry_reqid, NULL);
 		return -1;
 	}
-	printf("\nMessage sent to server, receiving reply as follows:\n");
 #else
 	/* Send the request */
 	iov.iov_base = &cmd;
@@ -789,6 +802,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 			cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
 			// printf("DEBUG: pid = %d, cryptfd = %d\n", pid, cryptfd);
 			if (cygwin_socket_dup_protocol_info (cryptfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
+#warning set errno
 				// printf("DEBUG: cygwin_socket_dup_protocol_info error\n");
 				// Let SIGPIPE be reported as EPIPE
 				close (cryptfd);
@@ -805,7 +819,12 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 #endif /* __CYGWIN__ */
 	}
 #ifdef __CYGWIN__
-#warning TODO
+	if (np_send_command (&cmd) == -1) {
+		close (cryptfd);
+		registry_update (&entry_reqid, NULL);
+		// errno inherited from np_send_command ()
+		return -1;
+	}
 #else
 	if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
 		// Let SIGPIPE be reported as EPIPE
@@ -886,11 +905,12 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 					cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
 					// printf("DEBUG: pid = %d, plainfd = %d\n", pid, plainfd);
 					if (cygwin_socket_dup_protocol_info (plainfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
+#warning set errno
 						// printf("DEBUG: cygwin_socket_dup_protocol_info error\n");
 						// Let SIGPIPE be reported as EPIPE
 						close (plainfd);
 						registry_update (&entry_reqid, NULL);
-						// errno inherited from sendmsg()
+						// errno inherited from cygwin_socket_dup_protocol_info()
 						return -1;
 					}
 					//... (..., &cmd.pio_ancil_data.pioa_socket, ...);
@@ -901,11 +921,20 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				}
 #endif /* __CYGWIN__ */
 			}
-#ifdef __CYGWIN__
-#warning TODO
-#else
+
 			/* Now supply plainfd in the callback response */
 			sentfd = plainfd;
+#ifdef __CYGWIN__
+			if (np_send_command (&cmd) == -1) {
+				if (sentfd >= 0) {
+					close (sentfd);
+					sentfd = -1;
+				}
+				registry_update (&entry_reqid, NULL);
+				// errno inherited from np_send_command()
+				return -1;
+			}
+#else
 			if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
 				// Let SIGPIPE be reported as EPIPE
 				if (sentfd >= 0) {
@@ -974,7 +1003,11 @@ int _tlspool_control_command (int cmdcode, uint8_t *ctlkey) {
 // printf ("DEBUG: Using control key %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n", cmd.pio_data.pioc_control.ctlkey [0], cmd.pio_data.pioc_control.ctlkey [1], cmd.pio_data.pioc_control.ctlkey [2], cmd.pio_data.pioc_control.ctlkey [3], cmd.pio_data.pioc_control.ctlkey [4], cmd.pio_data.pioc_control.ctlkey [5], cmd.pio_data.pioc_control.ctlkey [6], cmd.pio_data.pioc_control.ctlkey [7], cmd.pio_data.pioc_control.ctlkey [8], cmd.pio_data.pioc_control.ctlkey [9], cmd.pio_data.pioc_control.ctlkey [10], cmd.pio_data.pioc_control.ctlkey [11], cmd.pio_data.pioc_control.ctlkey [12], cmd.pio_data.pioc_control.ctlkey [13], cmd.pio_data.pioc_control.ctlkey [14], cmd.pio_data.pioc_control.ctlkey [15]);
 
 #ifdef __CYGWIN__
-#warning TODO
+	if (np_send_command (&cmd) == -1) {
+		registry_update (&entry_reqid, NULL);
+		// errno inherited from np_send_command ()
+		return -1;
+	}
 #else
 	/* Send the request */
 	if (send (poolfd, &cmd, sizeof (cmd), MSG_NOSIGNAL) == -1) {
@@ -1100,7 +1133,11 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 	}
 
 #ifdef __CYGWIN__
-#warning TODO
+if (np_send_command (&cmd) == -1) {
+	// errno inherited from np_send_command ()
+	registry_update (&entry_reqid, NULL);
+	return -1;
+}
 #else
 	/* Send the request */
 	iov.iov_base = &cmd;
