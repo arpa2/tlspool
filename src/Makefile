@@ -1,7 +1,7 @@
 TARGETS = tlspool
 
 OBJS = daemon.o config.o manage.o service.o cache.o pinentry.o lidentry.o \
-	starttls.o donai.o remote.o error.o ctlkey.o validate.o
+	starttls.o donai.o remote.o error.o ctlkey.o validate.o online.o
 
 CFLAGS += -pthread -I ../include
 CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS)
@@ -17,6 +17,8 @@ endif
 
 GNUTLS_CFLAGS = $(shell pkg-config --cflags gnutls)
 GNUTLS_LIBS   = $(shell pkg-config --libs   gnutls)
+GNUTLS_CFLAGS += $(shell pkg-config --cflags gnutls-dane)
+GNUTLS_LIBS   += $(shell pkg-config --libs   gnutls-dane)
 P11KIT_CFLAGS = $(shell pkg-config --cflags p11-kit-1)
 P11KIT_LIBS   = $(shell pkg-config --libs   p11-kit-1)
 BDB_CFLAGS = 

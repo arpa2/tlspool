@@ -18,10 +18,12 @@
 #include <sys/socket.h>
 
 #include <arpa/inet.h>
+#include <netinet/in.h>
 
 #include <gnutls/gnutls.h>
 #include <gnutls/pkcs11.h>
 #include <gnutls/abstract.h>
+#include <gnutls/dane.h>
 
 #include <libtasn1.h>
 
@@ -1341,6 +1343,365 @@ gnutls_pcert_st *load_certificate_chain (uint32_t flags, unsigned int *chainlen,
 }
 
 
+/* valexp_valflag_set -- set a validation flag bit for an uppercase predicate.
+ */
+static void valexp_valflag_set (struct command *cmd, char pred) {
+	int len = strlen (cmd->valflags);
+	cmd->valflags [len++] = pred;
+	cmd->valflags [len  ] = '\0';
+}
+
+/* valexp_valflag_start -- get a prior set bit with validation information.
+ * Where cmd->valflags is a string of uppercase letters that were ensured.
+ */
+static void valexp_valflag_start (void *vcmd, struct valexp *ve, char pred) {
+	struct command *cmd = (struct command *) vcmd;
+	pred &= 0xdf;	// lowercase->uppercase
+	valexp_setpredicate (ve, pred, NULL != strchr (cmd->valflags, pred));
+}
+
+/* valexp_0_start -- validation function for the GnuTLS backend.
+ * This function immediately sends failure on something impossible.
+ */
+static void valexp_0_start (void *vcmd, struct valexp *ve, char pred) {
+	valexp_setpredicate (ve, pred, 0);
+}
+
+/* valexp_1_start -- validation function for the GnuTLS backend.
+ * This function immediately sends success on something trivial.
+ */
+static void valexp_1_start (void *vcmd, struct valexp *ve, char pred) {
+	valexp_setpredicate (ve, pred, 1);
+}
+
+//TODO// valexp_L_start, valexp_l_start
+
+/* valexp_I_start -- validation function for the GnuTLS backend.
+ * This function ensures that the remote peer provides an identity.
+ * TODO: We should compare the hostname as well, or compare if in remoteid
+ * TODO: We may need to support more than just X509/PGP certificates 
+ */
+static void valexp_I_start (void *vcmd, struct valexp *ve, char pred) {
+	struct command *cmd = (struct command *) vcmd;
+	unsigned int num_certs = 0;
+	// peer-returned "certs" points into GnuTLS' internal data structures
+	valexp_setpredicate (ve, pred,
+		(gnutls_certificate_get_peers (cmd->session, &num_certs) != NULL)
+		&& (num_certs > 0));
+}
+
+/* valexp_i_start -- is opportunistic and will always succeed
+ */
+#define valexp_i_start valexp_1_start
+
+/* valexp_Ff_start -- validation function for the GnuTLS backend.
+ * This functin ensures that forward secrecy is applied.
+ * While _F_ only accepts DHE, _f_ will also accept DH.
+ * Note: GnuTLS does not seem to show DH that is not also DHE.
+ */
+static void valexp_Ff_start (void *vcmd, struct valexp *ve, char pred) {
+	struct command *cmd = (struct command *) vcmd;
+	gnutls_kx_algorithm_t kx = gnutls_kx_get (cmd->session);
+	switch (kx) {
+	case GNUTLS_KX_UNKNOWN:
+	case GNUTLS_KX_RSA:
+	case GNUTLS_KX_RSA_EXPORT:
+	case GNUTLS_KX_PSK:
+	default:
+		valexp_setpredicate (ve, pred, 0);
+		break;
+	case GNUTLS_KX_DHE_DSS:
+	case GNUTLS_KX_DHE_RSA:
+	case GNUTLS_KX_SRP:
+	case GNUTLS_KX_SRP_RSA:
+	case GNUTLS_KX_SRP_DSS:
+	case GNUTLS_KX_DHE_PSK:
+	case GNUTLS_KX_ECDHE_RSA:
+	case GNUTLS_KX_ECDHE_ECDSA:
+	case GNUTLS_KX_ECDHE_PSK:
+	case GNUTLS_KX_ANON_ECDH:	// Assume DHE is in fact implemented
+	case GNUTLS_KX_ANON_DH:		// Assume DHE is in fact implemented
+		valexp_setpredicate (ve, pred, 1);
+		break;
+	// case GNUTLS_KX_xxx_DH:
+	// 	valexp_setpredicate (ve, pred, pred != 'F');
+	// 	break;
+	}
+}
+
+/* valexp_A_start -- validation function for the GnuTLS backend.
+ * This function ensures that an anonymising precursor is used.
+ */
+#define valexp_A_start valexp_valflag_start
+
+/* valexp_a_start -- is opportunistic and will always succeed */
+#define valexp_a_start valexp_1_start
+
+/* valexp_Tt_start -- validation function for the GnuTLS backend.
+ * This function ensures trust based on a trusted certificate/key list.
+ * In the _t_ case, self-signed certificates are also accepted.
+ */
+static void valexp_Tt_start (void *vcmd, struct valexp *ve, char pred) {
+	struct command *cmd = (struct command *) vcmd;
+	int flagval = 0;
+	gnutls_credentials_type_t authtp;
+	const gnutls_datum_t *certs;
+	unsigned int num_certs;
+	if (cmd->vfystatus == 0) {
+		goto setflagval;
+	}
+	authtp = gnutls_auth_get_type (cmd->session);
+	if (authtp != GNUTLS_CRD_CERTIFICATE) {
+		goto setflagval;
+	}
+	certs = gnutls_certificate_get_peers (cmd->session, &num_certs);
+	// "certs" points into GnuTLS' internal data structures
+	if (num_certs < 1) {
+		goto setflagval;
+	}
+	if ((num_certs == 1) && (pred == 't')) {
+		//TODO// if (self-signature-correct) {
+		//TODO// 	flagval = 1;
+		//TODO// 	goto setflagval;
+		//TODO// }
+	}
+	//TODO// Look in trust.db for H(cert[num_certs-1])
+	//TODO// flagval = 1;
+setflagval:
+	valexp_setpredicate (ve, pred, flagval);
+}
+
+/* valexp_Dd_start -- validation function for the GnuTLS backend.
+ * This function validates through DNSSEC.
+ * While _D_ enforces DNSSEC, _d_ also accepts opted-out security.
+ */
+static void valexp_Dd_start (void *vcmd, struct valexp *ve, char pred) {
+	struct command *cmd = (struct command *) vcmd;
+	int flagval = 0;
+	dane_state_t stat;
+	unsigned int vfystat;
+	char *host;
+	char *proto;
+	int sox;
+	struct sockaddr peername;
+	socklen_t peernamesz = sizeof (peername);
+	uint16_t port;
+	host = strchr (cmd->cmd.pio_data.pioc_starttls.remoteid, '@');
+	if (host == NULL) {
+		host = cmd->cmd.pio_data.pioc_starttls.remoteid;
+	}
+	switch (cmd->cmd.pio_data.pioc_starttls.ipproto) {
+	case IPPROTO_TCP:
+		proto = "tcp";
+		break;
+	case IPPROTO_UDP:
+		proto = "udp";
+		break;
+	case IPPROTO_SCTP:
+		proto = "sctp";
+		break;
+	default:
+		goto setflagval;
+	}
+	sox = gnutls_transport_get_int (cmd->session);
+	if (sox < 0) {
+		goto setflagval;
+	}
+	if (getpeername (sox, &peername, &peernamesz) != 0) {
+		goto setflagval;
+	}
+	if ((peername.sa_family == AF_INET) &&
+				(peernamesz == sizeof (struct sockaddr_in))) {
+		port = ntohs (((struct sockaddr_in *) &peername)->sin_port);
+	} else if ((peername.sa_family == AF_INET6) &&
+				(peernamesz == sizeof (struct sockaddr_in6))) {
+	} else {
+		port = ntohs (((struct sockaddr_in6 *) &peername)->sin6_port);
+		goto setflagval;
+	}
+	if (dane_state_init (&stat, /*TODO:*/ 0) != GNUTLS_E_SUCCESS) {
+		goto setflagval;
+	}
+	if (dane_verify_session_crt (stat,
+				cmd->session,
+				host,
+				proto,
+				port,
+				0,
+				DANE_VFLAG_FAIL_IF_NOT_CHECKED,
+				&vfystat) == DANE_E_SUCCESS) {
+		if ((pred == 'D') && (vfystat & DANE_VERIFY_UNKNOWN_DANE_INFO)) {
+			dane_state_deinit (stat);
+			goto setflagval;
+		}
+		flagval = ((vfystat & ~DANE_VERIFY_UNKNOWN_DANE_INFO) == 0);
+	}
+	dane_state_deinit (stat);
+setflagval:
+	valexp_setpredicate (ve, pred, flagval);
+}
+
+/* valexp_Rr_start -- validation function for the GnuTLS backend.
+ * This function validates through a CRL.
+ * While _R_ requires the CRL to be present, _r_ accepts confirmed absense.
+ * TODO: This is not implemented yet.
+ */
+static void valexp_Rr_start (void *vcmd, struct valexp *ve, char pred) {
+	//TODO//;
+	valexp_setpredicate (ve, pred, 0);
+}
+
+/* valexp_Ee_start -- validation function for the GnuTLS backend.
+ * This function validates certificate extensions for the named service.
+ * While _E_ required OIDs to be marked critical, _e_ also accepts non-crit.
+ */
+static void valexp_Ee_start (void *vcmd, struct valexp *ve, char pred) {
+	//TODO//;
+	valexp_setpredicate (ve, pred, 0);
+}
+
+/* valexp_Oo_start -- validation function for the GnuTLS backend.
+ * This function validates with online/live information.
+ * While _O_ required positive confirmation, _o_ also accepts unknown.
+ *  -> For X.509,    look in OCSP
+ *  -> For OpenPGP,  redirect O->G, o->g
+ *  -> For Kerberos, accept anything as sufficiently live / online
+ */
+static void valexp_Oo_start (void *vcmd, struct valexp *ve, char pred) {
+	struct command *cmd = (struct command *) vcmd;
+	int valflag = 0;
+	char *atnam = NULL;
+	char *atoid = NULL;
+	gnutls_credentials_type_t authtp;
+	gnutls_certificate_type_t certtp;
+	authtp = gnutls_auth_get_type (cmd->session);
+	if (authtp != GNUTLS_CRD_CERTIFICATE) {
+		// No authentication types other than certificates yet
+		goto setvalflag;
+	} else {
+		certtp = gnutls_certificate_type_get (cmd->session);
+		if (certtp == GNUTLS_CRT_OPENPGP) {
+			//TODO// donai = ...;
+			//TODO// ...globaldir_lookup (donai, atnam, atval);
+			//TODO// if (...) { valflag = 1; }
+			//TODO// ALT: DNS CERT inquiry
+		} else if (certtp == GNUTLS_CRT_X509) {
+			//TODO// OCSP inquiry
+#ifdef GNUTLS_CRT_KRB
+		} else if (certtp == GNUTLS_CRT_KRB) {
+			// Kerberos is sufficiently "live" to be accepted
+			valflag = 1;
+			goto setvalflag;
+#endif
+		} else {
+			// GNUTLS_CRT_RAW, GNUTLS_CRT_UNKNOWN, or other
+			goto setvalflag;
+		}
+	}
+setvalflag:
+	valexp_setpredicate (ve, pred, valflag);
+}
+
+/* valexp_Gg_start -- validation function for the GnuTLS backend.
+ * This function validates through the LDAP global directory.
+ * While _G_ requires information to be present, _g_ also accepts absense.
+ *  -> For X.509,   lookup userCertificate
+ *  -> For OpenPGP, lookup pgpKey
+ *  -> For KDH,     lookup krbPrincipalName
+ *  -> For SRP,     nothing is defined
+ *  -> For OpenSSH, no TLS support
+ */
+static void valexp_Gg_start (void *vcmd, struct valexp *ve, char pred) {
+	struct command *cmd = (struct command *) vcmd;
+	int valflag = 0;
+	char *atnam = NULL;
+	char *atoid = NULL;
+	gnutls_credentials_type_t authtp;
+	gnutls_certificate_type_t certtp;
+	authtp = gnutls_auth_get_type (cmd->session);
+	if (authtp != GNUTLS_CRD_CERTIFICATE) {
+		// No authentication types other than certificates yet
+		goto setvalflag;
+	} else {
+		certtp = gnutls_certificate_type_get (cmd->session);
+		if (certtp == GNUTLS_CRT_OPENPGP) {
+			atnam = "pgpKey";
+			atoid = "1.3.6.1.4.1.3401.8.2.11";
+			//TODO// atval = 
+		} else if (certtp == GNUTLS_CRT_X509) {
+			atnam = "userCertificate";
+			atoid = "2.5.4.36";
+			//TODO// atval = 
+#ifdef GNUTLS_CRT_KRB
+		} else if (certtp == GNUTLS_CRT_KRB) {
+			atnam = "krbPrincipalName";
+			atoid = "2.16.840.1.113719.1.301.4.1.1";
+			//TODO// atval = 
+#endif
+		} else {
+			// GNUTLS_CRT_RAW, GNUTLS_CRT_UNKNOWN, or other
+			goto setvalflag;
+		}
+	}
+	/* Fallthrough to directory lookup.
+	 * Lookup the attribute atnam, or atoid, and require finding atval.
+	 */
+	//TODO// donai = ...;
+	//TODO// ...globaldir_lookup (donai, atnam, atval);
+	//TODO// if (...) { valflag = 1; }
+setvalflag:
+	valexp_setpredicate (ve, pred, valflag);
+}
+
+/* valexp_Pp_start -- validation function for the GnuTLS backend.
+ * This function validates through pinning information.
+ * While _P_ requires pinning to be present, _p_ will Trust On First Use.
+ */
+static void valexp_Pp_start (void *vcmd, struct valexp *ve, char pred) {
+	//TODO//;
+	valexp_setpredicate (ve, pred, 0);
+}
+
+/* valexp_U_start -- validation function for the GnuTLS backend.
+ * This function validates a matching username.
+ */
+static void valexp_U_start (void *vcmd, struct valexp *ve, char pred) {
+	//TODO//;
+	valexp_setpredicate (ve, pred, 0);
+}
+
+/* valexp_Ss_start -- validation function for the GnuTLS backend.
+ * This function ensures that the local end is a server.
+ * While _S_ denies credentials also usable for clients, _s_ permits them.
+ */
+static void valexp_Ss_start (void *vcmd, struct valexp *ve, char pred) {
+	struct command *cmd = (struct command *) vcmd;
+	int flagval;
+	if ((pred == 'S') && (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_CLIENT)) {
+		flagval = 0;
+	} else {
+		flagval = (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_SERVER) != 0;
+	}
+	valexp_setpredicate (ve, pred, flagval);
+}
+
+/* valexp_Cc_start -- validation function for the GnuTLS backend.
+ * This function ensures that the local end is a client.
+ * While _C_ denies credentials also usable for servers, _c_ permits them.
+ */
+static void valexp_Cc_start (void *vcmd, struct valexp *ve, char pred) {
+	struct command *cmd = (struct command *) vcmd;
+	int flagval;
+	if ((pred == 'C') && (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_SERVER)) {
+		flagval = 0;
+	} else {
+		flagval = (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_CLIENT) != 0;
+	}
+	valexp_setpredicate (ve, pred, flagval);
+}
+
+
+
 /* Fetch local credentials.  This can be done before TLS is started, to find
  * the possible authentication forms that can be offered.  The function
  * can additionally be used after interaction with the client to establish
@@ -2035,6 +2396,7 @@ static void *starttls_thread (void *cmd_void) {
 		assert (pthread_detach (pthread_self ()) == 0);
 		return NULL;
 	}
+	*cmd->valflags = '\0';
 	cmd->session_errno = 0;
 	cmd->anonpre = 0;
 	orig_cmdcode = cmd->cmd.pio_cmd;
@@ -2307,6 +2669,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 				cmd);
 		}
 	}
+	cmd->session = session;
 	//
 	// Setup client-specific behaviour if needed
 	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_CLIENT) {
@@ -2525,29 +2888,38 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 				got_remoteid = 1;
 			}
 			// "certs" points into GnuTLS' internal data structures
+			E_g2e ("Failed to validate peer",
+				gnutls_certificate_verify_peers2 (
+					session,
+					&cmd->vfystatus));
 			break;
 		case GNUTLS_CRD_PSK:
 			// Difficult... what did the history say about this?
 			got_remoteid = 0;
+			cmd->vfystatus = GNUTLS_CERT_SIGNER_NOT_FOUND;
 			break;
 		case GNUTLS_CRD_SRP:
 			// Got a credential, validation follows later on
 			//TODO// SRP does not really auth the server
 			got_remoteid = 1;
+			cmd->vfystatus = GNUTLS_CERT_SIGNER_NOT_FOUND;
 			break;
 		case GNUTLS_CRD_ANON:
 			// Did not get a credential, perhaps due to anonpre
 			got_remoteid = 0;
+			cmd->vfystatus = GNUTLS_CERT_INVALID | GNUTLS_CERT_SIGNER_NOT_FOUND | GNUTLS_CERT_SIGNATURE_FAILURE;
 			break;
 		case GNUTLS_CRD_IA:
 			// Inner Application extension is no true credential
 			// Should we compare the client-requested service?
 			// Should we renegotiate into the ALPN protocol?
 			got_remoteid = 0;
+			cmd->vfystatus = GNUTLS_CERT_INVALID | GNUTLS_CERT_SIGNER_NOT_FOUND | GNUTLS_CERT_SIGNATURE_FAILURE;
 			break;
 		default:
 			// Unknown creds cautiously considered unauthentitcated
 			got_remoteid = 0;
+			cmd->vfystatus = ~ (unsigned short) 0;	// It's all bad
 			break;
 		}
 		//
@@ -2555,6 +2927,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 		if (((cmd->anonpre & ANONPRE_EITHER) != 0)
 					&& want_remoteid && !got_remoteid) {
 			assert (anonpost == 0);
+			valexp_valflag_set (cmd, 'A');
 			// Disable ANON-protocols but keep creds from before
 			//TODO:ELSEWHERE// tlog (TLOG_TLS, LOG_DEBUG, "Reconfiguring TLS over %d without Anonymous Precursor\n", cryptfd);
 			//TODO:ELSEWHERE// E_g2e ("Failed to reconfigure GnuTLS without anonymous precursor",

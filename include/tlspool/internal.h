@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include <tlspool/commands.h>
 
@@ -36,10 +37,13 @@ struct command {
 	struct pioc_starttls *orig_starttls;
 	DB_TXN *txn;
 	pool_datum_t lids [EXPECTED_LID_TYPE_COUNT];
+	void *session;
 	int session_errno;
 	intptr_t session_certificate;
 	intptr_t session_privatekey;
 	int anonpre;
+	char valflags [32];
+	unsigned int vfystatus;
 };
 
 
@@ -515,6 +519,58 @@ void valexp_setpredicate (struct valexp *ve, char predicate, bool value);
  * end of the buffer when buflen would otherwise be exceeded.
  */
 void snprint_valexp (char *buf, int buflen, struct valexp *ve);
+
+
+/********** online.c definitions **********/
+
+
+/* Error levels: Proven correct, uncertain due to missing online info, or
+ * proven wrong.
+ */
+#define ONLINE_SUCCESS  0
+#define ONLINE_NOTFOUND 1
+#define ONLINE_INVALID  2
+
+typedef int (*online2success_t) (int online);
+int online2success_enforced (int online);
+int online2success_optional (int online);
+
+/* The online profile structure is filled with internally called functions,
+ * and are tied together to recursively dive into validation information.
+ * The various phases pass a "cursor" between them as a (void *) which may
+ * be the expected structure in a child, with any data attached as needed
+ * to turn it into a cursor over such data pieces.
+ */
+struct online_profile;
+typedef struct online_profile online_profile_t;
+
+/* Pass through an online profile, searching for a certain result but
+ * returning ONLINE_NOTFOUND if nothing works.
+ */
+union online_val;
+int online_run_profile (online_profile_t *prf,
+				char *rid, uint8_t *data, uint16_t len,
+				union online_val *hdl);
+
+/* Check an X.509 certificate against the global directory.
+ */
+inline int online_globaldir_x509 (char *rid, uint8_t *data, uint16_t len) {
+	extern online_profile_t online_globaldir_x509_profile;
+	if (strchr (rid, '@') == NULL) {
+		return ONLINE_INVALID;
+	}
+	return online_run_profile (&online_globaldir_x509_profile, rid, data, len, NULL);
+}
+
+/* Check an X.509 certificate against DANE.  Provide with the domain.
+ */
+inline int online_dane_x509 (char *rid, uint8_t *data, uint16_t len) {
+	extern online_profile_t online_dane_x509_profile;
+	if (strchr (rid, '@') != NULL) {
+		return ONLINE_INVALID;
+	}
+	return online_run_profile (&online_dane_x509_profile, rid, data, len, NULL);
+}
 
 
 #endif //TLSPOOL_INTERNAL_H
