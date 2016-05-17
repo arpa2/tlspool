@@ -1,4 +1,10 @@
-/* tlspool/online.c -- TLS pool online/live validation logic */
+/* tlspool/online.c -- TLS pool online/live validation logic
+ *
+ * This module had to introduce various external dependencies:
+ *  - LDAP (for the global directory)
+ *  - Certificate DER parsing (for DANE, to find SubjectPublicKeyInfo)
+ *  - GnuTLS (for hashing, for DANE)
+ */
 
 
 /* Most of the work done in this module returns one of three values:
@@ -84,6 +90,7 @@ typedef struct online_data {
 	uint16_t srv_port; // host byte order; default port for direct host
 	// A/AAAA record info
 	struct ub_result *dnsip;
+	int dnsip_mustsecure;
 	char *dnsip_name;
 	uint8_t *dnsip_addr;
 	int dnsip_addrfam;
@@ -149,8 +156,8 @@ typedef struct online_data {
 struct online_profile {
 	struct online_profile *altstrat;
 	struct online_profile *child;
-	int  (*eval ) (          online_data_t, val_t, void *);
-	int  (*first) (crsval_t, online_data_t, val_t, void *);
+	int  (*eval ) (          online_data_t, val_t, char *);
+	int  (*first) (crsval_t, online_data_t, val_t, char *);
 	int  (*next ) (crsval_t, online_data_t, val_t);
 	void (*clean) (crsval_t, online_data_t, val_t);
 	uint16_t crslen;	/* TODO - crslen replaceable by depth/crs_t */
@@ -174,7 +181,10 @@ int online2success_optional (int online) {
 static struct ub_ctx *ubctx = NULL;
 
 // LDAP timeout setting
-static struct timeval ldap_timeout;
+static struct timeval ldap_timeout = {
+	.tv_sec = 2,
+	.tv_usec = 0,
+};
 
 // Quick-DER WALK to a Certificate's SubjectPublicKeyInfo
 static const derwalk to_subjectpublickeyinfo [] = {
@@ -359,14 +369,14 @@ int strncatesc (char *dst, int dstlen, char *src, char srcend, char *escme) {
  *  - lookup this name's AAAA records, and iterate over them, then
  *  - lookup this name's A    records, and iterate over them
  */
-static void dns_ip_clean (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+static void dns_ip_clean (crsval_t crs, online_data_t dta, val_t hdl) {
 	// Be careful, dta->dnsip may be set to NULL switching from AAAA to A
 	if (dta->dnsip) {
 		ub_resolve_free (dta->dnsip);
 		dta->dnsip = NULL;
 	}
 }
-static int dns_ip_next (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+static int dns_ip_next (crsval_t crs, online_data_t dta, val_t hdl) {
 	uint8_t *data;
 	int ubrv;
 	// Load the next element and take action if it is non-existent
@@ -393,7 +403,7 @@ static int dns_ip_next (crsval_t crs, online_data_t dta, val_t hdl, char *param)
 	if (dta->dnsip->bogus) {
 		return ONLINE_INVALID;		// DNS found a security problem
 	}
-	if ('!' == *param) {
+	if (dta->dnsip_mustsecure) {
 		if (!dta->dnsip->secure) {
 			return ONLINE_NOTFOUND;	// Not a security problem
 		}
@@ -421,8 +431,10 @@ static int dns_ip_next (crsval_t crs, online_data_t dta, val_t hdl, char *param)
 static int dns_ip_first (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
 	int ubrv;
 	dta->dnsip = NULL;
+	dta->dnsip_mustsecure = 0;
 	// Process the parameter: !S, !D, S, D
 	if (*param == '!') {
+		dta->dnsip_mustsecure = 1;
 		param++;
 	}
 	switch (*param) {
@@ -450,7 +462,7 @@ static int dns_ip_first (crsval_t crs, online_data_t dta, val_t hdl, char *param
 		return ONLINE_NOTFOUND;
 	}
 	// Actually return the next entry by setting fields in dta
-	return dns_ip_next (crs, dta, hdl, param);
+	return dns_ip_next (crs, dta, hdl);
 }
 
 
@@ -462,7 +474,7 @@ static int dns_ip_first (crsval_t crs, online_data_t dta, val_t hdl, char *param
  *  - TODO: sort SRV records, or have a suitable iteration cursor
  *  - iterate over SRV records with first,next*,clean
  */
-static void dns_srv_clean (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+static void dns_srv_clean (crsval_t crs, online_data_t dta, val_t hdl) {
 	if (dta->dnssrv != NULL) {
 		ub_resolve_free (dta->dnssrv);
 		dta->dnssrv = NULL;
@@ -473,7 +485,7 @@ static void dns_srv_clean (crsval_t crs, online_data_t dta, val_t hdl, char *par
 	}
 	dta->srv_port = 0;
 }
-static int dns_srv_next (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+static int dns_srv_next (crsval_t crs, online_data_t dta, val_t hdl) {
 	int retval;
 	uint8_t *data;
 	int len;
@@ -545,7 +557,7 @@ static int dns_srv_first (crsval_t crs, online_data_t dta, val_t hdl, char *para
 	// Finish up in case of error before returning
 	if (retval == ONLINE_SUCCESS) {
 		dta->dnssrv_next = 0;
-		retval = dns_srv_next (crs, dta, hdl, param);
+		retval = dns_srv_next (crs, dta, hdl);
 	}
 	return retval;
 }
@@ -575,13 +587,13 @@ static int dns_srv_first (crsval_t crs, online_data_t dta, val_t hdl, char *para
  *  - Tx sets the transport to x, t=>TCP, u=>UDP, s=>SCTP
  *  - tx is like Tx but only if the protocol has not been set yet
  */
-static void dns_tlsa_clean (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+static void dns_tlsa_clean (crsval_t crs, online_data_t dta, val_t hdl) {
 	if (dta->dnstlsa != NULL) {
 		ub_resolve_free (dta->dnstlsa);
 		dta->dnstlsa = NULL;
 	}
 }
-static int dns_tlsa_next (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+static int dns_tlsa_next (crsval_t crs, online_data_t dta, val_t hdl) {
 	int retval;
 	uint8_t *data;
 	int len;
@@ -729,7 +741,7 @@ static int dns_tlsa_first (crsval_t crs, online_data_t dta, val_t hdl, char *par
 	// Finish up in case of error before returning
 	if (retval == ONLINE_SUCCESS) {
 		dta->dnstlsa_next = 0;
-		retval = dns_tlsa_next (crs, dta, hdl, param);
+		retval = dns_tlsa_next (crs, dta, hdl);
 	}
 	return retval;
 }
@@ -744,13 +756,13 @@ static int dns_tlsa_first (crsval_t crs, online_data_t dta, val_t hdl, char *par
  * operations based on it; there will never be a success from _next, all the
  * magic sits in _first and _cleanup.
  */
-static void ldap_connect_clean (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+static void ldap_connect_clean (crsval_t crs, online_data_t dta, val_t hdl) {
 	if (dta->ldap != NULL) {
 		ldap_unbind (dta->ldap);
 		dta->ldap = NULL;
 	}
 }
-static int ldap_connect_next (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+static int ldap_connect_next (crsval_t crs, online_data_t dta, val_t hdl) {
 	// There is not actually anything to iterate over... so say "ni!"
 	return ONLINE_NOTFOUND;
 }
@@ -801,7 +813,7 @@ static int ldap_connect_first (crsval_t crs, online_data_t dta, val_t hdl, char 
  * with the data/len values passed from the calling environment; this may
  * be used, for instance, to match a certificate's binary value.
  */
-static void ldap_getattr_clean (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+static void ldap_getattr_clean (crsval_t crs, online_data_t dta, val_t hdl) {
 	if (dta->ldap_attr) {
 		// Freeing _attr is part of freeing the surrounding _attr_search
 		dta->ldap_attr = NULL;
@@ -811,7 +823,7 @@ static void ldap_getattr_clean (crsval_t crs, online_data_t dta, val_t hdl, char
 		dta->ldap_attr_search = NULL;
 	}
 }
-static int ldap_getattr_next (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+static int ldap_getattr_next (crsval_t crs, online_data_t dta, val_t hdl) {
 	// Freeing old _attr is part of freeing the surrounding _attr_search
 	if (dta->ldap_attr != NULL) {
 		dta->ldap_attr = ldap_next_entry (dta->ldap, dta->ldap_attr);
@@ -934,7 +946,7 @@ static int ldap_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 		}
 		ldap_value_free_len (atvs);
 	}
-	return match ? ONLINE_SUCCESS : ONLINE_NOTFOUND;
+	return match ? ONLINE_SUCCESS : ONLINE_INVALID;
 }
 
 
@@ -1091,7 +1103,7 @@ static int dane_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 		// Continue looping
 	} while (first = 0, !last);	// Yes, assignment
 	// Return the evaluation result
-	return match ? ONLINE_SUCCESS : ONLINE_NOTFOUND;
+	return match ? ONLINE_SUCCESS : ONLINE_INVALID;
 }
 
 
@@ -1100,7 +1112,7 @@ static int dane_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 //TODO: online_profile_t online_globaldir_x509_profile = { ... };
 //TODO: online_profile_t online_dane_x509_profile = { ... };
 
-/* Rough idea, GlobalDir user@domain.name X.509:
+/* Rough idea, GlobalDir lookup for user@domain.name under X.509 credentials:
     - map rid to domain name; lookup SRV with parameter "_ldap._tcp"
     - connect to LDAP server
     - map SRV info name to DANE; lookup TLSA
@@ -1114,11 +1126,55 @@ static int dane_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
    To enable both srv2dane strategies, make them altstrat w/ shared child
  */
 
+static struct online_profile _gdir_x509_compare = {
+	.eval = ldap_attrcmp_eval,
+};
+
+static struct online_profile _gdir_x509_attrs = {
+	.eval  = dane_attrcmp_eval,
+	.first = ldap_getattr_first,
+	.next  = ldap_getattr_next,
+	.clean = ldap_getattr_clean,
+	.param = "UAuserCertificate",
+	.child = &_gdir_x509_compare,
+};
+
+static struct online_profile _gdir_x509_tlsa = {
+	.first = dns_tlsa_first,
+	.next  = dns_tlsa_next,
+	.clean = dns_tlsa_clean,
+	.param = "S",
+	.child = &_gdir_x509_attrs,
+};
+
+static struct online_profile _gdir_x509_connect = {
+	.first = ldap_connect_first,
+	.next  = ldap_connect_next,
+	.clean = ldap_connect_clean,
+	.param = "",
+	.child = &_gdir_x509_tlsa,
+};
+
+static struct online_profile _gdir_x509_ip = {
+	.first = dns_ip_first,
+	.next  = dns_ip_next,
+	.clean = dns_ip_clean,
+	.param = "!S",
+	.child = &_gdir_x509_connect,
+};
+
+struct online_profile online_globaldir_x509_profile = {
+	.first = dns_srv_first,
+	.next  = dns_srv_next,
+	.clean = dns_srv_clean,
+	.param = "!_ldap._tcp",
+	.child = &_gdir_x509_ip,
+};
+
 
 /********** MODULE MANAGEMENT ROUTINES **********/
 
 void setup_online (void) {
-	ldap_timeout.tv_sec = 2;
 	ubctx = ub_ctx_create ();
 	if (ubctx == NULL) {
 		tlog (TLOG_DAEMON, LOG_ERR, "Failed to setup DNS resolver context");
