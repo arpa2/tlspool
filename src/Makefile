@@ -4,11 +4,12 @@ OBJS = daemon.o config.o manage.o service.o cache.o pinentry.o lidentry.o \
 	starttls.o donai.o remote.o error.o ctlkey.o validate.o online.o
 
 CFLAGS += -pthread -I ../include
-CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS)
+CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS) $(UNBOUND_CFLAGS)
 
 LDFLAGS =
 
-LIBS = $(GNUTLS_LIBS) $(P11KIT_LIBS) $(BDB_LIBS) $(TASN1_LIBS) -lpthread
+LIBS = $(GNUTLS_LIBS) $(P11KIT_LIBS) $(BDB_LIBS) $(TASN1_LIBS) $(UNBOUND_LIBS)
+LIBS += -lldap -lldns -lpthread
 
 ifdef WITH_SYSTEMD
 CFLAGS += -DHAVE_SYSTEMD
@@ -25,6 +26,8 @@ BDB_CFLAGS =
 BDB_LIBS   = -ldb
 TASN1_CFLAGS = $(shell pkg-config --cflags libtasn1)
 TASN1_LIBS   = $(shell pkg-config --libs   libtasn1)
+#HOWTOUSE# UNBOUND_FLAGS = $(shell pkg-config --cflags libunbound)
+#HOWTOUSE# UNBOUBD_LIBS  = $(shell pkg-config --libs   libunbound)
 
 all: $(TARGETS)
 

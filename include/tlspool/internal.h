@@ -547,10 +547,8 @@ typedef struct online_profile online_profile_t;
 /* Pass through an online profile, searching for a certain result but
  * returning ONLINE_NOTFOUND if nothing works.
  */
-union online_val;
 int online_run_profile (online_profile_t *prf,
-				char *rid, uint8_t *data, uint16_t len,
-				union online_val *hdl);
+				char *rid, uint8_t *data, uint16_t len);
 
 /* Check an X.509 certificate against the global directory.
  */
@@ -559,7 +557,7 @@ inline int online_globaldir_x509 (char *rid, uint8_t *data, uint16_t len) {
 	if (strchr (rid, '@') == NULL) {
 		return ONLINE_INVALID;
 	}
-	return online_run_profile (&online_globaldir_x509_profile, rid, data, len, NULL);
+	return online_run_profile (&online_globaldir_x509_profile, rid, data, len);
 }
 
 /* Check an X.509 certificate against DANE.  Provide with the domain.
@@ -569,7 +567,7 @@ inline int online_dane_x509 (char *rid, uint8_t *data, uint16_t len) {
 	if (strchr (rid, '@') != NULL) {
 		return ONLINE_INVALID;
 	}
-	return online_run_profile (&online_dane_x509_profile, rid, data, len, NULL);
+	return online_run_profile (&online_dane_x509_profile, rid, data, len);
 }
 
 

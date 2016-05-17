@@ -16,11 +16,22 @@
  */
 
 
+#include <stdlib.h>
 #include <stdint.h>
 
 #include <assert.h>
+#include <syslog.h>
 
+#include <sys/types.h>
+#include <sys/time.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+
+#define LDAP_DEPRECATED 1
 #include <ldap.h>
+
+#include <unbound.h>
+#include <ldns/ldns.h>
 
 #include <tlspool/commands.h>
 #include <tlspool/internal.h>
@@ -45,6 +56,48 @@ typedef struct crsval {
 	crs_st crs;
 	val_st val;
 } crsval_st, *crsval_t;
+
+
+/* The data structure that collects information while going:
+ *  - the user-passed information: rid, and data/len to check
+ *  - the _service._protocol prefix for an SRV record
+ *  - the hostname visited from an SRV record
+ *  - the port number from an SRV record
+ *  - a file descriptor for a server conncetion
+ *  - the TLSA data found through DANE
+ */
+typedef struct online_data {
+	// User-passed data
+	char *rid;
+	uint8_t *data;
+	uint16_t len;
+	// SRV record info
+	struct ub_result *dnssrv;
+	uint16_t dnssrv_next;
+	char *srv_prefix;  // NULL when using a direct host name
+	char *srv_server;  // For direct host name, shares domain part of rid
+	uint16_t srv_port; // host byte order; default port for direct host
+	// A/AAAA record info
+	struct ub_result *dnsip;
+	char *dnsip_name;
+	uint8_t *dnsip_addr;
+	int dnsip_addrfam;
+	int dnsip_next;
+	// TLSA record info
+	struct ub_result *dnstlsa;
+	uint16_t dane_certusage;
+	uint16_t dane_selector;
+	uint16_t dane_matchtype;
+	uint8_t *dane_certdata;
+	int dane_certdata_len;
+	int dnstlsa_next;
+	// Server connection
+	int cnx;
+	// LDAP connection information
+	LDAP *ldap;
+	LDAPMessage *ldap_attr_search;
+	LDAPMessage *ldap_attr;
+} online_data_st, *online_data_t;
 
 
 /* Searching in the global directory can follow a number of profiles.
@@ -80,24 +133,23 @@ typedef struct crsval {
  *  - receiving a remote identity as a (char *)
  *  - having an integer value "crslen" to allocate as a cursor
  *  - having an optional "eval" routine to return a final ONLINE_xxx value
- *  - having a "first" routine that returns 0 on failure
- *  - having a "next" routine if multiplicity is possible, returns 0 at end
+ *  - having a "first" routine that returns _SUCCESS when data was found
+ *  - having a "next" routine if multiplicity is possible, _SUCCESS until end
  *  - having a "clean" routine, if needed, to cleanup after "first", "next"
  *  - having parameters to pass to the "first" and "next" routines
  *  - maintaining a cursor as a (crs_t) with child-value (val_t)
  *  - having potential follow-up steps for each "first" and "next" finding
  *  - having potential alt strategies if a branch returns ONLINE_NOTFOUND
  */
-
 struct online_profile {
 	struct online_profile *altstrat;
 	struct online_profile *child;
-	int  (*eval ) (          char *, uint8_t *, uint16_t, val_t, void *);
-	int  (*first) (crsval_t, char *, uint8_t *, uint16_t, val_t, void *);
-	int  (*next ) (crsval_t, char *, uint8_t *, uint16_t, val_t);
-	void (*clean) (crsval_t,                              val_t);
+	int  (*eval ) (          online_data_t, val_t, void *);
+	int  (*first) (crsval_t, online_data_t, val_t, void *);
+	int  (*next ) (crsval_t, online_data_t, val_t);
+	void (*clean) (crsval_t, online_data_t, val_t);
 	uint16_t crslen;	/* TODO - crslen replaceable by depth/crs_t */
-	void *param;
+	char *param;
 	uint16_t depth;		/* Never define, autocomputed when set to 0 */
 };
 
@@ -109,6 +161,15 @@ int online2success_enforced (int online) {
 int online2success_optional (int online) {
 	return online != ONLINE_INVALID;
 }
+
+
+/* Global variables for this module */
+
+// Unbound context
+static struct ub_ctx *ubctx = NULL;
+
+// LDAP timeout setting
+static struct timeval ldap_timeout;
 
 
 /* Return the "depth", which is the maximum number of parent+child levels
@@ -151,27 +212,35 @@ static uint16_t online_profile_depth (online_profile_t *prf) {
  * to another one in a depth-first manner upon failure to deliver by
  * a considered alternative.
  */
-int online_run_profile (online_profile_t *prf,
-				char *rid, uint8_t *data, uint16_t len,
+static int online_iterate (online_profile_t *prf, online_data_t dta,
 				val_t hdl) {
 	int retval = ONLINE_NOTFOUND;
 	int retval_invalid = 0;
 	assert (prf != NULL);
 	if (prf->eval != NULL) {
-		retval = prf->eval (rid, data, len, hdl, prf->param);
+		retval = prf->eval (dta, hdl, prf->param);
 	}
 	while (retval == ONLINE_NOTFOUND) {
 		crsval_st cursor;
 		assert (prf->first != NULL);
-		int todo = (prf->first != NULL) && prf->first (&cursor, rid, data, len, hdl, prf->param);
-		while (todo) {
-			retval = online_run_profile (prf->child, rid, data, len, &cursor.val);
-			todo = (retval == ONLINE_NOTFOUND) &&
-				(prf->next != NULL) &&
-				prf->next (&cursor, rid, data, len, hdl);
+		//OLD// int todo = (prf->first != NULL) && prf->first (&cursor, dta, hdl, prf->param);
+		retval = prf->first (&cursor, dta, hdl, prf->param);
+		//OLD// while (todo) {
+		while (retval == ONLINE_SUCCESS) {
+			retval = online_iterate (prf->child, dta, &cursor.val);
+			//OLD// todo = (retval == ONLINE_NOTFOUND) &&
+				//OLD// (prf->next != NULL) &&
+				//OLD// prf->next (&cursor, dta, hdl);
+			if (retval != ONLINE_NOTFOUND) {
+				break;
+			}
+			if (prf->next == NULL) {
+				break;
+			}
+			retval = prf->next (&cursor, dta, hdl);
 		}
 		if (prf->clean != NULL) {
-			prf->clean (&cursor, hdl);
+			prf->clean (&cursor, dta, hdl);
 		}
 		if (retval == ONLINE_INVALID) {
 			prf = prf->altstrat;
@@ -187,17 +256,664 @@ int online_run_profile (online_profile_t *prf,
 	return retval;
 }
 
+int online_run_profile (online_profile_t *prf,
+				char *rid, uint8_t *data, uint16_t len) {
+	online_data_st dta = { 0 };
+	dta.rid = rid;
+	dta.data = data;
+	dta.len = len;
+	online_iterate (prf, &dta, NULL);
+}
+
+
+/* Perform a strncat() operation with backslash escapes:
+ *  - dst is the destintion buffer, already holding a NUL-terminated string
+ *  - dstlen is the destination buffer size, with room for a trailing NUL
+ *  - src is the source string to copy, ending with a NUL character
+ *  - srcend is a character terminating src (on top of NUL, if it differs)
+ *  - escme is a NUL-terminated character string with characters to escape
+ * Escaping is done as with the printf() format string "\\%02x".
+ * The return value is the number of characters added; this may be more than
+ * the dstlen, but then the copy hasn't been executed.
+ */
+int strncatesc (char *dst, int dstlen, char *src, char srcend, char *escme) {
+	int retval = 0;
+	int esc;
+	char *stacked = NULL;
+	while ((*dst) && (dstlen > 0)) {
+		dst++;
+		dstlen--;
+	}
+	while (src) {
+		// When done with src, pop stacked and retest
+		if ((*src == '\0') || (*src = srcend)) {
+			src = stacked;
+			stacked = NULL;
+			continue;
+		}
+		// Choose between escaped and unescaped copy
+		esc = strchr (escme, *src) != NULL;
+		retval += esc ? 3 : 1;
+		if (retval <= dstlen) {
+			if (esc) {
+				sprintf (dst, "\\02x", *src++);
+				dst += 3;
+			} else {
+				*dst++ = *src++;
+			}
+		}
+	}
+	retval++;
+	if (retval <= dstlen) {
+		*dst++ = '\0';
+	}
+	return retval;
+}
+
 
 /********** PROFILE-SPECIFIC ROUTINES **********/
 
-//TODO: Look into DNS (for SRV)
-//TODO: Look into DNS (for A/AAAA/CNAME)
-//TODO: Look into DANE (for TLSA, based on SRVhostname/port)
-//TODO: Look into DANE (for TLSA, based on domainname/port)
-//TODO: Look into LDAP (connect to server)
+
+/* As an example of what can be done with the routines below:
+ *  - one route looks up an SRV record, and continues looking up each' IP info
+ *  - an alternative route looks up AAAA then A, but continues as for SRV
+ *  - regardless of these routes, open LDAP and STARTTLS, recording the cert
+ *  - look into DANE for the LDAP server to check the cert, use dc=,dc= baseDN
+ *  - change to another DN reference in LDAP if present; otherwise skip
+ *  - look for (uid=) with possibly extra attributes
+ *  - match a given value against an attribute in either of the objects found
+ *  - report success if either matches
+ *
+ * Such recipes are described as a nested/alternative composition of iterators
+ * based on the elementary routines below.  Routines are _first/_next/_clean
+ * for iteration, and _eval to evaluate a terminal condition for a node.
+ */
+
+
+//TODO: Look into OCSP (for X.509 certificate data, parsed out with Quick DER)
 //TODO: Look into LDAP (for redirection of root)
-//TODO: Look into LDAP (search for object)
-//TODO: Look into LDAP (compare attribute)
+
+
+/* Look into DNS or DNSSEC for AAAA and A records:
+ *  - require DNSSEC if param starts with '!' (and then skip that character)
+ *  - use the SRV servername if param is then 'S', or rid's domain for 'D'
+ *  - lookup this name's AAAA records, and iterate over them, then
+ *  - lookup this name's A    records, and iterate over them
+ */
+static void dns_ip_clean (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	// Be careful, dta->dnsip may be set to NULL switching from AAAA to A
+	if (dta->dnsip) {
+		ub_resolve_free (dta->dnsip);
+		dta->dnsip = NULL;
+	}
+}
+static int dns_ip_next (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	uint8_t *data;
+	int ubrv;
+	// Load the next element and take action if it is non-existent
+	if ((!dta->dnsip->havedata) || dta->dnsip->data [dta->dnsip_next]) {
+		if (dta->dnsip->qtype != LDNS_RR_TYPE_AAAA) {
+			// Not the initial IPv6 (so IPv4) is through, so end
+			return ONLINE_NOTFOUND;
+		}
+		// After we're through with AAAA, there's always A to try
+		ub_resolve_free (dta->dnsip);
+		dta->dnsip = NULL;
+		ubrv = ub_resolve (ubctx, dta->dnsip_name, LDNS_RR_TYPE_A, LDNS_RR_CLASS_IN, &dta->dnsip);
+		if (ubrv != 0) {
+			tlog (TLOG_DAEMON, LOG_INFO, "DNS A query failed: ",
+					ub_strerror (ubrv));
+			return ONLINE_NOTFOUND;
+		}
+		if (!dta->dnsip->havedata) {
+			return ONLINE_NOTFOUND;
+		}
+		dta->dnsip_next = 0;
+	}
+	// Check the sanity of the response
+	if (dta->dnsip->bogus) {
+		return ONLINE_INVALID;		// DNS found a security problem
+	}
+	if ('!' == *param) {
+		if (!dta->dnsip->secure) {
+			return ONLINE_NOTFOUND;	// Not a security problem
+		}
+	}
+	switch (dta->dnsip->qtype) {
+	case LDNS_RR_TYPE_A:
+		if (dta->dnsip->len [dta->dnsip_next] != 4) {
+			return ONLINE_INVALID;
+		}
+		dta->dnsip_addrfam = AF_INET;
+		break;
+	case LDNS_RR_TYPE_AAAA:
+		if (dta->dnsip->len [dta->dnsip_next] != 16) {
+			return ONLINE_INVALID;
+		}
+		dta->dnsip_addrfam = AF_INET6;
+		break;
+	default:
+		return ONLINE_INVALID;
+	}
+	// Deliver the response (dta->dnsip_addrfam has already been set)
+	dta->dnsip_addr = dta->dnsip->data [dta->dnsip_next++];
+	return ONLINE_SUCCESS;
+}
+static int dns_ip_first (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	int ubrv;
+	dta->dnsip = NULL;
+	// Process the parameter: !S, !D, S, D
+	if (*param == '!') {
+		param++;
+	}
+	switch (*param) {
+	case 'S':
+		assert (dta->srv_server != NULL);
+		dta->dnsip_name = dta->srv_server;
+		break;
+	case 'D':
+		dta->dnsip_name = strrchr (dta->rid, '@');
+		dta->srv_port = 0;  // Signal clearly not using SRV records
+		if (dta->dnsip_name != NULL) {
+			dta->dnsip_name++;
+		} else {
+			dta->dnsip_name = dta->rid;
+		}
+		break;
+	default:
+		return ONLINE_INVALID;
+	}
+	// Retrieve the AAAA field (passes through to _next if no AAAA found)
+	ubrv = ub_resolve (ubctx, dta->dnsip_name, LDNS_RR_TYPE_AAAA, LDNS_RR_CLASS_IN, &dta->dnsip);
+	if (ubrv != 0) {
+		tlog (TLOG_DAEMON, LOG_INFO, "DNS AAAA query failed: ",
+				ub_strerror (ubrv));
+		return ONLINE_NOTFOUND;
+	}
+	// Actually return the next entry by setting fields in dta
+	return dns_ip_next (crs, dta, hdl, param);
+}
+
+
+/* Look into DNS or DNSSEC for an SRV record:
+ *  - require DNSSEC if param starts with '!' (and then skip that character)
+ *  - use the domain part from rid
+ *  - prefix with the _service._proto from the param
+ *  - lookup SRV records
+ *  - TODO: sort SRV records, or have a suitable iteration cursor
+ *  - iterate over SRV records with first,next*,clean
+ */
+static void dns_srv_clean (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	if (dta->dnssrv != NULL) {
+		ub_resolve_free (dta->dnssrv);
+		dta->dnssrv = NULL;
+	}
+	if (dta->srv_server != NULL) {
+		free (dta->srv_server);
+		dta->srv_server = NULL;
+	}
+	dta->srv_port = 0;
+}
+static int dns_srv_next (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	int retval;
+	uint8_t *data;
+	int len;
+	ldns_rdf *server_rdf;
+	// Load the next element and return if it is non-existent
+	data = dta->dnssrv->data [dta->dnssrv_next];
+	if (data == NULL) {
+		return ONLINE_NOTFOUND;
+	}
+	len  = dta->dnssrv->len  [dta->dnssrv_next];
+	dta->dnssrv_next++;
+	// Check the data element length
+	if (len <= 2+2+2+1) {
+		// hostname "." means the service is not available
+		// TODO: Does hostname "." indeed map to 1 byte (length 0x00)?
+		return (len < 2+2+2+1)? ONLINE_INVALID: ONLINE_NOTFOUND;
+	}
+	// Harvest information from the data element
+	dta->srv_port = htons (*(uint16_t *) (data + 4));
+	server_rdf = ldns_dname_new_frm_data (len - 6, data + 6);
+	dta->srv_server = ldns_rdf2str (server_rdf);  // Freed in _cleanup
+	ldns_rdf_free (server_rdf);
+	// When we make it here, we can return success
+	return ONLINE_SUCCESS;
+}
+static int dns_srv_first (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	int retval;
+	int must_dnssec;
+	int ubrv;
+	char srvname [260];
+	char *riddom;
+	// Initialise for proper cleanup later
+	dta->dnssrv = NULL;
+	dta->srv_server = NULL;
+	// Check DNSSEC requirement in param, leave _service._protocol
+	if (*param == '!') {
+		must_dnssec = 1;
+		param++;
+	} else {
+		must_dnssec = 0;
+	}
+	// Find the domain in rid
+	riddom = strrchr (dta->rid, '@');
+	if (riddom != NULL) {
+		riddom++;
+	} else {
+		riddom = dta->rid;
+	}
+	// Construct SRV name
+	strncpy (srvname, param,  sizeof(srvname)-1);
+	strncat (srvname, ".",    sizeof(srvname)-1);
+	strncat (srvname, riddom, sizeof(srvname)-1);
+	// Query Unbound and process the response
+	ubrv = ub_resolve (ubctx, srvname, LDNS_RR_TYPE_SRV, LDNS_RR_CLASS_IN, &dta->dnssrv); // SRV,IN
+	if (ubrv != 0) {
+		tlog (TLOG_DAEMON, LOG_INFO, "DNS SRV query failed: ",
+				ub_strerror (ubrv));
+		return ONLINE_NOTFOUND;
+	}
+	if (!dta->dnssrv->havedata) {
+		retval = ONLINE_NOTFOUND;
+	} else if (dta->dnssrv->bogus) {
+		retval = ONLINE_INVALID;	// Signal a security problem
+	} else if (must_dnssec && !dta->dnssrv->secure) {
+		retval = ONLINE_NOTFOUND;	// Not a security problem
+	} else {
+		retval = ONLINE_SUCCESS;
+	}
+	// Finish up in case of error before returning
+	if (retval == ONLINE_SUCCESS) {
+		dta->dnssrv_next = 0;
+		retval = dns_srv_next (crs, dta, hdl, param);
+	}
+	return retval;
+}
+
+
+/* Look into DNSSEC for a TLSA record.  There are various ways of feeding
+ * a servername and port, the last one prevails, but it is the programmer's
+ * responsibility to always set both values.  When using SRV data, the
+ * programmer must be certain that this source of data is secure.
+ *
+ * Briefly,
+ *  - always require DNSSEC
+ *  - use the domain part from rid
+ *  - prefix with the _proto from srv_prefix (which is _service._proto)
+ *  - prefix with the _port  from srv_port (except for client mode DANE)
+ *  - lookup TLSA records, to store in dnstlsa
+ *  - iterate over TLSA records with first,next*,clean
+ *
+ * The following flags may be set in param:
+ *  - C to select client mode DANE, see draft-huque-dane-client-cert
+ *  - c is like C but only if rid has a user part detected by '@' presence
+ *  - S selects server, proto, port from DNS SRV (be sure the data is secure!)
+ *  - D selects the server from rid
+ *  - I selects the server from prior DNS IP queried hostname
+ *  - Pnnn overrides the port number with the following digits
+ *  - pnnn is like Pnnn but only if the port number has not been set yet
+ *  - Tx sets the transport to x, t=>TCP, u=>UDP, s=>SCTP
+ *  - tx is like Tx but only if the protocol has not been set yet
+ */
+static void dns_tlsa_clean (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	if (dta->dnstlsa != NULL) {
+		ub_resolve_free (dta->dnstlsa);
+		dta->dnstlsa = NULL;
+	}
+}
+static int dns_tlsa_next (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	int retval;
+	uint8_t *data;
+	int len;
+	// Load the next element and return if it is non-existent
+	data = dta->dnstlsa->data [dta->dnstlsa_next];
+	if (data == NULL) {
+		return ONLINE_NOTFOUND;
+	}
+	len  = dta->dnstlsa->len  [dta->dnstlsa_next];
+	dta->dnstlsa_next++;
+	// Check the data element length
+	if (len <= 2+2+2+1) {
+		// 3 fields of 2 bytes and minimally 1 byte certificate data
+		return (len < 2+2+2+1)? ONLINE_INVALID: ONLINE_NOTFOUND;
+	}
+	// Harvest information from the data element
+	dta->dane_certusage = htons (* (uint16_t *) (data + 0));
+	dta->dane_selector  = htons (* (uint16_t *) (data + 2));
+	dta->dane_matchtype = htons (* (uint16_t *) (data + 4));
+	dta->dane_certdata     = data + 6;
+	dta->dane_certdata_len = len - 6;
+	// When we make it here, we can return success
+	return ONLINE_SUCCESS;
+}
+static int dns_tlsa_first (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	int retval;
+	int ubrv;
+	char tlsaname [260];
+	char *server = NULL;
+	char *proto = NULL;
+	uint16_t port = 0;
+	int climode = 0;
+	// Find the domain in rid
+	// Process parameters
+	switch (*param++) {
+	case 't':
+		// tx is like Tx unless a protocol has already been set
+		if (proto != NULL) {
+			param++;
+			break;
+		}
+	case 'T':
+		// Tx is transport x; t for TCP, u for UDP, s for SCTP
+		switch (*param++) {
+		case 'u':
+			proto = "_udp";
+			break;
+		case 't':
+			proto = "_tcp";
+			break;
+		case 's':
+			proto = "_sctp";
+			break;
+		default:
+			assert ("Invalid transport type" == NULL);
+		}
+		break;
+	case 'c':
+		// Client mode 'C' but only if rid has an @ symbol
+		if (strchr (dta->rid, '@') == NULL) {
+			break;
+		}
+		// ...or else, continue into 'C' processing...
+	case 'C':
+		// Client mode (no _port), exp draft-huque-dane-client-cert
+		climode = 1;
+		break;
+	case 'S':
+		// SRV server name and port
+		server = dta->srv_server;
+		proto = strrchr (dta->srv_prefix, '.');
+		port = dta->srv_port;
+		break;
+	case 'D':
+		// Use the rid domain name (and separately set default port)
+		server = strrchr (dta->rid, '@');
+		if (server != NULL) {
+			server++;
+		} else {
+			server = dta->rid;
+		}
+		break;
+	case 'I':
+		// dns_ip hostname, may have been derived from SRV
+		server = dta->dnsip_name;
+		break;
+	case 'p':
+		// Default port
+		if (port != 0) {
+			break;
+		}
+		// ...or else, continue into the explicit port code...
+	case 'P':
+		// Explicit port, overruling setup
+		while (('0' <= *param) && (*param <= '9')) {
+			port *= 10;
+			port += *param++ - '0';
+		}
+		break;
+	}
+	// Assert assumptions that the foregoing code should have made true
+	assert (port != 0);
+	assert (server != NULL);
+	// Initialise for proper cleanup later
+	dta->dnstlsa = NULL;
+	// Construct TLSA name, _port._proto.server (or _proto.server)
+	assert (proto != NULL);
+	proto++;
+	assert (*proto != '\0');
+	if (climode) {
+		snprintf (tlsaname, sizeof(tlsaname)-2, "%s.%s",
+			// draft-huque-dane-client-cert drops "_port."
+			proto,
+			server
+			);
+	} else {
+		snprintf (tlsaname, sizeof(tlsaname)-2, "_%d.%s.%s",
+			dta->srv_port,
+			proto,
+			server
+			);
+	}
+	if (strlen (tlsaname) >= sizeof(tlsaname)-1) {
+		// Too long, return as a failed lookup
+		return ONLINE_NOTFOUND;
+	}
+	// Query Unbound and process the response
+	ubrv = ub_resolve (ubctx, tlsaname, LDNS_RR_TYPE_TLSA, LDNS_RR_CLASS_IN, &dta->dnstlsa); // TLSA,IN
+	if (ubrv != 0) {
+		tlog (TLOG_DAEMON, LOG_INFO, "DNS TLSA query failed: ",
+				ub_strerror (ubrv));
+		return ONLINE_NOTFOUND;
+	}
+	if (!dta->dnstlsa->havedata) {
+		retval = ONLINE_NOTFOUND;
+	} else if (dta->dnstlsa->bogus) {
+		retval = ONLINE_INVALID;	// Signal a security problem
+	} else if (!dta->dnstlsa->secure) {
+		retval = ONLINE_NOTFOUND;	// Not a security problem
+	} else {
+		retval = ONLINE_SUCCESS;
+	}
+	// Finish up in case of error before returning
+	if (retval == ONLINE_SUCCESS) {
+		dta->dnstlsa_next = 0;
+		retval = dns_tlsa_next (crs, dta, hdl, param);
+	}
+	return retval;
+}
+
+
+/* Connect to an LDAP server and start TLS.  Record certificate for DANE.
+ *  - Use dnsip_addr / _addrfam as a pointer to the remote server
+ *  - Use TCP with the srv_port (replaced with 389 if 0)
+ *  - When SRV is bypassed, srv_port will be 0 (and thus result in port 389)
+ *
+ * Note that, although setup as an iterator, this is only to support child
+ * operations based on it; there will never be a success from _next, all the
+ * magic sits in _first and _cleanup.
+ */
+static void ldap_connect_clean (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	if (dta->ldap != NULL) {
+		ldap_unbind (dta->ldap);
+		dta->ldap = NULL;
+	}
+}
+static int ldap_connect_next (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	// There is not actually anything to iterate over... so say "ni!"
+	return ONLINE_NOTFOUND;
+}
+static int ldap_connect_first (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	// Connect to the LDAP server, either by srv_server or rid
+	if (dta->srv_port != 0) {
+		dta->ldap = ldap_open (dta->srv_server, dta->srv_port);
+	} else {
+		// Find the domain in rid
+		char *riddom = strrchr (dta->rid, '@');
+		if (riddom != NULL) {
+			riddom++;
+		} else {
+			riddom = dta->rid;
+		}
+		dta->ldap = ldap_open (riddom, LDAP_PORT);
+	}
+	if (dta->ldap == NULL) {
+		// Won't be freed in _cleanup due to the NULL value
+		return ONLINE_NOTFOUND;
+	}
+	// Use an Anonymous Simple Bind [Section 5.1.1 of RFC 4513]
+	if (ldap_simple_bind_s (dta->ldap, "", "")) {
+		// Rely on _cleanup to unbind/close dta->ldap
+		return ONLINE_NOTFOUND;
+	}
+	// Now perform a START TLS operation, assuming it is supported
+	//TODO// ldap_start_tls_s (...) --> like to do it through the TLS Pool
+	return ONLINE_SUCCESS;
+}
+
+
+/* Search an LDAP hierarchy for an attributetype.  The baseDN for the
+ * search is dc=,dc= based on the rid, and a filter constraint (uid=)
+ * will be added if the rid has a username part.  In addition, param is
+ * processed as a series op options, ending in the attribute name A
+ * which is followed by the NUL-terminated attribute type to retrieve.
+ *
+ * The param options are:
+ *  - u requires absense  of the userid part in the rid
+ *  - U requires presence of the userid part in the rid
+ *  - c (TODO) might be used to require absense  of an objectClass (filtexpr?)
+ *  - C (TODO) might be used to require presence of an objectClass
+ *  - A terminates param; it is followed by the attribute type to request
+ * An example param string would be "UAuserCertificate".
+ *
+ * A highly probable test for each of the elements found is comparison
+ * with the data/len values passed from the calling environment; this may
+ * be used, for instance, to match a certificate's binary value.
+ */
+static void ldap_getattr_clean (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	if (dta->ldap_attr) {
+		// Freeing _attr is part of freeing the surrounding _attr_search
+		dta->ldap_attr = NULL;
+	}
+	if (dta->ldap_attr_search) {
+		ldap_msgfree (dta->ldap_attr_search);
+		dta->ldap_attr_search = NULL;
+	}
+}
+static int ldap_getattr_next (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	// Freeing old _attr is part of freeing the surrounding _attr_search
+	if (dta->ldap_attr != NULL) {
+		dta->ldap_attr = ldap_next_entry (dta->ldap, dta->ldap_attr);
+	}
+	return (dta->ldap_attr != NULL) ? ONLINE_SUCCESS : ONLINE_NOTFOUND;
+}
+static int ldap_getattr_first (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
+	int lrv;
+	char base [260];
+	int baselen = 0;
+	char filter [260];
+	char *attr [2];
+	char *riddom = strrchr (dta->rid, '@');
+	int got_user = (riddom != NULL);
+	if (got_user) {
+		riddom++;
+	} else {
+		riddom = dta->rid;
+	}
+	// Initialise LDAP attributes for ldap_getattr_
+	assert (dta->ldap != NULL);
+	dta->ldap_attr_search = dta->ldap_attr = NULL;
+	// Construct the search base
+	base [0] = '\0';
+	while (*riddom) {
+		if (baselen > sizeof(base)-6) {
+			// Out of range, report as a failure
+			return ONLINE_NOTFOUND;
+		}
+		strcpy (base + baselen, (*base)? ",dc=": "dc=");
+		// RFC 4514 escaping
+		baselen += strncatesc (base, sizeof(base)-1, riddom, '.', "\\+,\"<=># ;");
+		if (baselen > sizeof(base)-2) {
+			// Out of range, report as failure
+			return ONLINE_NOTFOUND;
+		}
+		while ((*riddom) && (*riddom != '.')) {
+			riddom++;
+		}
+	}
+	// Construct the search filter
+	strncpy (filter, "(&", sizeof(filter)-1);
+	if (got_user) {
+		strncat (filter, "(&uid=", sizeof(filter)-1);
+		// RFC 4515 escaping
+		strncatesc (filter, sizeof(filter)-1, dta->rid, '@', "*()\\");
+		strncat (filter, ")",      sizeof(filter)-1);
+	}
+	if (strlen (filter) > sizeof(filter)-2) {
+		// Out of range, sadly report failure
+		return ONLINE_NOTFOUND;
+	}
+	strncat (filter, ")", sizeof(filter)-1);
+	// Parse and process arguments
+	while (param) {
+		switch (*param++) {
+		case 'u':
+			// Require absense of a userID in rid
+			if (got_user) {
+				return ONLINE_NOTFOUND;
+			}
+			break;
+		case 'U':
+			// Require having a userID in rid
+			if (!got_user) {
+				return ONLINE_NOTFOUND;
+			}
+			break;
+		case 'A':
+			// Setup attrs to return with one attribute type
+			attr [0] = param;
+			attr [1] = NULL;
+			param = NULL;	// Terminate parsing param
+			break;
+		}
+	}
+	// Submit the LDAP query
+ldap_timeout.tv_sec = 2;
+	lrv = ldap_search_st (dta->ldap,
+				base, LDAP_SCOPE_SUBTREE, filter, attr, 0,
+				&ldap_timeout, &dta->ldap_attr_search);
+	if (lrv != 0) {
+		if ((lrv != LDAP_NO_SUCH_OBJECT) && (lrv != LDAP_NO_SUCH_ATTRIBUTE)) {
+			// Special case worthy of a notice in the system log
+			tlog (TLOG_DAEMON, LOG_NOTICE,
+				"Failed to find LDAP attribute %s under %s: %s",
+				attr [0], base,
+				ldap_err2string (lrv));
+		}
+		return ONLINE_NOTFOUND;
+	}
+	dta->ldap_attr = ldap_first_entry (dta->ldap, dta->ldap_attr_search);
+	return (dta->ldap_attr != NULL) ? ONLINE_SUCCESS : ONLINE_NOTFOUND;
+}
+
+/* Test the value of the retrieved attribute against data/len.
+ * The method used is simply an exact match with at least one of the entries
+ * for the iterated attribute.
+ */
+static int ldap_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
+	assert (dta->ldap != NULL);
+	assert (dta->ldap_attr != NULL);
+	void *cursor;
+	char *atnm;
+	struct berval **atvs;
+	int i;
+	int match = 0;
+	// Fetch the each type into a cursor, then iterate over its values
+	//TODO// This follows RFC 1823, yet there is a type error on cursor?!?
+	for (atnm = ldap_first_attribute (dta->ldap, dta->ldap_attr, &cursor);
+		atnm != NULL;
+		atnm = ldap_next_attribute (dta->ldap, dta->ldap_attr, cursor)) {
+		atvs = ldap_get_values_len (dta->ldap, dta->ldap_attr, atnm);
+		for (i=0; atvs [i] != NULL; i++) {
+			if ((atvs [i]->bv_len == dta->len) && (0 == memcmp (atvs [i]->bv_val, dta->data, dta->len))) {
+				// Yippy, we found a matching attribute!
+				match = 1;
+			}
+		}
+		ldap_value_free_len (atvs);
+	}
+	return match ? ONLINE_SUCCESS : ONLINE_NOTFOUND;
+}
 
 
 /********** PROFILE DEFINITION STRUCTURES **********/
@@ -205,14 +921,36 @@ int online_run_profile (online_profile_t *prf,
 //TODO: online_profile_t online_globaldir_x509_profile = { ... };
 //TODO: online_profile_t online_dane_x509_profile = { ... };
 
+/* Rough idea, GlobalDir user@domain.name X.509:
+    - map rid to domain name; lookup SRV with parameter "_ldap._tcp"
+    - connect to LDAP server
+    - map SRV info name to DANE; lookup TLSA
+    - lookup TLSA for LDAP and check
+    - search for user as specified by rid, (uid=) under dc=,dc=
+    - compare attribute as provided by caller
+   Note that looking back is required:
+    - rid,data/len are now passed on, perhaps setup in structure?
+    - SRV coordinates should be passed to connection and to DANE
+    - TLS coordinates should be passed to TLSA check
+   To enable both srv2dane strategies, make them altstrat w/ shared child
+ */
+
 
 /********** MODULE MANAGEMENT ROUTINES **********/
 
 void setup_online (void) {
-	/* Nothing to do */ ;
+	ldap_timeout.tv_sec = 2;
+	ubctx = ub_ctx_create ();
+	if (ubctx == NULL) {
+		tlog (TLOG_DAEMON, LOG_ERR, "Failed to setup DNS resolver context");
+		exit (1);
+	}
+	// Perhaps add trust anchors with ub_ctx_add_ta()
+	// In an asynchronous program, this would thread { poll() + ub_poll() }
 }
 
 void cleanup_online (void) {
-	/* Nothing to do */ ;
+	// In an asynchronous program, stop the thread { poll() + ub_poll() }
+	ub_ctx_delete (ubctx);
 }
 
