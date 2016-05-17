@@ -595,73 +595,75 @@ static int dns_tlsa_first (crsval_t crs, online_data_t dta, val_t hdl, char *par
 	char *proto = NULL;
 	uint16_t port = 0;
 	int climode = 0;
-	// Find the domain in rid
 	// Process parameters
-	switch (*param++) {
-	case 't':
-		// tx is like Tx unless a protocol has already been set
-		if (proto != NULL) {
-			param++;
-			break;
-		}
-	case 'T':
-		// Tx is transport x; t for TCP, u for UDP, s for SCTP
+	while (*param) {
 		switch (*param++) {
-		case 'u':
-			proto = "_udp";
-			break;
 		case 't':
-			proto = "_tcp";
+			// tx is like Tx unless a protocol has already been set
+			if (proto != NULL) {
+				param++;
+				break;
+			}
+		case 'T':
+			// Tx is transport x; t for TCP, u for UDP, s for SCTP
+			switch (*param++) {
+			case 'u':
+				proto = "_udp";
+				break;
+			case 't':
+				proto = "_tcp";
+				break;
+			case 's':
+				proto = "_sctp";
+				break;
+			default:
+				assert ("Invalid transport type" == NULL);
+			}
 			break;
-		case 's':
-			proto = "_sctp";
+		case 'c':
+			// Client mode 'C' but only if rid has an @ symbol
+			if (strchr (dta->rid, '@') == NULL) {
+				break;
+			}
+			// ...or else, continue into 'C' processing...
+		case 'C':
+			// Client mode (no _port), exp draft-huque-dane-client-cert
+			climode = 1;
 			break;
-		default:
-			assert ("Invalid transport type" == NULL);
-		}
-		break;
-	case 'c':
-		// Client mode 'C' but only if rid has an @ symbol
-		if (strchr (dta->rid, '@') == NULL) {
+		case 'S':
+			// SRV server name and port
+			server = dta->srv_server;
+			proto = strrchr (dta->srv_prefix, '.');
+			port = dta->srv_port;
+			break;
+		case 'D':
+			// Use the rid domain name (and separately set default port)
+			server = strrchr (dta->rid, '@');
+			if (server != NULL) {
+				server++;
+			} else {
+				server = dta->rid;
+			}
+			break;
+		case 'I':
+			// dns_ip hostname, may have been derived from SRV
+			server = dta->dnsip_name;
+			break;
+		case 'p':
+			// Default port
+			if (port != 0) {
+				break;
+			}
+			// ...or else, continue into the explicit port code...
+		case 'P':
+			// Explicit port, overruling setup
+			port = 0;
+			while (('0' <= *param) && (*param <= '9')) {
+				port *= 10;
+				port += *param++ - '0';
+			}
 			break;
 		}
-		// ...or else, continue into 'C' processing...
-	case 'C':
-		// Client mode (no _port), exp draft-huque-dane-client-cert
-		climode = 1;
-		break;
-	case 'S':
-		// SRV server name and port
-		server = dta->srv_server;
-		proto = strrchr (dta->srv_prefix, '.');
-		port = dta->srv_port;
-		break;
-	case 'D':
-		// Use the rid domain name (and separately set default port)
-		server = strrchr (dta->rid, '@');
-		if (server != NULL) {
-			server++;
-		} else {
-			server = dta->rid;
-		}
-		break;
-	case 'I':
-		// dns_ip hostname, may have been derived from SRV
-		server = dta->dnsip_name;
-		break;
-	case 'p':
-		// Default port
-		if (port != 0) {
-			break;
-		}
-		// ...or else, continue into the explicit port code...
-	case 'P':
-		// Explicit port, overruling setup
-		while (('0' <= *param) && (*param <= '9')) {
-			port *= 10;
-			port += *param++ - '0';
-		}
-		break;
 	}
 	// Assert assumptions that the foregoing code should have made true
 	assert (port != 0);
@@ -886,6 +888,7 @@ ldap_timeout.tv_sec = 2;
 	return (dta->ldap_attr != NULL) ? ONLINE_SUCCESS : ONLINE_NOTFOUND;
 }
 
+
 /* Test the value of the retrieved attribute against data/len.
  * The method used is simply an exact match with at least one of the entries
  * for the iterated attribute.
@@ -912,6 +915,100 @@ static int ldap_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 		}
 		ldap_value_free_len (atvs);
 	}
+	return match ? ONLINE_SUCCESS : ONLINE_NOTFOUND;
+}
+
+
+/* Test the value of a retrieved DANE record against data/len.
+ * The method used is simply an exact match with at least one of the entries
+ * for the iterated attribute.  TODO: Consider certificate sequences?
+ *
+ * The following configuration parameters exist (and are necessary):
+ *  - Unn (additionally) permits usage value nn
+ *  - Snn (additionally) permits selector value nn
+ *  - Mnn (additionally) permits matching value nn
+ */
+static int dane_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
+	assert (dta->dane_certdata != NULL);
+	assert (dta->dane_certdata_len > 0);
+	int certusage = -1;
+	int selector = -1;
+	int matchtype = -1;
+	char type;
+	int value;
+	int *todo_value;
+	uint16_t *dane_value;
+	int match = 0;
+	int cert_first, cert_last, i;
+	// Iterate over options, comparing each against the DANE-supplied value
+	while (*param) {
+		type = *param++;
+		switch (type) {
+		case 'U':
+			todo_value = &certusage;
+			dane_value = &dta->dane_certusage;
+			break;
+		case 'S':
+			todo_value = &selector;
+			dane_value = &dta->dane_selector;
+			break;
+		case 'M':
+			todo_value = &matchtype;
+			dane_value = &dta->dane_matchtype;
+			break;
+		default:
+			assert ((type == 'U') || (type == 'S') || (type == 'M'));
+		}
+		value = 0;
+		while (('0' <= *param) && (*param <= '9')) {
+			value *= 10;
+			value += *param++ - '0';
+		}
+		if (*dane_value == value) {
+			*todo_value = value;
+		}
+	}
+	// For success, require that one of each of the settings was matched
+	if ((certusage == -1) || (selector == -1) || (matchtype == -1)) {
+		return ONLINE_NOTFOUND;
+	}
+	// Process certusage:
+	//  - TODO: 0 selects all but the first certificate as matching candidates
+	//  - 1 selects only the first certificate
+	//  - TODO: 2 selects only the last certificate
+	//  - 3 selects only the first certificate, TODO: if its chain validates
+	// The "TODO" portions above are related with passing in more info
+	// to this call than a single certificate.
+	if ((certusage != 1) && (certusage != 3)) {
+		return ONLINE_NOTFOUND;
+	}
+	//TODO// chain validation for case 3?  But we prefer LOCAL policy :)
+	cert_first = cert_last  = 0;
+	// Process selector:
+	//  - 0 selects the full certificate
+	//  - TODO: 1 selects the SubjectPublicKeyInfo
+	//TODO// Implement retrieval of SubjectPublicKeyInfo
+	if (selector != 0) {
+		return ONLINE_NOTFOUND;
+	}
+	// Process matchtype:
+	//  - 0 compares the certificate as a binary value
+	//  - TODO: 1 compares the certificate's SHA-256
+	//  - TODO: 2 compares the certificate's SHA-512
+	//TODO// Implement a generic comparison that could hash a cert
+	if (matchtype != 0) {
+		return ONLINE_NOTFOUND;
+	}
+	// Now iterate over the certificates in the list, and compare to DANE
+	//TODO// for (i=cert_first; i<=cert_last; i++) {
+		uint8_t *cert     = dta->data;  //TODO// Derive from [i]th
+		int      cert_len = dta->len;   //TODO// Derive from [i]th
+		//TODO// Apply hash function, if any
+		if ((cert_len == dta->dane_certdata_len) && (0 == memcmp (cert, dta->dane_certdata, cert_len))) {
+			match = 1;
+		}
+	//TODO// }
+	// Return the evaluation result
 	return match ? ONLINE_SUCCESS : ONLINE_NOTFOUND;
 }
 
