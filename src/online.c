@@ -33,6 +33,11 @@
 #include <unbound.h>
 #include <ldns/ldns.h>
 
+#include <gnutls/gnutls.h>
+#include <gnutls/crypto.h>
+
+#include <quick-der/api.h>
+
 #include <tlspool/commands.h>
 #include <tlspool/internal.h>
 
@@ -170,6 +175,20 @@ static struct ub_ctx *ubctx = NULL;
 
 // LDAP timeout setting
 static struct timeval ldap_timeout;
+
+// Quick-DER WALK to a Certificate's SubjectPublicKeyInfo
+static const derwalk to_subjectpublickeyinfo [] = {
+	DER_WALK_ENTER | DER_TAG_SEQUENCE,	// Certificate
+	DER_WALK_ENTER | DER_TAG_SEQUENCE,	// TBSCertificate
+	DER_WALK_OPTIONAL,
+	DER_WALK_SKIP  | DER_TAG_CONTEXT(0),	// [0] Version DEFAULT v1
+	DER_WALK_SKIP  | DER_TAG_INTEGER,	// serialNumber
+	DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// signature
+	DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// issuer CHOICE { SEQUENCE }
+	DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// validity SEQUENCE { ... }
+	DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// subject CHOICE { SEQUENCE }
+	DER_WALK_END				// subjectPublicKeyInfo
+};
 
 
 /* Return the "depth", which is the maximum number of parent+child levels
@@ -919,14 +938,20 @@ static int ldap_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 }
 
 
-/* Test the value of a retrieved DANE record against data/len.
- * The method used is simply an exact match with at least one of the entries
- * for the iterated attribute.  TODO: Consider certificate sequences?
+/* Test the value of a retrieved DANE record against data/len, which is
+ * considered to be a concatenation of X.509 certificates in DER form.
+ * Note that the concatenation is not an ASN.1 SEQUENCE but quite simply
+ * a concatenation of the individual certificates.
+ *
+ * The method used for comparison is simply an exact match with at least
+ * one of the entries for the iterated attribute.
  *
  * The following configuration parameters exist (and are necessary):
  *  - Unn (additionally) permits usage value nn
  *  - Snn (additionally) permits selector value nn
  *  - Mnn (additionally) permits matching value nn
+ *
+ * The code below is a full implementation of RFC 6698 for "DANE".
  */
 static int dane_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 	assert (dta->dane_certdata != NULL);
@@ -940,6 +965,7 @@ static int dane_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 	uint16_t *dane_value;
 	int match = 0;
 	int cert_first, cert_last, i;
+	gnutls_digest_algorithm_t hashtp;
 	// Iterate over options, comparing each against the DANE-supplied value
 	while (*param) {
 		type = *param++;
@@ -973,41 +999,97 @@ static int dane_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 		return ONLINE_NOTFOUND;
 	}
 	// Process certusage:
-	//  - TODO: 0 selects all but the first certificate as matching candidates
+	//  - 0 selects all but the first certificate as matching candidates
 	//  - 1 selects only the first certificate
-	//  - TODO: 2 selects only the last certificate
-	//  - 3 selects only the first certificate, TODO: if its chain validates
-	// The "TODO" portions above are related with passing in more info
-	// to this call than a single certificate.
-	if ((certusage != 1) && (certusage != 3)) {
+	//  - 2 selects only the last certificate
+	//  - 3 selects only the first certificate, if its chain validates
+	// We do not handle the "if" part of certusage 3 here; for that, we
+	// have local policies telling us how to observe domains.  There is
+	// a possibility to have such policies depend on information in DANE.
+	int use_low = 0, use_mid = 0, use_top = 0;
+	switch (certusage) {
+	case 0:
+		use_low = 1;
+		break;
+	case 1:
+	case 3:
+		use_low = 1;
+		use_mid = 1;
+		use_top = 1;
+		break;
+	case 2:
+		use_top = 1;
+		break;
+	default:
 		return ONLINE_NOTFOUND;
 	}
 	//TODO// chain validation for case 3?  But we prefer LOCAL policy :)
 	cert_first = cert_last  = 0;
 	// Process selector:
 	//  - 0 selects the full certificate
-	//  - TODO: 1 selects the SubjectPublicKeyInfo
-	//TODO// Implement retrieval of SubjectPublicKeyInfo
-	if (selector != 0) {
+	//  - 1 selects the SubjectPublicKeyInfo
+	if ((selector != 0) && (selector != 1)) {
 		return ONLINE_NOTFOUND;
 	}
 	// Process matchtype:
 	//  - 0 compares the certificate as a binary value
-	//  - TODO: 1 compares the certificate's SHA-256
-	//  - TODO: 2 compares the certificate's SHA-512
-	//TODO// Implement a generic comparison that could hash a cert
-	if (matchtype != 0) {
+	//  - 1 compares the certificate's SHA-256
+	//  - 2 compares the certificate's SHA-512
+	switch (matchtype) {
+	case 0:
+		hashtp = GNUTLS_DIG_NULL;
+		break;
+	case 1:
+		hashtp = GNUTLS_DIG_SHA256;
+		break;
+	case 2:
+		hashtp = GNUTLS_DIG_SHA512;
+		break;
+	default:
 		return ONLINE_NOTFOUND;
 	}
 	// Now iterate over the certificates in the list, and compare to DANE
-	//TODO// for (i=cert_first; i<=cert_last; i++) {
-		uint8_t *cert     = dta->data;  //TODO// Derive from [i]th
-		int      cert_len = dta->len;   //TODO// Derive from [i]th
-		//TODO// Apply hash function, if any
-		if ((cert_len == dta->dane_certdata_len) && (0 == memcmp (cert, dta->dane_certdata, cert_len))) {
+	dercursor certs, cert, next;
+	certs.derptr = dta->data;
+	certs.derlen = dta->len;
+	int first = 1, last;
+	if (der_iterate_first (&certs, &cert)) do {
+		next = cert;
+		last = !der_iterate_next (&next);
+		// Decide whether to process this certificate
+		if (use_low && first) {
+			; // Approve
+		} else if (use_top && last) {
+			; // Approve
+		} else if (!use_mid) {
+			continue; // Disapprove
+		}
+		// End of loop setup, now process
+		uint8_t der_tag;
+		uint8_t der_hlen;
+		size_t der_ilen;
+		if (selector == 1) {
+			if (der_walk (&cert, to_subjectpublickeyinfo)) {
+				continue;  // Failed
+			}
+		}
+		if (der_header (&cert, &der_tag, &der_ilen, &der_hlen)) {
+			continue;  // Failed
+		}
+		cert.derlen = der_hlen + der_ilen;
+		// Apply hash function, if any
+		uint8_t hashbuf [512 / 8];
+		if (hashtp != GNUTLS_DIG_NULL) {
+			assert (gnutls_hash_get_len (hashtp) <= sizeof (hashbuf));
+			gnutls_hash_fast (hashtp, cert.derptr, cert.derlen, hashbuf);
+			cert.derptr = hashbuf;
+			cert.derlen = gnutls_hash_get_len (hashtp);
+		}
+		if ((cert.derlen == dta->dane_certdata_len) && (0 == memcmp (cert.derptr, dta->dane_certdata, cert.derlen))) {
 			match = 1;
 		}
-	//TODO// }
+		// Continue looping
+	} while (first = 0, !last);	// Yes, assignment
 	// Return the evaluation result
 	return match ? ONLINE_SUCCESS : ONLINE_NOTFOUND;
 }
