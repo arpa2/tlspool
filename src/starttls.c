@@ -854,6 +854,7 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 	int have_client;
 	int retval = GNUTLS_E_SUCCESS;
 
+client = -1;
 	inout [0].fd = local;
 	inout [1].fd = remote;
 	inout [2].fd = client;

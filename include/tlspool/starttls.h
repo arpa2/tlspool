@@ -41,8 +41,17 @@ int tlspool_pid (char *opt_pidfile);
 /* OS independent pool handle
  */
 #ifdef __CYGWIN__
-typedef HANDLE pool_handle_t;
-#define INVALID_POOL_HANDLE INVALID_HANDLE_VALUE
+typedef struct
+{
+	OVERLAPPED oOverlap;
+	HANDLE hPipeInst;
+	struct tlspool_command chRequest;
+	DWORD cbRead;
+    DWORD dwState;
+    BOOL fPendingIO;
+} PIPEINST, *LPPIPEINST;
+typedef LPPIPEINST pool_handle_t;
+#define INVALID_POOL_HANDLE NULL
 #else /* __CYGWIN__ */
 typedef int pool_handle_t;
 #define INVALID_POOL_HANDLE -1
@@ -244,7 +253,7 @@ int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec
  * purposes, such as finding the same session key for both sides deriving from
  * prior key negotiation; the protection of a ctlkey for such applications is
  * important.
- * 
+ *
  * The inputs to this function must adhere to the following restrictions:
  *  - label must not be a NULL pointer, but opt_ctxvalue may be set to NULL
  *    to bypass the use of a context value.  Note that passing an empty string

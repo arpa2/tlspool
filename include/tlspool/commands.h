@@ -127,10 +127,10 @@ struct tlspool_command {
 			uint32_t timeout_us;	// Timeout in microseconds
 			char pin [128];		// Empty string means no PIN
 			char prompt [128];	// Prompt from TLS Pool
-			char token_manuf [33];	// PKCS #11 token manufacturer
-			char token_model [17];	// PKCS #11 token model
-			char token_serial [17];	// PKCS #11 token serial number
-			char token_label [33];	// PKCS #11 token label
+			char token_manuf [32 + 1 + 3];	// PKCS #11 token manufacturer
+			char token_model [16 + 1 + 3];	// PKCS #11 token model
+			char token_serial [16 + 1 + 3];	// PKCS #11 token serial number
+			char token_label [32 + 1 + 3];	// PKCS #11 token label
 		} pioc_pinentry;
 		struct pioc_lidentry {
 			uint32_t flags;		// PIOF_LIDENTRY_xxx below
@@ -150,13 +150,14 @@ struct tlspool_command {
 		} pioc_prng;
 	} pio_data;
 #ifdef __CYGWIN__
+	HANDLE hPipe;
 	enum anciltype pio_ancil_type;
-	union {
+	union pio_ancil_data {
 		HANDLE pioa_filehandle;
 		WSAPROTOCOL_INFOW pioa_socket;
-	} pio_ancil_data;
+	}__attribute__((packed, aligned(2))) pio_ancil_data;
 #endif
-};
+}__attribute__((packed, aligned(2)));
 
 
 typedef struct pioc_ping     pingpool_t;
