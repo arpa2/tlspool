@@ -291,7 +291,7 @@ int online_run_profile (online_profile_t *prf,
 	dta.rid = rid;
 	dta.data = data;
 	dta.len = len;
-	online_iterate (prf, &dta, NULL);
+	return online_iterate (prf, &dta, NULL);
 }
 
 
@@ -784,13 +784,15 @@ static int ldap_connect_first (crsval_t crs, online_data_t dta, val_t hdl, char 
 		// Won't be freed in _cleanup due to the NULL value
 		return ONLINE_NOTFOUND;
 	}
+	// Now perform a START TLS operation, assuming it is supported
+	//TODO// ldap_start_tls_s (...) --> like to do it through the TLS Pool
+	//TODO// Possible: RFC 4511, sections 4.12 + 4.14
+	//TODO// ldap_extended_operation(), starrtls_minimal(), ldap_init_fd()
 	// Use an Anonymous Simple Bind [Section 5.1.1 of RFC 4513]
 	if (ldap_simple_bind_s (dta->ldap, "", "")) {
 		// Rely on _cleanup to unbind/close dta->ldap
 		return ONLINE_NOTFOUND;
 	}
-	// Now perform a START TLS operation, assuming it is supported
-	//TODO// ldap_start_tls_s (...) --> like to do it through the TLS Pool
 	return ONLINE_SUCCESS;
 }
 
@@ -1071,10 +1073,10 @@ static int dane_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 		// Decide whether to process this certificate
 		if (use_low && first) {
 			; // Approve
-		} else if (use_top && last) {
+		} else if (use_top && last && !first) {
 			; // Approve
 		} else if (!use_mid) {
-			continue; // Disapprove
+			continue; // Disapprove, iterate to next cert
 		}
 		// End of loop setup, now process
 		uint8_t der_tag;
@@ -1101,7 +1103,7 @@ static int dane_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 			match = 1;
 		}
 		// Continue looping
-	} while (first = 0, !last);	// Yes, assignment
+	} while (first = 0, cert = next, !last);  // Yes, assignments in ()
 	// Return the evaluation result
 	return match ? ONLINE_SUCCESS : ONLINE_INVALID;
 }
@@ -1131,7 +1133,8 @@ static struct online_profile _gdir_x509_compare = {
 };
 
 static struct online_profile _gdir_x509_attrs = {
-	.eval  = dane_attrcmp_eval,
+	// NOT SO: .eval  = dane_attrcmp_eval,
+	// TODO -- Compare DANE against X.509 information picked up
 	.first = ldap_getattr_first,
 	.next  = ldap_getattr_next,
 	.clean = ldap_getattr_clean,
@@ -1148,7 +1151,7 @@ static struct online_profile _gdir_x509_tlsa = {
 };
 
 static struct online_profile _gdir_x509_connect = {
-	.first = ldap_connect_first,
+	.first = ldap_connect_first,	// TODO: Pickup X.509 information
 	.next  = ldap_connect_next,
 	.clean = ldap_connect_clean,
 	.param = "",

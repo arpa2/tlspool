@@ -550,7 +550,10 @@ typedef struct online_profile online_profile_t;
 int online_run_profile (online_profile_t *prf,
 				char *rid, uint8_t *data, uint16_t len);
 
-/* Check an X.509 certificate against the global directory.
+/* Check an X.509 end certificate or a concatenation of X.509 certificates
+ * from end certificate to root certificate against the global directory.
+ * Take care that the second use assumes mere binary concatenation, rather
+ * than the ASN.1 type SEQUENCE OF Certificate.
  */
 inline int online_globaldir_x509 (char *rid, uint8_t *data, uint16_t len) {
 	extern online_profile_t online_globaldir_x509_profile;
