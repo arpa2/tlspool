@@ -164,7 +164,7 @@ struct online_profile {
 	char *param;
 	uint16_t depth;		/* Never define, autocomputed when set to 0 */
 };
-
+typedef struct online_profile online_profile_t;
 
 int online2success_enforced (int online) {
 	return online == ONLINE_SUCCESS;
@@ -271,12 +271,13 @@ static int online_iterate (online_profile_t *prf, online_data_t dta,
 		if (prf->clean != NULL) {
 			prf->clean (&cursor, dta, hdl);
 		}
-		if (retval == ONLINE_INVALID) {
+		if (retval != ONLINE_SUCCESS) {
 			prf = prf->altstrat;
-			if (prf != NULL) {
-				retval_invalid = 1;
-				retval = ONLINE_NOTFOUND;
+			if (prf == NULL) {
+				break;
 			}
+			retval_invalid = 1;
+			retval = ONLINE_NOTFOUND;
 		}
 	}
 	if ((retval == ONLINE_SUCCESS) && (retval_invalid > 0)) {
@@ -315,7 +316,7 @@ int strncatesc (char *dst, int dstlen, char *src, char srcend, char *escme) {
 	}
 	while (src) {
 		// When done with src, pop stacked and retest
-		if ((*src == '\0') || (*src = srcend)) {
+		if ((*src == '\0') || (*src == srcend)) {
 			src = stacked;
 			stacked = NULL;
 			continue;
@@ -349,7 +350,7 @@ int strncatesc (char *dst, int dstlen, char *src, char srcend, char *escme) {
  *  - regardless of these routes, open LDAP and STARTTLS, recording the cert
  *  - look into DANE for the LDAP server to check the cert, use dc=,dc= baseDN
  *  - change to another DN reference in LDAP if present; otherwise skip
- *  - look for (uid=) with possibly extra attributes
+ *  - look for (uid=) and (objectClass=pkiUser) with possibly extra attributes
  *  - match a given value against an attribute in either of the objects found
  *  - report success if either matches
  *
@@ -401,6 +402,7 @@ static int dns_ip_next (crsval_t crs, online_data_t dta, val_t hdl) {
 	}
 	// Check the sanity of the response
 	if (dta->dnsip->bogus) {
+printf ("DNS IP is BOGUS\n");
 		return ONLINE_INVALID;		// DNS found a security problem
 	}
 	if (dta->dnsip_mustsecure) {
@@ -408,20 +410,26 @@ static int dns_ip_next (crsval_t crs, online_data_t dta, val_t hdl) {
 			return ONLINE_NOTFOUND;	// Not a security problem
 		}
 	}
+	if (dta->dnsip->data [dta->dnsip_next] == NULL) {
+		return ONLINE_NOTFOUND;
+	}
 	switch (dta->dnsip->qtype) {
 	case LDNS_RR_TYPE_A:
 		if (dta->dnsip->len [dta->dnsip_next] != 4) {
+printf ("DNS IP length is not 4\n");
 			return ONLINE_INVALID;
 		}
 		dta->dnsip_addrfam = AF_INET;
 		break;
 	case LDNS_RR_TYPE_AAAA:
 		if (dta->dnsip->len [dta->dnsip_next] != 16) {
+printf ("DNS IP length is not 16\n");
 			return ONLINE_INVALID;
 		}
 		dta->dnsip_addrfam = AF_INET6;
 		break;
 	default:
+printf ("DNS IP query type is neither A nor AAAA\n");
 		return ONLINE_INVALID;
 	}
 	// Deliver the response (dta->dnsip_addrfam has already been set)
@@ -452,6 +460,7 @@ static int dns_ip_first (crsval_t crs, online_data_t dta, val_t hdl, char *param
 		}
 		break;
 	default:
+printf ("DNS IP param is neither 'S' nor 'D'\n");
 		return ONLINE_INVALID;
 	}
 	// Retrieve the AAAA field (passes through to _next if no AAAA found)
@@ -501,6 +510,7 @@ static int dns_srv_next (crsval_t crs, online_data_t dta, val_t hdl) {
 	if (len <= 2+2+2+1) {
 		// hostname "." means the service is not available
 		// TODO: Does hostname "." indeed map to 1 byte (length 0x00)?
+printf ("DNS SRV next is short, %d\n", len);
 		return (len < 2+2+2+1)? ONLINE_INVALID: ONLINE_NOTFOUND;
 	}
 	// Harvest information from the data element
@@ -527,6 +537,7 @@ static int dns_srv_first (crsval_t crs, online_data_t dta, val_t hdl, char *para
 	} else {
 		must_dnssec = 0;
 	}
+	dta->srv_prefix = param;
 	// Find the domain in rid
 	riddom = strrchr (dta->rid, '@');
 	if (riddom != NULL) {
@@ -548,6 +559,7 @@ static int dns_srv_first (crsval_t crs, online_data_t dta, val_t hdl, char *para
 	if (!dta->dnssrv->havedata) {
 		retval = ONLINE_NOTFOUND;
 	} else if (dta->dnssrv->bogus) {
+printf ("DNS SRV is BOGUS\n");
 		retval = ONLINE_INVALID;	// Signal a security problem
 	} else if (must_dnssec && !dta->dnssrv->secure) {
 		retval = ONLINE_NOTFOUND;	// Not a security problem
@@ -607,6 +619,7 @@ static int dns_tlsa_next (crsval_t crs, online_data_t dta, val_t hdl) {
 	// Check the data element length
 	if (len <= 2+2+2+1) {
 		// 3 fields of 2 bytes and minimally 1 byte certificate data
+printf ("DNS TLSA length is short, %d\n", len);
 		return (len < 2+2+2+1)? ONLINE_INVALID: ONLINE_NOTFOUND;
 	}
 	// Harvest information from the data element
@@ -732,6 +745,7 @@ static int dns_tlsa_first (crsval_t crs, online_data_t dta, val_t hdl, char *par
 	if (!dta->dnstlsa->havedata) {
 		retval = ONLINE_NOTFOUND;
 	} else if (dta->dnstlsa->bogus) {
+printf ("DNS TLSA is BOGUS\n");
 		retval = ONLINE_INVALID;	// Signal a security problem
 	} else if (!dta->dnstlsa->secure) {
 		retval = ONLINE_NOTFOUND;	// Not a security problem
@@ -789,19 +803,27 @@ static int ldap_connect_first (crsval_t crs, online_data_t dta, val_t hdl, char 
 	//TODO// Possible: RFC 4511, sections 4.12 + 4.14
 	//TODO// ldap_extended_operation(), starrtls_minimal(), ldap_init_fd()
 	// Use an Anonymous Simple Bind [Section 5.1.1 of RFC 4513]
+#if 0
+// A client that sends a LDAP request without doing a "bind" is treated
+// as an anonymous client.
+// Source: http://tldp.org/HOWTO/LDAP-HOWTO/authentication.html
 	if (ldap_simple_bind_s (dta->ldap, "", "")) {
 		// Rely on _cleanup to unbind/close dta->ldap
 		return ONLINE_NOTFOUND;
 	}
+#endif
 	return ONLINE_SUCCESS;
 }
 
 
 /* Search an LDAP hierarchy for an attributetype.  The baseDN for the
  * search is dc=,dc= based on the rid, and a filter constraint (uid=)
- * will be added if the rid has a username part.  In addition, param is
- * processed as a series op options, ending in the attribute name A
- * which is followed by the NUL-terminated attribute type to retrieve.
+ * will be added if the rid has a username part.  In addition, an
+ * objectClass pkiUser [RFC 4523] is required, and param is processed as
+ * a series op options, ending in the attribute name A which is followed
+ * by the NUL-terminated attribute type to retrieve.
+ *
+ * TODO: Instead of pkiUser, which is for X.509 only, we might use another.
  *
  * The param options are:
  *  - u requires absense  of the userid part in the rid
@@ -809,7 +831,9 @@ static int ldap_connect_first (crsval_t crs, online_data_t dta, val_t hdl, char 
  *  - c (TODO) might be used to require absense  of an objectClass (filtexpr?)
  *  - C (TODO) might be used to require presence of an objectClass
  *  - A terminates param; it is followed by the attribute type to request
- * An example param string would be "UAuserCertificate".
+ *	When ':' occurs before the attribute type, it is preceded by an
+ *	objectClass to require; multiple such occurrences are alternatives.
+ * An example param string would be "UApkiUser=userCertificate".
  *
  * A highly probable test for each of the elements found is comparison
  * with the data/len values passed from the calling environment; this may
@@ -840,6 +864,7 @@ static int ldap_getattr_first (crsval_t crs, online_data_t dta, val_t hdl, char 
 	char *attr [2];
 	char *riddom = strrchr (dta->rid, '@');
 	int got_user = (riddom != NULL);
+	char *nextparam;
 	if (got_user) {
 		riddom++;
 	} else {
@@ -851,34 +876,33 @@ static int ldap_getattr_first (crsval_t crs, online_data_t dta, val_t hdl, char 
 	// Construct the search base
 	base [0] = '\0';
 	while (*riddom) {
-		if (baselen > sizeof(base)-6) {
+		if (strlen (base) > sizeof(base)-6) {
 			// Out of range, report as a failure
 			return ONLINE_NOTFOUND;
 		}
-		strcpy (base + baselen, (*base)? ",dc=": "dc=");
+		strncat (base, (*base == '\0')? "dc=": ",dc=", sizeof(base)-1);
 		// RFC 4514 escaping
 		baselen += strncatesc (base, sizeof(base)-1, riddom, '.', "\\+,\"<=># ;");
-		if (baselen > sizeof(base)-2) {
+		if (strlen (base) > sizeof(base)-2) {
 			// Out of range, report as failure
 			return ONLINE_NOTFOUND;
 		}
 		while ((*riddom) && (*riddom != '.')) {
 			riddom++;
 		}
+		if (*riddom == '.') {
+			riddom++;
+		}
 	}
 	// Construct the search filter
 	strncpy (filter, "(&", sizeof(filter)-1);
 	if (got_user) {
-		strncat (filter, "(&uid=", sizeof(filter)-1);
+		strncat (filter, "(uid=", sizeof(filter)-1);
 		// RFC 4515 escaping
 		strncatesc (filter, sizeof(filter)-1, dta->rid, '@', "*()\\");
 		strncat (filter, ")",      sizeof(filter)-1);
 	}
-	if (strlen (filter) > sizeof(filter)-2) {
-		// Out of range, sadly report failure
-		return ONLINE_NOTFOUND;
-	}
-	strncat (filter, ")", sizeof(filter)-1);
+	strncat (filter, "(|", sizeof(filter)-1);
 	// Parse and process arguments
 	while (param) {
 		switch (*param++) {
@@ -896,14 +920,25 @@ static int ldap_getattr_first (crsval_t crs, online_data_t dta, val_t hdl, char 
 			break;
 		case 'A':
 			// Setup attrs to return with one attribute type
+			while (strchr (param, ':') != NULL) {
+				strncat (filter, "(objectClass=", sizeof(filter)-1);
+				// Return value counts '\0'
+				param += strncatesc (filter, sizeof(filter)-1, param, ':', "*()\\");
+				strncat (filter, ")", sizeof(filter)-1);
+			}
 			attr [0] = param;
 			attr [1] = NULL;
 			param = NULL;	// Terminate parsing param
 			break;
 		}
 	}
+	// Terminate the search string
+	if (strlen (filter) > sizeof(filter)-2) {
+		// Out of range, sadly report failure
+		return ONLINE_NOTFOUND;
+	}
+	strncat (filter, "))", sizeof(filter)-1);
 	// Submit the LDAP query
-ldap_timeout.tv_sec = 2;
 	lrv = ldap_search_st (dta->ldap,
 				base, LDAP_SCOPE_SUBTREE, filter, attr, 0,
 				&ldap_timeout, &dta->ldap_attr_search);
@@ -948,6 +983,7 @@ static int ldap_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 		}
 		ldap_value_free_len (atvs);
 	}
+printf ("LDAP attribute comparison match is %d\n", match);
 	return match ? ONLINE_SUCCESS : ONLINE_INVALID;
 }
 
@@ -1105,6 +1141,7 @@ static int dane_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 		// Continue looping
 	} while (first = 0, cert = next, !last);  // Yes, assignments in ()
 	// Return the evaluation result
+printf ("DANE attribute match is %d\n", match);
 	return match ? ONLINE_SUCCESS : ONLINE_INVALID;
 }
 
@@ -1138,7 +1175,7 @@ static struct online_profile _gdir_x509_attrs = {
 	.first = ldap_getattr_first,
 	.next  = ldap_getattr_next,
 	.clean = ldap_getattr_clean,
-	.param = "UAuserCertificate",
+	.param = "UApkiUser:userCertificate",
 	.child = &_gdir_x509_compare,
 };
 
@@ -1146,7 +1183,7 @@ static struct online_profile _gdir_x509_tlsa = {
 	.first = dns_tlsa_first,
 	.next  = dns_tlsa_next,
 	.clean = dns_tlsa_clean,
-	.param = "S",
+	.param = "SD",
 	.child = &_gdir_x509_attrs,
 };
 
@@ -1166,13 +1203,39 @@ static struct online_profile _gdir_x509_ip = {
 	.child = &_gdir_x509_connect,
 };
 
-struct online_profile online_globaldir_x509_profile = {
+static struct online_profile online_globaldir_x509_profile = {
 	.first = dns_srv_first,
 	.next  = dns_srv_next,
 	.clean = dns_srv_clean,
 	.param = "!_ldap._tcp",
 	.child = &_gdir_x509_ip,
 };
+
+/* Check an X.509 end certificate or a concatenation of X.509 certificates
+ * from end certificate to root certificate against the global directory.
+ * Take care that the second use assumes mere binary concatenation, rather
+ * than the ASN.1 type SEQUENCE OF Certificate.
+ */
+int online_globaldir_x509 (char *rid, uint8_t *data, uint16_t len) {
+	if (strchr (rid, '@') == NULL) {
+printf ("X.509 globaldir reference lacks '@'\n");
+		return ONLINE_INVALID;
+	}
+	return online_run_profile (&online_globaldir_x509_profile, rid, data, len);
+}
+
+/* Check an X.509 certificate against DANE.  Provide with the domain.
+ */
+/* TODO
+int online_dane_x509 (char *rid, uint8_t *data, uint16_t len) {
+	if (strchr (rid, '@') != NULL) {
+printf ("X.509 DANE reference lacks '@'\n");
+		return ONLINE_INVALID;
+	}
+	return online_run_profile (&online_dane_x509_profile, rid, data, len);
+}
+*/
+
 
 
 /********** MODULE MANAGEMENT ROUTINES **********/
@@ -1184,6 +1247,11 @@ void setup_online (void) {
 		exit (1);
 	}
 	// Perhaps add trust anchors with ub_ctx_add_ta()
+	if (ub_ctx_add_ta_autr (ubctx,
+			"/usr/local/etc/unbound/root.key" /* TODO:FIXED */)) {
+		tlog (TLOG_DAEMON, LOG_ERR, "Failed to configure DNS root trust anchor in resolver context");
+		exit (1);
+	}
 	// In an asynchronous program, this would thread { poll() + ub_poll() }
 }
 

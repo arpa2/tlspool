@@ -535,43 +535,11 @@ typedef int (*online2success_t) (int online);
 int online2success_enforced (int online);
 int online2success_optional (int online);
 
-/* The online profile structure is filled with internally called functions,
- * and are tied together to recursively dive into validation information.
- * The various phases pass a "cursor" between them as a (void *) which may
- * be the expected structure in a child, with any data attached as needed
- * to turn it into a cursor over such data pieces.
- */
-struct online_profile;
-typedef struct online_profile online_profile_t;
-
-/* Pass through an online profile, searching for a certain result but
- * returning ONLINE_NOTFOUND if nothing works.
- */
-int online_run_profile (online_profile_t *prf,
-				char *rid, uint8_t *data, uint16_t len);
-
 /* Check an X.509 end certificate or a concatenation of X.509 certificates
  * from end certificate to root certificate against the global directory.
  * Take care that the second use assumes mere binary concatenation, rather
  * than the ASN.1 type SEQUENCE OF Certificate.
  */
-inline int online_globaldir_x509 (char *rid, uint8_t *data, uint16_t len) {
-	extern online_profile_t online_globaldir_x509_profile;
-	if (strchr (rid, '@') == NULL) {
-		return ONLINE_INVALID;
-	}
-	return online_run_profile (&online_globaldir_x509_profile, rid, data, len);
-}
-
-/* Check an X.509 certificate against DANE.  Provide with the domain.
- */
-inline int online_dane_x509 (char *rid, uint8_t *data, uint16_t len) {
-	extern online_profile_t online_dane_x509_profile;
-	if (strchr (rid, '@') != NULL) {
-		return ONLINE_INVALID;
-	}
-	return online_run_profile (&online_dane_x509_profile, rid, data, len);
-}
-
+int online_globaldir_x509 (char *rid, uint8_t *data, uint16_t len);
 
 #endif //TLSPOOL_INTERNAL_H

@@ -1,5 +1,6 @@
 
-TARGETS = valexprun testvalexp
+TARGETS_OFFLINE = valexprun testvalexp
+TARGETS = $(TARGETS_OFFLINE) onlinecheck
 
 OBJS = *.o
 
@@ -25,6 +26,9 @@ P11KIT_LIBS   = $(shell pkg-config --libs   p11-kit-1)
 BDB_CFLAGS = 
 BDB_LDFLAGS = -ldb
 
+QUICKDER_CFLAGS = $(shell pkg-config --cflags quick-der) -ggdb3
+QUICKDER_LIBS   = $(shell pkg-config --libs   quick-der)
+
 all: $(TARGETS)
 
 valexprun: valexprun.c ../src/validate.c
@@ -41,6 +45,9 @@ testvalexp: valexprun
 	@ git ls-files --error-unmatch data-valexp-in/* >/dev/null
 	@ git ls-files --error-unmatch data-valexp-out/* >/dev/null
 	@ echo All validation expression tests succeeded
+
+onlinecheck: onlinecheck.c ../src/online.c
+	gcc $(CFLAGS) $(QUICKDER_CFLAGS) -o "$@" "$<" -lunbound -lldns -lldap $(QUICKDER_LIBS)
 
 clean:
 	rm -f $(OBJS) $(TARGETS)

@@ -28,8 +28,8 @@ TASN1_CFLAGS = $(shell pkg-config --cflags libtasn1)
 TASN1_LIBS   = $(shell pkg-config --libs   libtasn1)
 #HOWTOUSE# UNBOUND_FLAGS = $(shell pkg-config --cflags libunbound)
 #HOWTOUSE# UNBOUBD_LIBS  = $(shell pkg-config --libs   libunbound)
-QUICKDER_CFLAGS = -I/usr/local/include
-QUICKDER_LIBS = -L/usr/local/lib -lquickder
+QUICKDER_CFLAGS = $(shell pkg-config --cflags quick-der)
+QUICKDER_LIBS = $(shell pkg-config --libs quick-der)
 
 all: $(TARGETS)
 
