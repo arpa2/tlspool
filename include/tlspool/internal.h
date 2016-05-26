@@ -542,4 +542,12 @@ int online2success_optional (int online);
  */
 int online_globaldir_x509 (char *rid, uint8_t *data, uint16_t len);
 
+/* Check an OpenPGP public key, provided in binary form, against the global
+ * directory.
+ * Note that public keys are isolated and compared; the role of identities
+ * is in finding the keys but not in checking whether they are contained
+ * within the keys.
+ */
+int online_globaldir_pgp (char *rid, uint8_t *data, uint16_t len);
+
 #endif //TLSPOOL_INTERNAL_H

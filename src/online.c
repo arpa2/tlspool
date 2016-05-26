@@ -1148,8 +1148,6 @@ printf ("DANE attribute match is %d\n", match);
 
 /********** PROFILE DEFINITION STRUCTURES **********/
 
-//TODO: online_profile_t online_globaldir_x509_profile = { ... };
-//TODO: online_profile_t online_dane_x509_profile = { ... };
 
 /* Rough idea, GlobalDir lookup for user@domain.name under X.509 credentials:
     - map rid to domain name; lookup SRV with parameter "_ldap._tcp"
@@ -1188,7 +1186,7 @@ static struct online_profile _gdir_x509_tlsa = {
 };
 
 static struct online_profile _gdir_x509_connect = {
-	.first = ldap_connect_first,	// TODO: Pickup X.509 information
+	.first = ldap_connect_first,	// TODO: Pickup server X.509 information
 	.next  = ldap_connect_next,
 	.clean = ldap_connect_clean,
 	.param = "",
@@ -1211,6 +1209,101 @@ static struct online_profile online_globaldir_x509_profile = {
 	.child = &_gdir_x509_ip,
 };
 
+
+/* Global directory lookups for OpenPGP certificate types are very similar
+ * to those for X.509.  The difference lies in the objectClass/attributeTypes
+ * queried, and in processing the output.  Since OpenPGP keys are editable,
+ * it is not possible to do a binary comparison.  Instead, the public keys
+ * found in OpenLDAP must be expanded and compared to the public keys that
+ * are provided as binary data.
+ */
+
+static struct online_profile _gdir_pgp_compare = {
+	.eval = ldap_attrcmp_eval,	//TODO// Insufficient, isolate pubkeys
+					//TODO// Ensure key was not withdrawn?
+};
+
+static struct online_profile _gdir_pgp_attrs = {
+	// NOT SO: .eval  = dane_attrcmp_eval,
+	// TODO -- Compare DANE against X.509 information picked up
+	.first = ldap_getattr_first,
+	.next  = ldap_getattr_next,
+	.clean = ldap_getattr_clean,
+	.param = "UApgpKeyInfo:pgpKey",
+	.child = &_gdir_pgp_compare,
+};
+
+static struct online_profile _gdir_pgp_tlsa = {
+	.first = dns_tlsa_first,
+	.next  = dns_tlsa_next,
+	.clean = dns_tlsa_clean,
+	.param = "SD",
+	.child = &_gdir_pgp_attrs,
+};
+
+static struct online_profile _gdir_pgp_connect = {
+	.first = ldap_connect_first,	// TODO: Pickup server X.509 information
+	.next  = ldap_connect_next,
+	.clean = ldap_connect_clean,
+	.param = "",
+	.child = &_gdir_pgp_tlsa,
+};
+
+static struct online_profile _gdir_pgp_ip = {
+	.first = dns_ip_first,
+	.next  = dns_ip_next,
+	.clean = dns_ip_clean,
+	.param = "!S",
+	.child = &_gdir_pgp_connect,
+};
+
+static struct online_profile online_globaldir_pgp_profile = {
+	.first = dns_srv_first,
+	.next  = dns_srv_next,
+	.clean = dns_srv_clean,
+	.param = "!_pgpkey-ldap._tcp",
+	.child = &_gdir_pgp_ip,
+};
+
+
+/* Global directory lookups for Kerberos tickets are not cryptographic in
+ * nature; instead, only the principal name plus realm of the remote are
+ * of interest.  Given validated origin and authenticity of the LDAP
+ * server, this simple public information is reliable; which is not even
+ * a surprise, given that public keys are only used for comparison.
+ *
+ * TODO: Do we need this, or can we just interpret the principal name?
+ */
+
+//TODO: online_globaldir_kerberos_profile
+
+
+/* DANE lookups of server X.509 certificates center around TLSA records
+ * and DNSSEC.  There is no need to contact an LDAP server for these
+ * server certificates.
+ */
+
+//TODO: online_dane_x509_profile
+
+
+/* DANE lookups of server OpenPGP keys center around CERT or PGP DANE
+ * records and DNSSEC.  There is no need to contact an LDAP server for
+ * these server certificates.
+ */
+
+//TODO: online_dane_pgp_profile
+
+
+/* DANE lookups of server Kerberos realms center around _kerberos TXT
+ * or KRB DANE records and DNSSEC.  There is no need to contact an LDAP
+ * server for these server certificates.
+ *
+ * TODO: Do we need this, or can we just interpret the principal name?
+ */
+
+// TODO: online_dane_kerberos_profile
+
+
 /* Check an X.509 end certificate or a concatenation of X.509 certificates
  * from end certificate to root certificate against the global directory.
  * Take care that the second use assumes mere binary concatenation, rather
@@ -1222,6 +1315,21 @@ printf ("X.509 globaldir reference lacks '@'\n");
 		return ONLINE_INVALID;
 	}
 	return online_run_profile (&online_globaldir_x509_profile, rid, data, len);
+}
+
+
+/* Check an OpenPGP public key, provided in binary form, against the global
+ * directory.
+ * Note that public keys are isolated and compared; the role of identities
+ * is in finding the keys but not in checking whether they are contained
+ * within the keys.
+ */
+int online_globaldir_pgp (char *rid, uint8_t *data, uint16_t len) {
+	if (strchr (rid, '@') == NULL) {
+printf ("OpenPGP globaldir reference lacks '@'\n");
+		return ONLINE_INVALID;
+	}
+	return online_run_profile (&online_globaldir_pgp_profile, rid, data, len);
 }
 
 /* Check an X.509 certificate against DANE.  Provide with the domain.

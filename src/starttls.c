@@ -1574,22 +1574,33 @@ static void valexp_Oo_start (void *vcmd, struct valexp *ve, char pred) {
 	char *atoid = NULL;
 	gnutls_credentials_type_t authtp;
 	gnutls_certificate_type_t certtp;
+	online2success_t o2vf;
+	char *rid;
+	gnutls_datum_t *crt;
+	unsigned int crtcount;
 	authtp = gnutls_auth_get_type (cmd->session);
 	if (authtp != GNUTLS_CRD_CERTIFICATE) {
 		// No authentication types other than certificates yet
 		goto setvalflag;
 	} else {
+		if ((pred >= 'a') && (pred <= 'z')) {
+			o2vf = online2success_optional;
+		} else {
+			o2vf = online2success_enforced;
+		}
 		certtp = gnutls_certificate_type_get (cmd->session);
+		crt = gnutls_certificate_get_peers (cmd->session, &crtcount);
+		rid = cmd->cmd.pio_data.pioc_starttls.remoteid;
 		if (certtp == GNUTLS_CRT_OPENPGP) {
-			//TODO// donai = ...;
-			//TODO// ...globaldir_lookup (donai, atnam, atval);
-			//TODO// if (...) { valflag = 1; }
-			//TODO// ALT: DNS CERT inquiry
+			valflag = o2vf (online_globaldir_pgp (
+					rid, crt->data, crt->size));
 		} else if (certtp == GNUTLS_CRT_X509) {
-			//TODO// OCSP inquiry
+			//TODO// OCSP inquiry or globaldir
+			valflag = o2vf (online_globaldir_x509 (
+					rid, crt->data, crt->size));
 #ifdef GNUTLS_CRT_KRB
 		} else if (certtp == GNUTLS_CRT_KRB) {
-			// Kerberos is sufficiently "live" to be accepted
+			// Kerberos is sufficiently "live" to be pass O
 			valflag = 1;
 			goto setvalflag;
 #endif
@@ -1618,37 +1629,41 @@ static void valexp_Gg_start (void *vcmd, struct valexp *ve, char pred) {
 	char *atoid = NULL;
 	gnutls_credentials_type_t authtp;
 	gnutls_certificate_type_t certtp;
+	online2success_t o2vf;
+	char *rid;
+	gnutls_datum_t *crt;
+	unsigned int crtcount;
 	authtp = gnutls_auth_get_type (cmd->session);
 	if (authtp != GNUTLS_CRD_CERTIFICATE) {
 		// No authentication types other than certificates yet
 		goto setvalflag;
 	} else {
+		if ((pred >= 'a') && (pred <= 'z')) {
+			o2vf = online2success_optional;
+		} else {
+			o2vf = online2success_enforced;
+		}
 		certtp = gnutls_certificate_type_get (cmd->session);
+		crt = gnutls_certificate_get_peers (cmd->session, &crtcount);
+		rid = cmd->cmd.pio_data.pioc_starttls.remoteid;
 		if (certtp == GNUTLS_CRT_OPENPGP) {
-			atnam = "pgpKey";
-			atoid = "1.3.6.1.4.1.3401.8.2.11";
-			//TODO// atval = 
+			valflag = o2vf (online_globaldir_pgp (
+					rid, crt->data, crt->size));
 		} else if (certtp == GNUTLS_CRT_X509) {
-			atnam = "userCertificate";
-			atoid = "2.5.4.36";
-			//TODO// atval = 
+			//TODO// OCSP inquiry or globaldir
+			valflag = o2vf (online_globaldir_x509 (
+					rid, crt->data, crt->size));
 #ifdef GNUTLS_CRT_KRB
 		} else if (certtp == GNUTLS_CRT_KRB) {
-			atnam = "krbPrincipalName";
-			atoid = "2.16.840.1.113719.1.301.4.1.1";
-			//TODO// atval = 
+			valflag = 0;
+			//TODO// valflag = o2vf (online_globaldir_kerberos (
+			//TODO// 		rid, crt->data, crt->size));
 #endif
 		} else {
 			// GNUTLS_CRT_RAW, GNUTLS_CRT_UNKNOWN, or other
 			goto setvalflag;
 		}
 	}
-	/* Fallthrough to directory lookup.
-	 * Lookup the attribute atnam, or atoid, and require finding atval.
-	 */
-	//TODO// donai = ...;
-	//TODO// ...globaldir_lookup (donai, atnam, atval);
-	//TODO// if (...) { valflag = 1; }
 setvalflag:
 	valexp_setpredicate (ve, pred, valflag);
 }
