@@ -47,6 +47,8 @@
 #include <tlspool/commands.h>
 #include <tlspool/internal.h>
 
+#include "pgp.h"
+
 
 /* Data structures for internal state/cursor storage.
  */
@@ -338,6 +340,80 @@ int strncatesc (char *dst, int dstlen, char *src, char srcend, char *escme) {
 		*dst++ = '\0';
 	}
 	return retval;
+}
+
+
+/* Test for absense of the key revocation signature.  Since we are trusting
+ * the source of the data to be authentic, we are silently assuming that
+ * they are providing proper information -- that is, we don't check the
+ * signature that does the revocation.  The function returns 1 on success,
+ * that is, on absense of a revocation.
+ */
+static bool pgp_lacks_revocation (pgpcursor_t seq) {
+	pgpcursor_st sig;
+	uint8_t tag;
+	while (pgp_enter (seq, &tag, &sig)) {
+		if (tag != 2) {
+			// Not a signature packet, so skip
+			continue;
+		}
+		if (!pgp_getbyte (&sig, &tag)) {
+			// Unexpected end within signature packet
+			// Let's be conservative on such mistakes
+			return 0;
+		}
+		if (tag != 4) {
+			// Not a version 4 signature packet, be conservative
+			return 0;
+		}
+		if (!pgp_getbyte (&sig, &tag)) {
+			// Unexpected, be conservative
+			return 0;
+		}
+		if (tag == 0x20) {
+			// Key revocation signature, eeeeekkkss!!!
+			return 0;
+		}
+		if (tag == 0x30) {
+			// Certification revocation signature, eeeeekkkss!!!
+			return 0;
+		}
+		// Ignore 0x28, subkey revocation signature (we want auth)
+		// Continue with next packet
+	}
+	return 1;
+}
+
+/* Locate a PGP public key (and make sure that it has no revocations)
+ * from an LDAP attribute.
+ * Note that LDAP attributes "pgpKey" are stored in an IA5String in
+ * the ASCII armoured format.  Not sure why, it appears that a binary
+ * form would be more in line with LDAP, which is quite willing to
+ * present anything in radix64 after all.  (In fact, it tends to do that
+ * for pgpKey fields, which are than radix64-encypted _and_ armoured?!?)
+ *
+ * This routine returns 1 on success, 0 on failure.
+ */
+static bool pgp_publickey (pgpcursor_t pubkey) {
+	uint8_t tag;
+	pgpcursor_t key;
+	if (!pgp_enter (pubkey, &tag, &key)) {
+		// No PGP data found
+		return 0;
+	}
+	if (tag != 6) {
+		// Not a PGP key packet
+		return 0;
+	}
+	// We have found a public-key packet, initiating pubkey
+	// The key packet contents can be found in &key
+	if (pgp_lacks_revocation (pubkey)) {
+		// Public-key packet followed by key/cert revocation signature
+		return 0;
+	}
+	// We can now trust that the key is uable, and compare it
+	//TODO// Make the key available to the calling environment
+	return 1;
 }
 
 
