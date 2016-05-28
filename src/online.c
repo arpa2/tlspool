@@ -376,6 +376,7 @@ static bool pgp_lacks_revocation (pgpcursor_t seq) {
 		}
 		if (tag == 0x30) {
 			// Certification revocation signature, eeeeekkkss!!!
+			// Really though... is this of any importance?
 			return 0;
 		}
 		// Ignore 0x28, subkey revocation signature (we want auth)
@@ -394,10 +395,9 @@ static bool pgp_lacks_revocation (pgpcursor_t seq) {
  *
  * This routine returns 1 on success, 0 on failure.
  */
-static bool pgp_publickey (pgpcursor_t pubkey) {
+static bool pgp_publickey (pgpcursor_t pubkey, pgpcursor_t keydata) {
 	uint8_t tag;
-	pgpcursor_t key;
-	if (!pgp_enter (pubkey, &tag, &key)) {
+	if (!pgp_enter (pubkey, &tag, keydata)) {
 		// No PGP data found
 		return 0;
 	}
@@ -414,6 +414,28 @@ static bool pgp_publickey (pgpcursor_t pubkey) {
 	// We can now trust that the key is uable, and compare it
 	//TODO// Make the key available to the calling environment
 	return 1;
+}
+
+/* Compare two PGP transportable public key blocks based on their initial
+ * public key and absense of revocation.  Returns 1 for equal and 0 for
+ * unequal or failure.
+ * The function is more complex than one might expect, on account of the
+ * possibility that either key may be in radix64 notation.
+ */
+static bool pgp_keycmp (pgpcursor_t key1, pgpcursor_t key2) {
+	pgpcursor_st key1pk, key2pk;
+	int i;
+	bool ok = 1;
+	ok = ok && pgp_publickey (key1, &key1pk);
+	ok = ok && pgp_publickey (key2, &key2pk);
+	ok = ok && (key1->len == key2->len);
+	for (i=0; i<key1->len; i++) {
+		uint8_t byte1, byte2;
+		ok = ok && pgp_getbyte (&key1pk, &byte1);
+		ok = ok && pgp_getbyte (&key2pk, &byte2);
+		ok = ok && (byte1 == byte2);
+	}
+	return ok;
 }
 
 
@@ -1064,6 +1086,42 @@ printf ("LDAP attribute comparison match is %d\n", match);
 }
 
 
+/* Test the value of the retrieved PGP key attribute against data/len.
+ * The method used is simply an exact match with at least one of the entries
+ * for the iterated attribute.
+ */
+static int ldap_pgpkeycmp_eval (online_data_t dta, val_t hdl, char *param) {
+	assert (dta->ldap != NULL);
+	assert (dta->ldap_attr != NULL);
+	void *cursor;
+	char *atnm;
+	struct berval **atvs;
+	int i;
+	int match = 0;
+	// Fetch the each type into a cursor, then iterate over its values
+	//TODO// This follows RFC 1823, yet there is a type error on cursor?!?
+	for (atnm = ldap_first_attribute (dta->ldap, dta->ldap_attr, &cursor);
+		atnm != NULL;
+		atnm = ldap_next_attribute (dta->ldap, dta->ldap_attr, cursor)) {
+		if (strcmp (atnm, "pgpKey") != 0) {
+			continue;
+		}
+		atvs = ldap_get_values_len (dta->ldap, dta->ldap_attr, atnm);
+		for (i=0; atvs [i] != NULL; i++) {
+			pgpcursor_st suspect, attr;
+			bool ok = 1;
+			ok = ok && pgp_initcursor_binary (&suspect, dta->data, dta->len);
+			ok = ok && pgp_initcursor_radix64 (&attr, atvs [i]->bv_val, atvs [i]->bv_len);
+			ok = ok && pgp_keycmp (&suspect, &attr);
+			match = match || ok;	// Let's hope we found a match!
+		}
+		ldap_value_free_len (atvs);
+	}
+printf ("LDAP pgpKey comparison match is %d\n", match);
+	return match ? ONLINE_SUCCESS : ONLINE_INVALID;
+}
+
+
 /* Test the value of a retrieved DANE record against data/len, which is
  * considered to be a concatenation of X.509 certificates in DER form.
  * Note that the concatenation is not an ASN.1 SEQUENCE but quite simply
@@ -1295,8 +1353,7 @@ static struct online_profile online_globaldir_x509_profile = {
  */
 
 static struct online_profile _gdir_pgp_compare = {
-	.eval = ldap_attrcmp_eval,	//TODO// Insufficient, isolate pubkeys
-					//TODO// Ensure key was not withdrawn?
+	.eval = ldap_pgpkeycmp_eval,
 };
 
 static struct online_profile _gdir_pgp_attrs = {

@@ -1,3 +1,7 @@
+
+
+#include <string.h>
+
 #include "pgp.h"
 
 
@@ -16,7 +20,7 @@ bool pgp_initcursor_radix64 (pgpcursor_t crs, char *data, uint32_t len) {
 	uint32_t r64ofs;
 	uint32_t r64len;
 	// Ensure proper armour header line
-	if (stncmp (data, "-----BEGIN PGP ") != 0) {
+	if (memcmp (data, "-----BEGIN PGP ", 15) != 0) {
 		return 0;
 	}
 	// Skip over headers, searching for an empty line
@@ -97,9 +101,10 @@ bool pgp_getbyte (pgpcursor_t crs, uint8_t *output) {
 		{ 4, -2, 100 },
 		{ 6,  0, 100 }
 	};
+	const uint8_t *shifts;
 	static const char codepoints [] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-	uint8_t *shifts;
 	char c;
+	uint8_t d;
 	if (crs->ofs >= crs->len) {
 		// The byte sequence has ended
 		return 0;
