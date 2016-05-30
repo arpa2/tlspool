@@ -648,11 +648,14 @@ void starttls_pkcs11_provider (char *p11path) {
 	//TODO:WHY?// free_p11pin ();
 }
 
+static void cleanup_starttls_credentials (void);/* Defined below */
+static void cleanup_starttls_validation (void);	/* Defined below */
+static int setup_starttls_credentials (void);	/* Defined below */
+static void setup_starttls_validation (void);	/* Defined below */
 
 /* The global and static setup function for the starttls functions.
  */
 void setup_starttls (void) {
-	int setup_starttls_credentials (void);	/* Defined below */
 	const char *curver;
 	int gtls_errno = GNUTLS_E_SUCCESS;
 	char *otfsigcrt, *otfsigkey;
@@ -784,12 +787,13 @@ fprintf (stderr, "DEBUG: When it matters, gtls_errno = %d, onthefly_issuercrt %s
 	//MOVED// 	tlog (TLOG_DB, LOG_CRIT, "FATAL: Management databases setup failed: %s", strerror (errno));
 	//MOVED// 	exit (1);
 	//MOVED// }
+	// Setup the structures for validation expression evaluation
+	setup_starttls_validation ();
 }
 
 /* Cleanup the structures and resources that were setup for handling TLS.
  */
 void cleanup_starttls (void) {
-	void cleanup_starttls_credentials (void);	/* Defined below */
 	//MOVED// cleanup_management ();
 	if (onthefly_subjectkey != NULL) {
 		gnutls_x509_privkey_deinit (onthefly_subjectkey);
@@ -1343,6 +1347,11 @@ gnutls_pcert_st *load_certificate_chain (uint32_t flags, unsigned int *chainlen,
 }
 
 
+/* The global variable holding the valexp handlers for starttls.c.
+ */
+static struct valexp_handling starttls_valexp_handling [VALEXP_NUM_HANDLERS];
+
+
 /* valexp_valflag_set -- set a validation flag bit for an uppercase predicate.
  */
 static void valexp_valflag_set (struct command *cmd, char pred) {
@@ -1576,7 +1585,7 @@ static void valexp_Oo_start (void *vcmd, struct valexp *ve, char pred) {
 	gnutls_certificate_type_t certtp;
 	online2success_t o2vf;
 	char *rid;
-	gnutls_datum_t *crt;
+	const gnutls_datum_t *crt;
 	unsigned int crtcount;
 	authtp = gnutls_auth_get_type (cmd->session);
 	if (authtp != GNUTLS_CRD_CERTIFICATE) {
@@ -1595,12 +1604,12 @@ static void valexp_Oo_start (void *vcmd, struct valexp *ve, char pred) {
 			valflag = o2vf (online_globaldir_pgp (
 					rid, crt->data, crt->size));
 		} else if (certtp == GNUTLS_CRT_X509) {
-			//TODO// OCSP inquiry or globaldir
+			// OCSP inquiry or globaldir
 			valflag = o2vf (online_globaldir_x509 (
 					rid, crt->data, crt->size));
 #ifdef GNUTLS_CRT_KRB
 		} else if (certtp == GNUTLS_CRT_KRB) {
-			// Kerberos is sufficiently "live" to be pass O
+			// Kerberos is sufficiently "live" to always pass O
 			valflag = 1;
 			goto setvalflag;
 #endif
@@ -1631,7 +1640,7 @@ static void valexp_Gg_start (void *vcmd, struct valexp *ve, char pred) {
 	gnutls_certificate_type_t certtp;
 	online2success_t o2vf;
 	char *rid;
-	gnutls_datum_t *crt;
+	const gnutls_datum_t *crt;
 	unsigned int crtcount;
 	authtp = gnutls_auth_get_type (cmd->session);
 	if (authtp != GNUTLS_CRD_CERTIFICATE) {
@@ -1715,6 +1724,86 @@ static void valexp_Cc_start (void *vcmd, struct valexp *ve, char pred) {
 	valexp_setpredicate (ve, pred, flagval);
 }
 
+
+static void valexp_error_start (void *handler_data, struct valexp *ve, char pred) {
+	assert (0);
+}
+static void valexp_ignore_stop (void *handler_data, struct valexp *ve, char pred) {
+	; // Nothing to do
+}
+static void valexp_ignore_final (void *handler_data, struct valexp *ve, bool value) {
+	; // Nothing to do
+}
+
+/* Construct the valexp_ handling functions into a static structure, each at
+ * their indexes as defined by valexp_handler_index(), for use as handling
+ * functions in calls to valexp_register() that setup expressions.
+ */
+static void setup_starttls_validation (void) {
+	int i;
+	for (i=0; i < VALEXP_NUM_HANDLERS; i++) {
+		starttls_valexp_handling [i].handler_start = valexp_error_start;
+		starttls_valexp_handling [i].handler_stop  = valexp_ignore_stop;
+		starttls_valexp_handling [i].handler_final = valexp_ignore_final;
+	}
+	starttls_valexp_handling [valexp_handling_index ('I')]
+		.handler_start = valexp_I_start;
+	starttls_valexp_handling [valexp_handling_index ('i')]
+		.handler_start = valexp_i_start;
+	starttls_valexp_handling [valexp_handling_index ('F')]
+		.handler_start = valexp_Ff_start;
+	starttls_valexp_handling [valexp_handling_index ('f')]
+		.handler_start = valexp_Ff_start;
+	starttls_valexp_handling [valexp_handling_index ('A')]
+		.handler_start = valexp_A_start;
+	starttls_valexp_handling [valexp_handling_index ('a')]
+		.handler_start = valexp_a_start;
+	starttls_valexp_handling [valexp_handling_index ('T')]
+		.handler_start = valexp_Tt_start;
+	starttls_valexp_handling [valexp_handling_index ('t')]
+		.handler_start = valexp_Tt_start;
+	starttls_valexp_handling [valexp_handling_index ('D')]
+		.handler_start = valexp_Dd_start;
+	starttls_valexp_handling [valexp_handling_index ('d')]
+		.handler_start = valexp_Dd_start;
+	starttls_valexp_handling [valexp_handling_index ('R')]
+		.handler_start = valexp_Rr_start;
+	starttls_valexp_handling [valexp_handling_index ('r')]
+		.handler_start = valexp_Rr_start;
+	starttls_valexp_handling [valexp_handling_index ('E')]
+		.handler_start = valexp_Ee_start;
+	starttls_valexp_handling [valexp_handling_index ('e')]
+		.handler_start = valexp_Ee_start;
+	starttls_valexp_handling [valexp_handling_index ('O')]
+		.handler_start = valexp_Oo_start;
+	starttls_valexp_handling [valexp_handling_index ('o')]
+		.handler_start = valexp_Oo_start;
+	starttls_valexp_handling [valexp_handling_index ('G')]
+		.handler_start = valexp_Gg_start;
+	starttls_valexp_handling [valexp_handling_index ('g')]
+		.handler_start = valexp_Gg_start;
+	starttls_valexp_handling [valexp_handling_index ('P')]
+		.handler_start = valexp_Pp_start;
+	starttls_valexp_handling [valexp_handling_index ('p')]
+		.handler_start = valexp_Pp_start;
+	starttls_valexp_handling [valexp_handling_index ('U')]
+		.handler_start = valexp_U_start;
+	starttls_valexp_handling [valexp_handling_index ('S')]
+		.handler_start = valexp_Ss_start;
+	starttls_valexp_handling [valexp_handling_index ('s')]
+		.handler_start = valexp_Ss_start;
+	starttls_valexp_handling [valexp_handling_index ('C')]
+		.handler_start = valexp_Cc_start;
+	starttls_valexp_handling [valexp_handling_index ('c')]
+		.handler_start = valexp_Cc_start;
+}
+
+
+/* Cleanup any remaining global state for starttls.c's use of validate.c
+ */
+static void cleanup_starttls_validation (void) {
+	;	// Nothing to do
+}
 
 
 /* Fetch local credentials.  This can be done before TLS is started, to find
@@ -2095,7 +2184,7 @@ int cli_srpcreds_retrieve (gnutls_session_t session,
  * Credentials are generally implemented through callback functions.
  * This should be called after setting up DH parameters.
  */
-int setup_starttls_credentials (void) {
+static int setup_starttls_credentials (void) {
 	gnutls_anon_server_credentials_t srv_anoncred = NULL;
 	gnutls_anon_client_credentials_t cli_anoncred = NULL;
 	gnutls_certificate_credentials_t clisrv_certcred = NULL;
@@ -2283,7 +2372,7 @@ int setup_starttls_credentials (void) {
 
 /* Cleanup all credentials created, just before exiting the daemon.
  */
-void cleanup_starttls_credentials (void) {
+static void cleanup_starttls_credentials (void) {
 	while (srv_credcount-- > 0) {
 		struct credinfo *crd = &srv_creds [srv_credcount];
 		switch (crd->credtp) {

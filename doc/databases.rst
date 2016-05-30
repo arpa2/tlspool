@@ -83,7 +83,7 @@ This is a duplicate hash database; one key may hold multiple values.
 
 **Key** is the DoNAI of the local user.
 
-**Value** is a binary compositions of the following elements:
+**Values** each are a binary composition of the following elements:
 
   * A 32-bit value in network byte order, containing ``LID_xxx`` flags;
   * A `PKCS #11 URI`_ referencing the private key for the identity;
@@ -162,18 +162,17 @@ entries found will be reported and a choice can be made by that tool.
 Trust database
 --------------
 
-**TODO:** Complete
-
 The default name of this database is ``trust.db``.
 
 The purpose of this database is to establish trust in credentials such as
-certificates.  It may hold several methods to establish this trust:
+certificates or Kerberos principal names.  It may hold several methods to
+establish this trust:
 
--  Trust anchors, notably X.509 root certificates and trusted OpenPGP public keys
--  X.509 certificate chains of OpenPGP public key paths leading to a trust anchor
--  Pinned public credentials for individual peer identities
--  Withdrawal descriptors to express explicit loss of trust
--  Validation requirements for anything subordinate this entry
+  * Trust anchors, notably X.509 root certificates and trusted OpenPGP public keys
+  * X.509 certificate chains of OpenPGP public key paths leading to a trust anchor
+  * Pinned public credentials for individual peer identities
+  * Withdrawal descriptors to express explicit loss of trust
+  * Validation requirements for anything subordinate this entry
 
 Entries in this database are accessible to parties other than the TLS Pool;
 this means that it would be possible to control the TLS Pool centrally by
@@ -185,6 +184,35 @@ The origin of the data need not be manually administered.  Protocols such
 as OCSP or DANE could be used to retrieve information to be automaically
 inserted into this database.  This might be done from a central location,
 and both simplify and speedup the management of provisioned setups.
+
+**Key** is a binary representation of data to be found:
+
+  * The `AuthorityKeyIdentifier` [Section 4.2.1.1 of RFC 5280] that must
+    be used in all CA-signed certificates other than a root certificate.
+  * The 64-bit v4 key ID [Section 12.2 of RFC 4880] of a PGP public key.
+  * The SHA-256 fingerprint of a pinned endpoint credential.
+
+**Values** each are a binary composition of the following elements:
+
+  * A 32-bit flag field, including the type of material represented in the key,
+    according to the value at hand (each type has its own entry), one of the
+    flags is used to indicate revocation rather than confirmation;
+  * A NUL-terminated string holding a validation expression (the least of
+    which would be "1", or 0x30 0x00);
+  * The parameters for the given type; usually, a credential to use for
+    validation:
+
+      - For X.509 root certificates, a CA root key; intermediate keys are
+        assumed to have been passed from remote to local.
+      - For PGP keys, a trusted signing key in PGP public key transport
+        format; these may be looked up with key IDs of Issuer subpackets found
+        in signatures; note that only one-level PGP signing is supported,
+        but PGP's potential diversity of signers is fully supported.
+      - For pinning, there are a few flavours; a 32-bit type field defines
+        the type of data.  Since a secure hash has matched, there is no
+        further mention of the unfolded pinning information.  Following is a
+        NUL-terminated string holding the remote identity established with
+        the pinned end entity credential.
 
 
 Policy database

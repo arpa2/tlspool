@@ -437,6 +437,14 @@ struct valexp_handling {
 	void (*handler_final) (void *handler_data, struct valexp *ve, bool value);
 };
 
+/* Request the valexp_handler index, that is, the index into the
+ * valexp_handling array used during valexp_register().  An assert() is done
+ * to ensure that the provided flag is defined.  The return value is in the
+ * range of 0 to VALEXP_NUM_HANLDERS-1, inclusive.
+ */
+#define VALEXP_NUM_HANDLERS 28
+int valexp_handling_index (char flag);
+
 
 /* This is where a validation expression gets registered with the validation
  * processing framework.  The expressions are provided as a NULL-terminated
@@ -473,7 +481,7 @@ struct valexp_handling {
  * code simplicity.
  */
 struct valexp *valexp_register (char **and_expressions,
-				struct valexp_handling *handler_functions,
+				struct valexp_handling handler_functions [VALEXP_NUM_HANDLERS],
 				void *handler_data);
 
 
