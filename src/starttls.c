@@ -691,7 +691,11 @@ void setup_starttls (void) {
 	//
 	// Parse the default priority string
 	E_g2e ("Failed to setup NORMAL priority cache",
-		gnutls_priority_init (&priority_normal, "NONE:+VERS-TLS-ALL:+VERS-DTLS-ALL:+COMP-NULL:+CIPHER-ALL:+CURVE-ALL:+SIGN-ALL:+MAC-ALL:+ANON-ECDH:+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:+CTYPE-X.509:+CTYPE-OPENPGP:+SRP:+SRP-RSA:+SRP-DSS", NULL));
+		gnutls_priority_init (&priority_normal, "NONE:+VERS-TLS-ALL:+VERS-DTLS-ALL:+COMP-NULL:"
+#ifdef GNUTLS_CRT_KRB
+		"%GNUTLS_ASYM_CERT_TYPES:"
+#endif
+		"+CIPHER-ALL:+CURVE-ALL:+SIGN-ALL:+MAC-ALL:+ANON-ECDH:+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:+CTYPE-X.509:+CTYPE-OPENPGP:+SRP:+SRP-RSA:+SRP-DSS", NULL));
 		// gnutls_priority_init (&priority_normal, "NORMAL:-RSA:+ANON-ECDH:+RSA:+CTYPE-X.509:+CTYPE-OPENPGP:+SRP:+SRP-RSA:+SRP-DSS", NULL));
 	//
 	// Try to setup on-the-fly signing key / certificate and gen a certkey
@@ -1162,7 +1166,7 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 				0));
 		break;
 	case LID_TYPE_PGP:
-		E_g2e ("MOVED: Failed to import OpenPGP certificate",
+		E_g2e ("MOVED: Failed to import OpenPGP key",
 			gnutls_pcert_import_openpgp_raw (
 				*pcert,
 				&certdatum,
@@ -1191,10 +1195,20 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			//TODO: Have a client ticket matching the found localid
 			//TODO: From the client ticket, obtain a service ticket
 			//TODO: Export the service ticket
+			E_g2e ("MOVED: Failed to import Kerberos ticket",
+				gnutls_pcert_import_krb_ticket (
+					*pcert,
+					&certdatum,	//TODO:WHATSFOUND//
+					0));
 		} else {
 			// KDH-Only with server-side TGT
 			//TODO: Have a server-side TGT for the service/remoteid
 			//TODO: Export the server-side TGT
+			E_g2e ("MOVED: Failed to import Kerberos ticket",
+				gnutls_pcert_import_krb_ticket (
+					*pcert,
+					&certdatum,	//TODO:WHATSFOUND//
+					0));
 		}
 		E_g2e ("Failed to import Kerberos ticket",
 			gnutls_pcert_import_pgp_raw (
@@ -1613,7 +1627,7 @@ static void valexp_Oo_start (void *vcmd, struct valexp *ve, char pred) {
 	gnutls_certificate_type_t certtp;
 	online2success_t o2vf;
 	char *rid;
-	gnutls_datum_t *crt;
+	const gnutls_datum_t *crt;
 	unsigned int crtcount;
 	authtp = gnutls_auth_get_type (cmd->session);
 	if (authtp != GNUTLS_CRD_CERTIFICATE) {
@@ -1668,7 +1682,7 @@ static void valexp_Gg_start (void *vcmd, struct valexp *ve, char pred) {
 	gnutls_certificate_type_t certtp;
 	online2success_t o2vf;
 	char *rid;
-	gnutls_datum_t *crt;
+	const gnutls_datum_t *crt;
 	unsigned int crtcount;
 	authtp = gnutls_auth_get_type (cmd->session);
 	if (authtp != GNUTLS_CRD_CERTIFICATE) {
