@@ -1,6 +1,6 @@
 
 TARGETS_OFFLINE = valexprun testvalexp
-TARGETS = $(TARGETS_OFFLINE) onlinecheck
+TARGETS = $(TARGETS_OFFLINE) onlinecheck testonline
 
 OBJS = *.o
 
@@ -46,8 +46,11 @@ testvalexp: valexprun
 	@ git ls-files --error-unmatch data-valexp-out/* >/dev/null
 	@ echo All validation expression tests succeeded
 
-onlinecheck: onlinecheck.c ../src/online.c
-	gcc $(CFLAGS) $(QUICKDER_CFLAGS) -o "$@" "$<" -lunbound -lldns -lldap $(QUICKDER_LIBS)
+onlinecheck: onlinecheck.c ../src/online.c ../src/pgp.c
+	gcc $(CFLAGS) $(QUICKDER_CFLAGS) -o "$@" "$<" ../src/pgp.c -lunbound -lldns -lldap $(QUICKDER_LIBS)
+
+testonline: onlinecheck
+	./onlinecheck | tee | grep -v 'UNEXPECTED OUTPUT FAILURE'
 
 clean:
 	rm -f $(OBJS) $(TARGETS)

@@ -8,7 +8,7 @@
 typedef struct {
 	uint8_t *ptr;
 	uint32_t ofs;
-	uint32_t len;
+	uint32_t end;
 	uint32_t r64ofs;	// Set to PGP64_NA for binary data
 } pgpcursor_st, *pgpcursor_t;
 

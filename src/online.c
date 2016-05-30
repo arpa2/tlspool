@@ -407,12 +407,11 @@ static bool pgp_publickey (pgpcursor_t pubkey, pgpcursor_t keydata) {
 	}
 	// We have found a public-key packet, initiating pubkey
 	// The key packet contents can be found in &key
-	if (pgp_lacks_revocation (pubkey)) {
+	if (!pgp_lacks_revocation (pubkey)) {
 		// Public-key packet followed by key/cert revocation signature
 		return 0;
 	}
 	// We can now trust that the key is uable, and compare it
-	//TODO// Make the key available to the calling environment
 	return 1;
 }
 
@@ -428,8 +427,8 @@ static bool pgp_keycmp (pgpcursor_t key1, pgpcursor_t key2) {
 	bool ok = 1;
 	ok = ok && pgp_publickey (key1, &key1pk);
 	ok = ok && pgp_publickey (key2, &key2pk);
-	ok = ok && (key1->len == key2->len);
-	for (i=0; i<key1->len; i++) {
+	ok = ok && ((key1pk.end - key1pk.ofs) == (key2pk.end - key2pk.ofs));
+	for (i=key1pk.ofs; ok && (i < key1pk.end); i++) {
 		uint8_t byte1, byte2;
 		ok = ok && pgp_getbyte (&key1pk, &byte1);
 		ok = ok && pgp_getbyte (&key2pk, &byte2);
@@ -459,7 +458,7 @@ static bool pgp_keycmp (pgpcursor_t key1, pgpcursor_t key2) {
 
 
 //TODO: Look into OCSP (for X.509 certificate data, parsed out with Quick DER)
-//TODO: Look into LDAP (for redirection of root)
+//TODO: Look into LDAP (for redirection of baseDN)
 
 
 /* Look into DNS or DNSSEC for AAAA and A records:
@@ -1302,7 +1301,7 @@ static struct online_profile _gdir_x509_compare = {
 };
 
 static struct online_profile _gdir_x509_attrs = {
-	// NOT SO: .eval  = dane_attrcmp_eval,
+	// NOT SO: .eval  = dane_tlscmp_eval,
 	// TODO -- Compare DANE against X.509 information picked up
 	.first = ldap_getattr_first,
 	.next  = ldap_getattr_next,
@@ -1357,7 +1356,7 @@ static struct online_profile _gdir_pgp_compare = {
 };
 
 static struct online_profile _gdir_pgp_attrs = {
-	// NOT SO: .eval  = dane_attrcmp_eval,
+	// NOT SO: .eval  = dane_tlscmp_eval,
 	// TODO -- Compare DANE against X.509 information picked up
 	.first = ldap_getattr_first,
 	.next  = ldap_getattr_next,
