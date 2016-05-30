@@ -1079,13 +1079,18 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 
 	//
 	// Setup the lidtype parameter for responding
-	certtp = gnutls_certificate_type_get (session);
+	certtp = gnutls_certificate_type_get_peers (session);
 	if (certtp == GNUTLS_CRT_OPENPGP) {
 		tlog (TLOG_TLS, LOG_INFO, "Serving OpenPGP certificate request as a %s", rolestr);
 		lidtype = LID_TYPE_PGP;
 	} else if (certtp == GNUTLS_CRT_X509) {
 		tlog (TLOG_TLS, LOG_INFO, "Serving X.509 certificate request as a %s", rolestr);
 		lidtype = LID_TYPE_X509;
+#ifdef GNUTLS_CRT_KRB
+	} else if (certtp == GNUTLS_CRT_KRB) {
+		tlog (TLOG_TLS, LOG_INFO, "Serving X.509 certificate request as a %s", rolestr);
+		lidtype = LID_TYPE_KRB5;
+#endif
 	} else {
 		// GNUTLS_CRT_RAW, GNUTLS_CRT_UNKNOWN, or other
 		tlog (TLOG_TLS, LOG_ERR, "Funny sort of certificate retrieval attempted as a %s", rolestr);
@@ -1203,6 +1208,38 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 				NULL,	/* use master key */
 				0));
 		break;
+#ifdef GNUTLS_CRT_KRB
+	case LID_TYPE_KRB5:
+		if (lidrole == LID_ROLE_CLIENT) {
+			// KDH-Only or KDH-Enhanced; fetch ticket for localid
+			// and a TGT based on it for service/remoteid@REALM
+			char *svc = cmd->service;
+			gnutls_datum_t *server_tgt = NULL;
+			// If the server provides a TGT, employ ENC-TKT-IN-SKEY
+			if (gnutls_certificate_type_get_peers (cmd->session) == GNUTLS_CRT_KRB) {
+				// Try to get the server's TGT; it returns NULL
+				// if it wasn't found.  We will not try this
+				// unless we know what we'd find would be KRB.
+				server_tgt = gnutls_certificate_get_peers (cmd->session, NULL);
+			}
+			// The servicename may need mapping to another form
+			if (strcmp (svc, "http")) {
+				svc = "HTTP";
+			}
+			//TODO: Have a client ticket matching the found localid
+			//TODO: From the client ticket, obtain a service ticket
+			//TODO: Export the service ticket
+		} else {
+			// KDH-Only with server-side TGT
+			//TODO: Have a server-side TGT for the service/remoteid
+			//TODO: Export the server-side TGT
+		}
+		E_g2e ("Failed to import Kerberos ticket",
+			gnutls_pcert_import_pgp_raw (
+				*pcert,
+				&certdatum,	//TODO// Service ticket
+				0));
+#endif
 	default:
 		/* Should not happen */
 		break;
