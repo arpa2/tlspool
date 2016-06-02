@@ -110,6 +110,15 @@ There are a few more flags in the initial word of an entry:
   * ``LID_ROLE_SERVER`` is set if this entry can be used in TLS servers;
   * Both may be set, and indeed this may be common for OpenPGP keys.
 
+A special form of the localid entry is for an validation expression that
+may be applied to the local identity represented in the key; this is
+setup as ``LID_TYPE_VALEXP``.  Its PKCS #11 string is abused to hold the
+validation expression, and it has the following 0x00 byte as a C-style
+string terminator.  There is no binary value stored for this type of entry.
+Note that the same validation expression applies to all the forms of  
+identifying as the local identity.  When this entry is absent, it is
+considered to permit anything, as were the validation expression "1".  
+
 
 Identity disclosure database
 ----------------------------
@@ -158,6 +167,13 @@ back even in the presence of a database entry, then all the
 entries found will be reported and a choice can be made by that tool.
 
 
+**TODO:** We should probably also define a validation expression in
+the disclosure database, to mark restrictions on contact with those
+particular remote selections.  If that is done, we should also apply
+this validation expression to the case where the remote is a client!
+We might terminate the first entry with a NUL character to indicate
+a validation expression, for instance; that is invalid DoNAI syntax.
+
 
 Trust database
 --------------
@@ -170,7 +186,7 @@ establish this trust:
 
   * Trust anchors, notably X.509 root certificates and trusted OpenPGP public keys
   * X.509 certificate chains of OpenPGP public key paths leading to a trust anchor
-  * Pinned public credentials for individual peer identities
+  * Pinned ending time stamps (must-change and may-change, if provided)
   * Withdrawal descriptors to express explicit loss of trust
   * Validation requirements for anything subordinate this entry
 
@@ -194,11 +210,12 @@ and both simplify and speedup the management of provisioned setups.
 
 **Values** each are a binary composition of the following elements:
 
-  * A 32-bit flag field, including the type of material represented in the key,
-    according to the value at hand (each type has its own entry), one of the
+  * A 32-bit flag field in network-byte order,
+    including the type of material represented in the key, according to
+    the database entry at hand (each type has separate entries), one of the
     flags is used to indicate revocation rather than confirmation;
   * A NUL-terminated string holding a validation expression (the least of
-    which would be "1", or 0x30 0x00);
+    which would be "1", or 0x30 0x00); this is meaningful for signing entries;
   * The parameters for the given type; usually, a credential to use for
     validation:
 
@@ -208,26 +225,13 @@ and both simplify and speedup the management of provisioned setups.
         format; these may be looked up with key IDs of Issuer subpackets found
         in signatures; note that only one-level PGP signing is supported,
         but PGP's potential diversity of signers is fully supported.
+      - There are revocation entries (whose validation expression is ignored)
+        with times for an update (and the next) and a sequence of certificate
+        serial numbers.  These revocation entries are stored under the same
+	key as a trusted entry, after this principal trusted entry.
       - For pinning, there are a few flavours; a 32-bit type field defines
         the type of data.  Since a secure hash has matched, there is no
         further mention of the unfolded pinning information.  Following is a
         NUL-terminated string holding the remote identity established with
         the pinned end entity credential.
-
-
-Policy database
----------------
-
-**TODO:** Complete
-
-The default name of this database is ``policy.db``.
-
-The purpose of this database is to store the current policy settings, and
-to permit dynamic changes to these settings in a way that is automatically
-picked up by the TLS Pool.
-
-Lookups in this database are based on local/remote identities, which are
-searched through iteration with a DoNAI selector that gradually moves from
-concrete identity to the most abstract one.
-
 
