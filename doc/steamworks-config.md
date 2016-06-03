@@ -21,8 +21,9 @@ Information need for the TLS Pool
 
     -   *remoteid to localids.* This mapping is used to decide what local
         identity to present to a remote. The remote is generally not represented
-        by a DoNAI, but by a DoNAI Selector. A trust validation expression may
-        be included for each remote identity DoNAI Selector.
+        by a Domain-or-Network-Access-Identifier or DoNAI, but by a DoNAI 
+        Selector (see http://donai.arpa2.net). A trust validation expression 
+        may be included for each remote identity DoNAI Selector.
 
     -   *localid to credentials.* This mapping is used to store various
         credential forms, such as certificates, PGP public keys, and so on. The
@@ -91,7 +92,7 @@ in
 #     DESC 'DoNAI, Domain or Netwerk Access Identifier, see http://donai.arpa2.net' )
 
 # syntax ( TODO
-#     DESC 'DoNAI Selector, see http://donai.arpa2.net' )
+#     DESC 'DoNAI Selector, see http://donai.arpa2.net/selector.html' )
 
 # matchingrule ( TODO
 #     DESC 'Compare if a DoNAI matches a DoNAI Selector'
