@@ -7,9 +7,23 @@
 
 #include <stdint.h>
 
+#if  defined(__CYGWIN__) || defined(__MINGW64__) || defined(_WIN32)
+#define WINDOWS_PORT
+#endif
+
+
+#ifdef WINDOWS_PORT
+#define bzero(b,len) (memset((b), '\0', (len)), (void) 0)
+#define _usleep(usec) (Sleep((usec) / 1000))
+#define poll(fds, nfds, timeout) WSAPoll(fds, nfds, timeout)
 #ifdef __CYGWIN__
 #include <windows/winsock2.h>
+#else /* __CYGWIN__ */
+#include <winsock2.h>
 #endif /* __CYGWIN__ */
+#else /* WINDOWS_PORT */
+#define _usleep(usec) usleep(usec)
+#endif /* WINDOWS_PORT */
 
 
 #define TLSPOOL_IDENTITY_V2	"20151111api@tlspool.arpa2.net"
@@ -24,7 +38,7 @@
 #define TLSPOOL_TIMEOUT_DEFAULT 0
 #define TLSPOOL_TIMEOUT_INFINITE (~(uint32_t)0)
 
-#ifdef __CYGWIN__
+#ifdef WINDOWS_PORT
 /* Windows is the only non-POSIX system, and as such, it is the only
  * platform that does not support ancilary data (as on UNIX domain sockets).
  * To pass a socket or file handle, different structures must be passed to
@@ -37,7 +51,7 @@ enum anciltype {
 	ANCIL_TYPE_SOCKET = 1,
 	ANCIL_TYPE_FILEHANDLE = 2,
 };
-#endif /* __CYGWIN__ */
+#endif /* WINDOWS_PORT */
 
 
 /*
@@ -96,7 +110,7 @@ enum anciltype {
  * of file descriptors is used to pass connections between processes.
  */
 
-
+#pragma pack(push,2)
 struct tlspool_command {
 	uint16_t pio_reqid;	// Request->Response request identifier
 	uint16_t pio_cbid;	// Response->Request callback identifier
@@ -127,10 +141,10 @@ struct tlspool_command {
 			uint32_t timeout_us;	// Timeout in microseconds
 			char pin [128];		// Empty string means no PIN
 			char prompt [128];	// Prompt from TLS Pool
-			char token_manuf [32 + 1 + 3];	// PKCS #11 token manufacturer
-			char token_model [16 + 1 + 3];	// PKCS #11 token model
-			char token_serial [16 + 1 + 3];	// PKCS #11 token serial number
-			char token_label [32 + 1 + 3];	// PKCS #11 token label
+			char token_manuf[32 + 1 + 3];	// PKCS #11 token manufacturer
+			char token_model[16 + 1 + 3];	// PKCS #11 token model
+			char token_serial[16 + 1 + 3];	// PKCS #11 token serial number
+			char token_label[32 + 1 + 3];	// PKCS #11 token label
 		} pioc_pinentry;
 		struct pioc_lidentry {
 			uint32_t flags;		// PIOF_LIDENTRY_xxx below
@@ -149,15 +163,16 @@ struct tlspool_command {
 			uint8_t buffer [TLSPOOL_PRNGBUFLEN]; // ctlkey, in1, in2
 		} pioc_prng;
 	} pio_data;
-#ifdef __CYGWIN__
+#ifdef WINDOWS_PORT
 	HANDLE hPipe;
 	enum anciltype pio_ancil_type;
 	union pio_ancil_data {
 		HANDLE pioa_filehandle;
 		WSAPROTOCOL_INFOW pioa_socket;
-	}__attribute__((packed, aligned(2))) pio_ancil_data;
+	} pio_ancil_data;
 #endif
-}__attribute__((packed, aligned(2)));
+};
+#pragma pack(pop)
 
 
 typedef struct pioc_ping     pingpool_t;

@@ -11,12 +11,17 @@
 #include <syslog.h>
 #include <errno.h>
 #include <time.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 
 #include <tlspool/internal.h>
 
-#include <pkcs11.h>
+#ifdef WINDOWS_PORT
+#include <winsock2.h>
+#define sleep(secs) Sleep(secs)
+#else /* WINDOWS_PORT */
+#include <sys/socket.h>
+#include <sys/un.h>
+#endif /* WINDOWS_PORT */
+#include <p11-kit/pkcs11.h>
 #include <p11-kit/uri.h>
 
 
@@ -52,7 +57,7 @@
  */
 static pthread_mutex_t pinentry_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct command *pinentry_cmd = NULL;
-static int pinentry_client = -1;
+static pool_handle_t pinentry_client = INVALID_POOL_HANDLE;
 static time_t pinentry_timeout = 0;
 
 
@@ -102,7 +107,7 @@ void register_pinentry_command (struct command *cmd) {
  * being closed.  The PINENTRY facility is freed up immediately for the next
  * requestor.
  */
-void pinentry_forget_clientfd (int fd) {
+void pinentry_forget_clientfd (pool_handle_t fd) {
 	assert (pthread_mutex_lock (&pinentry_lock) == 0);
 	if (pinentry_client == fd) {
 		// No response possible.  Service reclaims for cmd pooling
@@ -110,7 +115,7 @@ void pinentry_forget_clientfd (int fd) {
 		// Immediately free up for any new PINENTRY request
 		pinentry_timeout = 0;
 		// The following is needless but more consistent with restart
-		pinentry_client = -1;
+		pinentry_client = INVALID_POOL_HANDLE;
 	}
 	pthread_mutex_unlock (&pinentry_lock);
 }

@@ -237,7 +237,7 @@ enum security_layer {
 struct ctlkeynode {
 	uint8_t ctlkey [TLSPOOL_CTLKEYLEN];
 	struct ctlkeynode *lessnode, *morenode;
-	int ctlfd;
+	pool_handle_t ctlfd;
 	int forked;
 	enum security_layer security;
 };
@@ -258,7 +258,7 @@ struct ctlkeynode {
  * be -1 to signal it is detached.  The forked flag should be non-zero
  * to indicate that this is a forked connection.
  */
-int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, enum security_layer sec, int ctlfd, int forked);
+int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, enum security_layer sec, pool_handle_t ctlfd, int forked);
 
 /* Remove a registered cltkey value from th registry.  This is the most
  * complex operation, as it needs to merge the subtrees.
@@ -281,7 +281,7 @@ int ctlkey_unregister (uint8_t *ctlkey);
  * which means that a non-NULL return value must later be passed to a function
  * that unlocks the resource, ctlkey_unfind().
  */
-struct ctlkeynode *ctlkey_find (uint8_t *ctlkey, enum security_layer sec, int ctlfd);
+struct ctlkeynode *ctlkey_find (uint8_t *ctlkey, enum security_layer sec, pool_handle_t ctlfd);
 
 /* Free a ctlkeynode that was returned by ctlkey_find().  This function also
  * accepts a NULL argument, though those need not be passed through this
@@ -322,7 +322,7 @@ void register_lidentry_command (struct command *cmd);
  * being closed.  The LIDENTRY facility is freed up immediately for the next
  * requestor.
  */
-void lidentry_forget_clientfd (int fd);
+void lidentry_forget_clientfd (pool_handle_t fd);
 
 /* Check if the localid registration permits skipping of the given database
  * entry.  Such skips mean that the database entry on its own may fulfill the

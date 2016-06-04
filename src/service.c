@@ -10,27 +10,33 @@
 
 #include <syslog.h>
 #include <fcntl.h>
-#include <poll.h>
-
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 
 #include <tlspool/commands.h>
 #include <tlspool/internal.h>
 
-#ifdef __CYGWIN__
+#ifdef WINDOWS_PORT
+#include <winsock2.h>
+#else
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <poll.h>
+#endif
+
+#ifdef WINDOWS_PORT
 #include <windows.h>
+#ifndef __MINGW64__
 #define WEOF ((wint_t)(0xFFFF))
+#endif
 
 #define PIPE_TIMEOUT 5000
 #define BUFSIZE 4096
 
 #define _tprintf printf
 #define _tmain main
-#endif
+#endif /* WINDOWS_PORT */
 
-#ifdef __CYGWIN__
+#ifdef WINDOWS_PORT
 extern char szPipename[1024];
 #endif
 
@@ -123,7 +129,7 @@ static struct command *allocate_command_for_clientfd (pool_handle_t fd) {
 		}
 		if (pos == cmdpool_pos) {
 			/* A full rotation -- delay of 10ms */
-			usleep (10000);
+			_usleep (10000);
 		}
 	}
 	cmdpool [pos].clientfd = fd;
@@ -161,6 +167,7 @@ static void free_commands_by_clientfd (pool_handle_t clientfd) {
 
 /* Register a socket.  It is assumed that first all server sockets register */
 void register_socket (pool_handle_t sox, uint32_t soxinfo_flags) {
+#ifndef WINDOWS_PORT
 	int flags = fcntl (sox, F_GETFD);
 	flags |= O_NONBLOCK;
 	fcntl (sox, F_SETFD, flags);
@@ -177,6 +184,7 @@ void register_socket (pool_handle_t sox, uint32_t soxinfo_flags) {
 	soxinfo [num_sox].flags = soxinfo_flags;
 	soxinfo [num_sox].cbq = NULL;
 	num_sox++;
+#endif /* !WINDOWS_PORT */
 }
 
 
@@ -194,6 +202,7 @@ static void free_callbacks_by_clientfd (pool_handle_t clientfd);
 /* TODO: This may copy information back and thereby avoid processing in the
  * current loop passthrough.  No problem, poll() will show it once more. */
 static void unregister_client_socket_byindex (int soxidx) {
+#ifndef WINDOWS_PORT
 	pool_handle_t sox = soxpoll [soxidx].fd;
 	free_callbacks_by_clientfd (sox);
 	free_commands_by_clientfd (sox);
@@ -205,8 +214,9 @@ static void unregister_client_socket_byindex (int soxidx) {
 		memcpy (&soxinfo [soxidx], &soxinfo [num_sox], sizeof (*soxinfo));
 		memcpy (&soxpoll [soxidx], &soxpoll [num_sox], sizeof (*soxpoll));
 	}
+#endif /* !WINDOWS_PORT */
 }
-#ifdef __CYGWIN__
+#ifdef WINDOWS_PORT
 #define CONNECTING_STATE 0
 #define READING_STATE 1
 #define INSTANCES 4
@@ -220,6 +230,13 @@ static void process_command (struct command *cmd);
 
 PIPEINST Pipe[INSTANCES];
 HANDLE hEvents[INSTANCES];
+
+#if defined(WINDOWS_PORT) && !defined(__CYGWIN__)
+static int socket_from_protocol_info (LPWSAPROTOCOL_INFOW lpProtocolInfo)
+{
+	return WSASocketW (FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, lpProtocolInfo, 0, 0); 
+}
+#endif
 
 static int create_named_pipes (LPCTSTR lpszPipename)
 {
@@ -342,7 +359,12 @@ static int create_named_pipes (LPCTSTR lpszPipename)
 						//HANDLE winsock = (HANDLE) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
 						//cmd->passfd = cygwin_attach_handle_to_fd(NULL, -1, winsock, NULL, GENERIC_READ | GENERIC_WRITE);
 						//tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d, winsock = %d\n", cmd->passfd, winsock);
+#ifdef __CYGWIN__
 						cmd->passfd = cygwin_socket_from_protocol_info(&cmd->cmd.pio_ancil_data.pioa_socket);
+#else /* __CYGWIN__ */
+						cmd->passfd = socket_from_protocol_info(&cmd->cmd.pio_ancil_data.pioa_socket);
+if (cmd->passfd == -1) printf("WSAGetLastError(void) = %d\n", WSAGetLastError());
+#endif /* __CYGWIN__ */
 						tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d\n", cmd->passfd);
 					} else {
 						//int superfd = (int) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
@@ -350,7 +372,6 @@ static int create_named_pipes (LPCTSTR lpszPipename)
 						//close (superfd);
 					}
 				}
-            printf("process_command.\n");
 				process_command (cmd);
 
                break;
@@ -525,14 +546,14 @@ printf ("DEBUG: Wrote %ld bytes to pipe\n", cbWritten);
 printf("DEBUG: Message sent to server, receiving reply as follows:\n");
 	return 0;
 }
-#endif /* __CYGWIN__ */
+#endif /* WINDOWS_PORT */
 
 int send_command (struct command *cmd, int passfd) {
-#ifdef __CYGWIN__
+#ifdef WINDOWS_PORT
 	cmd->cmd.pio_ancil_type = ANCIL_TYPE_NONE;
 	bzero (&cmd->cmd.pio_ancil_data, sizeof (cmd->cmd.pio_ancil_data));
 	return !np_send_command(&cmd->cmd) ? 1 : 0;
-#else /* __CYGWIN__ */
+#else /* WINDOWS_PORT */
 	char anc [CMSG_SPACE(sizeof (int))];
 	struct iovec iov;
 	struct msghdr mh;
@@ -569,7 +590,7 @@ int send_command (struct command *cmd, int passfd) {
 		cmd->claimed = 0;
 		return 1;
 	}
-#endif /* __CYGWIN__ */
+#endif /* WINDOWS_PORT */
 }
 
 /* Report success to the user.  Note that this function does not terminate
@@ -621,7 +642,7 @@ void send_error (struct command *cmd, int tlserrno, char *msg) {
 }
 
 
-#ifndef __CYGWIN__
+#ifndef WINDOWS_PORT
 /* Receive a command.  Return nonzero on success, zero on failure. */
 int receive_command (pool_handle_t sox, struct command *cmd) {
 	int newfds [2];
@@ -663,7 +684,7 @@ int receive_command (pool_handle_t sox, struct command *cmd) {
 
 	return 1;
 }
-#endif /* !__CYGWIN__ */
+#endif /* !WINDOWS_PORT */
 
 void copy_tls_command(struct command *cmd, struct tlspool_command *tls_command) {
 	memcpy(&cmd->cmd, tls_command, sizeof(struct tlspool_command));
@@ -844,9 +865,11 @@ printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
 	case PIOC_CONTROL_REATTACH_V2:
 		ctlkey_reattach (cmd);
 		return;
+#ifndef WINDOWS_PORT
 	case PIOC_PINENTRY_V2:
 		register_pinentry_command (cmd);
 		return;
+#endif
 	case PIOC_LIDENTRY_REGISTER_V2:
 		register_lidentry_command (cmd);
 		return;
@@ -862,7 +885,7 @@ printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
  *  - to trigger a thread that is hoping writing after EAGAIN
  *  - to read a message and further process it
  */
-#ifndef __CYGWIN__
+#ifndef WINDOWS_PORT
 void process_activity (pool_handle_t sox, int soxidx, struct soxinfo *soxi, short int revents) {
 	if (revents & POLLOUT) {
 		//TODO// signal waiting thread that it may continue
@@ -916,9 +939,9 @@ void run_service (void) {
 		cblist [i].followup = NULL;
 		cbfree = &cblist [i];
 	}
-#ifdef __CYGWIN__
+#ifdef WINDOWS_PORT
 	create_named_pipes ((LPCTSTR) szPipename);
-#else /* __CYGWIN__ */
+#else /* WINDOWS_PORT */
 	int polled;
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Polling %d sockets numbered %d, %d, %d, ...", num_sox, soxpoll [0].fd, soxpoll [1].fd, soxpoll [2].fd);
 	while (polled = poll (soxpoll, num_sox, -1), polled > 0) {
@@ -943,5 +966,5 @@ void run_service (void) {
 		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Polled %d sockets, returned %d", num_sox, polled);
 		perror ("Failed to poll for activity");
 	}
-#endif /* __CYGWIN__ */
+#endif /* WINDOWS_PORT */
 }

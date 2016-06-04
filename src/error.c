@@ -32,6 +32,9 @@
 #define ENOTRECOVERABLE EIO
 #endif
 
+#ifndef EBADSLT
+#define EBADSLT ENOMEM
+#endif
 
 /* Data structures for logging configuration */
 

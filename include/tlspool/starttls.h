@@ -6,9 +6,14 @@
 
 #include <tlspool/commands.h>
 
-#ifdef __CYGWIN__
+#ifdef __MINGW64__
+#define bzero(b,len) (memset((b), '\0', (len)), (void) 0)
+//typedef __useconds_t useconds_t;
+#endif
+
+#ifdef WINDOWS_PORT
 #include <windows.h>
-#endif /* __CYGWIN__ */
+#endif /* WINDOWS_PORT */
 
 
 /*
@@ -25,13 +30,13 @@
  */
 
 
-#ifdef __CYGWIN__
+#ifdef WINDOWS_PORT
 #define TLSPOOL_DEFAULT_SOCKET_PATH "\\\\.\\pipe\\tlspool"
 #define TLSPOOL_DEFAULT_PIDFILE_PATH "/var/run/tlspool.pid"
 #else
 #define TLSPOOL_DEFAULT_SOCKET_PATH "/var/run/tlspool.sock"
 #define TLSPOOL_DEFAULT_PIDFILE_PATH "/var/run/tlspool.pid"
-#endif /* __CYGWIN__ */
+#endif /* WINDOWS_PORT */
 
 /* Retrieve the process identity of the TLS Pool from the named file, or fall
  * back on the default file if the name is set to NULL.  Returns -1 on failure.
@@ -40,22 +45,22 @@ int tlspool_pid (char *opt_pidfile);
 
 /* OS independent pool handle
  */
-#ifdef __CYGWIN__
+#ifdef WINDOWS_PORT
 typedef struct
 {
 	OVERLAPPED oOverlap;
 	HANDLE hPipeInst;
 	struct tlspool_command chRequest;
 	DWORD cbRead;
-    DWORD dwState;
-    BOOL fPendingIO;
+	DWORD dwState;
+	BOOL fPendingIO;
 } PIPEINST, *LPPIPEINST;
 typedef LPPIPEINST pool_handle_t;
 #define INVALID_POOL_HANDLE NULL
-#else /* __CYGWIN__ */
+#else /* WINDOWS_PORT */
 typedef int pool_handle_t;
 #define INVALID_POOL_HANDLE -1
-#endif /* __CYGWIN__ */
+#endif /* WINDOWS_PORT */ 
 
 /* Setup the TLS pool socket to use, if it is not the default path name
  * /var/run/tlspool.sock.  The return value is the file descriptor for the
@@ -68,15 +73,15 @@ pool_handle_t tlspool_open_poolhandle (char *path);
 
 /* Close a pool handle
  */
-#ifdef __CYGWIN__
+#ifdef WINDOWS_PORT
 static inline void tlspool_close_poolhandle (pool_handle_t poolh) {
 	CloseHandle (poolh);
 }
-#else /* __CYGWIN__ */
+#else /* WINDOWS_PORT */
 static inline void tlspool_close_poolhandle (pool_handle_t poolh) {
 	close (poolh);
 }
-#endif /* __CYGWIN__ */
+#endif /* WINDOWS_PORT */
 
 
 /* The library function for ping, which is called to establish the API
@@ -253,7 +258,7 @@ int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec
  * purposes, such as finding the same session key for both sides deriving from
  * prior key negotiation; the protection of a ctlkey for such applications is
  * important.
- *
+ * 
  * The inputs to this function must adhere to the following restrictions:
  *  - label must not be a NULL pointer, but opt_ctxvalue may be set to NULL
  *    to bypass the use of a context value.  Note that passing an empty string

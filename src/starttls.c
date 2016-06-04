@@ -12,19 +12,35 @@
 #include <unistd.h>
 #include <syslog.h>
 #include <errno.h>
-#include <poll.h>
 
-#include <sys/types.h>
-#include <sys/socket.h>
-
-#include <arpa/inet.h>
 
 #include <gnutls/gnutls.h>
 #include <gnutls/pkcs11.h>
 #include <gnutls/abstract.h>
 
+#include <tlspool/commands.h>
 #include <tlspool/internal.h>
 
+#ifdef WINDOWS_PORT
+#include <winsock2.h>
+#else
+#include <poll.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+
+#ifndef __MINGW64__
+#include <arpa/inet.h>
+#endif
+#endif
+
+#ifdef WINDOWS_PORT
+#include <windows.h>
+#define RECV_FLAGS 0
+#define SHUT_RD SD_RECEIVE
+#define SHUT_WR SD_SEND
+#else /* WINDOWS_PORT */
+#define RECV_FLAGS MSG_DONTWAIT | MSG_NOSIGNAL
+#endif /* WINDOWS_PORT */
 
 #include "manage.h"
 #include "donai.h"
@@ -846,7 +862,7 @@ void cleanup_starttls (void) {
  * GNUTLS_E_REHANDSHAKE which client or server side may receive when an
  * attempt is made to renegotiate the security of the connection.
  */
-static int copycat (int local, int remote, gnutls_session_t wrapped, int client) {
+static int copycat (int local, int remote, gnutls_session_t wrapped, pool_handle_t client) {
 	char buf [1024];
 	struct pollfd inout [3];
 	ssize_t sz;
@@ -854,11 +870,15 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 	int have_client;
 	int retval = GNUTLS_E_SUCCESS;
 
-client = -1;
+client = INVALID_POOL_HANDLE;
 	inout [0].fd = local;
 	inout [1].fd = remote;
+#ifdef WINDOWS_PORT
+	have_client = 0;
+#else
 	inout [2].fd = client;
-	have_client = inout [2].fd >= 0;
+	have_client = inout [2].fd != INVALID_POOL_HANDLE;
+#endif
 	if (!have_client) {
 		inout [2].revents = 0;	// Will not be written by poll
 		//FORK!=DETACH// inout [2].fd = ctlkey_signalling_fd;
@@ -879,7 +899,7 @@ client = -1;
 		}
 		if (inout [0].revents & POLLIN) {
 			// Read local and encrypt to remote
-			sz = recv (local, buf, sizeof (buf), MSG_DONTWAIT | MSG_NOSIGNAL);
+			sz = recv (local, buf, sizeof (buf), RECV_FLAGS);
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat received %d local bytes (or error<0) from %d", (int) sz, local);
 			if (sz == -1) {
 				tlog (TLOG_COPYCAT, LOG_ERR, "Error while receiving: %s", strerror (errno));
@@ -887,7 +907,11 @@ client = -1;
 			} else if (sz == 0) {
 				inout [0].events &= ~POLLIN;
 				shutdown (local, SHUT_RD);
+#ifdef WINDOWS_PORT
+				setsockopt (remote, SOL_SOCKET, SO_LINGER, (const char *) &linger, sizeof (linger));
+#else /* WINDOWS_PORT */
 				setsockopt (remote, SOL_SOCKET, SO_LINGER, &linger, sizeof (linger));
+#endif /* WINDOWS_PORT */
 				gnutls_bye (wrapped, GNUTLS_SHUT_WR);
 			} else if (gnutls_record_send (wrapped, buf, sz) != sz) {
 				tlog (TLOG_COPYCAT, LOG_ERR, "gnutls_record_send() failed to pass on the requested bytes");
@@ -915,9 +939,13 @@ client = -1;
 			} else if (sz == 0) {
 				inout [1].events &= ~POLLIN;
 				shutdown (remote, SHUT_RD);
+#ifdef WINDOWS_PORT
+				setsockopt (local, SOL_SOCKET, SO_LINGER, (const char *) &linger, sizeof (linger));
+#else /* WINDOWS_PORT */
 				setsockopt (local, SOL_SOCKET, SO_LINGER, &linger, sizeof (linger));
+#endif /* WINDOWS_PORT */
 				shutdown (local, SHUT_WR);
-			} else if (send (local, buf, sz, MSG_DONTWAIT | MSG_NOSIGNAL) != sz) {
+			} else if (send (local, buf, sz, RECV_FLAGS) != sz) {
 				break;	// communication error
 			} else {
 				tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat sent %d bytes to local %d", (int) sz, local);
@@ -929,6 +957,7 @@ client = -1;
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat data connection polling returned a special condition");
 			break;	// Apparently, one of POLLERR, POLLHUP, POLLNVAL
 		}
+#ifndef WINDOWS_PORT
 		if (inout [2].revents & ~POLLIN) {
 			if (have_client) {
 				// This case is currently not ever triggered
@@ -945,6 +974,7 @@ client = -1;
 				continue;
 			}
 		}
+#endif /* !WINDOWS_PORT */
 	}
 	tlog (TLOG_COPYCAT, LOG_DEBUG, "Ending copycat cycle for local=%d, remote=%d", local, remote);
 	return retval;
@@ -2746,7 +2776,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 		ckn->cryptfd = cryptfd;
 		ckn->plainfd = plainfd;
 //DEBUG// fprintf (stderr, "Registering control key\n");
-		if (renegotiating || (ctlkey_register (orig_starttls.ctlkey, &ckn->regent, security_tls, detach? -1: cmd->clientfd, forked) == 0)) {
+		if (renegotiating || (ctlkey_register (orig_starttls.ctlkey, &ckn->regent, security_tls, detach ? INVALID_POOL_HANDLE : cmd->clientfd, forked) == 0)) {
 			int copied = GNUTLS_E_SUCCESS;
 			send_command (replycmd, -1);		// app sent plainfd to us
 			if (preauth) {
@@ -2770,12 +2800,12 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 					tlog (TLOG_COPYCAT, LOG_DEBUG, "Passed on %d remote bytes from anonymous precursor to %d\n", preauthlen, plainfd);
 					free (preauth);
 					preauth = NULL;
-					copied = copycat (plainfd, cryptfd, session, detach? -1: cmd->clientfd);
+					copied = copycat (plainfd, cryptfd, session, detach ? INVALID_POOL_HANDLE : cmd->clientfd);
 				} else {
 					tlog (TLOG_COPYCAT, LOG_DEBUG, "Failed to pass on %d remote bytes from anonymous precursor to %d\n", preauthlen, plainfd);
 				}
 			} else {
-				copied = copycat (plainfd, cryptfd, session, detach? -1: cmd->clientfd);
+				copied = copycat (plainfd, cryptfd, session, detach ? INVALID_POOL_HANDLE : cmd->clientfd);
 			}
 			// Renegotiate if copycat asked us to
 			if (copied == GNUTLS_E_REHANDSHAKE) {
