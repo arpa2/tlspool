@@ -27,10 +27,10 @@ TASN1_LIBS   = $(shell pkg-config --libs   libtasn1)
 all: $(TARGETS)
 
 tlspool: $(OBJS)
-	gcc $(LDFLAGS) -o "$@" $(OBJS) $(LIBS)
+	$(CC) $(LDFLAGS) -o "$@" $(OBJS) $(LIBS)
 
 .c.o:
-	gcc -c $(CFLAGS) -o "$@" "$<"
+	$(CC) -c $(CFLAGS) -o "$@" "$<"
 
 clean:
 	rm -f $(OBJS) $(TARGETS)
