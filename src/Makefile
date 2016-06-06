@@ -1,4 +1,4 @@
-TARGETS = tlspool
+TARGETS = tlspool$(EXE)
 
 OBJS = daemon.o config.o manage.o service.o cache.o pinentry.o lidentry.o \
 	starttls.o donai.o remote.o error.o ctlkey.o validate.o
@@ -15,18 +15,38 @@ CFLAGS += -DHAVE_SYSTEMD
 LIBS   += -lsystemd-daemon
 endif
 
-GNUTLS_CFLAGS = $(shell pkg-config --cflags gnutls)
-GNUTLS_LIBS   = $(shell pkg-config --libs   gnutls)
-P11KIT_CFLAGS = $(shell pkg-config --cflags p11-kit-1)
-P11KIT_LIBS   = $(shell pkg-config --libs   p11-kit-1)
+GNUTLS_CFLAGS = $(shell $(PKG_CONFIG) --cflags gnutls)
+GNUTLS_LIBS   = $(shell $(PKG_CONFIG) --libs   gnutls)
+P11KIT_CFLAGS = $(shell $(PKG_CONFIG) --cflags p11-kit-1)
+P11KIT_LIBS   = $(shell $(PKG_CONFIG) --libs   p11-kit-1)
+
+ifdef WINVER
+CFLAGS += -D_WIN32_WINNT=0x0600 -DATTRIBUTE_UNUSED="" -I ../include/windows
+OBJS += windows/syslog.o windows/windows.o windows/getopt.o
+LIBS += -lkernel32 -ladvapi32 -lmsvcrt -lwsock32 -lws2_32
+EXE = .exe
+endif
+
+ifndef PKG_CONFIG
+PKG_CONFIG=pkg-config
+endif
+
+ifndef SBIN
+SBIN=sbin
+endif
+
 BDB_CFLAGS = 
+ifdef WINVER
+BDB_LIBS   = -ldb-6.1
+else
 BDB_LIBS   = -ldb
-TASN1_CFLAGS = $(shell pkg-config --cflags libtasn1)
-TASN1_LIBS   = $(shell pkg-config --libs   libtasn1)
+endif
+TASN1_CFLAGS = $(shell $(PKG_CONFIG) --cflags libtasn1)
+TASN1_LIBS   = $(shell $(PKG_CONFIG) --libs   libtasn1)
 
 all: $(TARGETS)
 
-tlspool: $(OBJS)
+tlspool$(EXE): $(OBJS)
 	$(CC) $(LDFLAGS) -o "$@" $(OBJS) $(LIBS)
 
 .c.o:
@@ -36,8 +56,8 @@ clean:
 	rm -f $(OBJS) $(TARGETS)
 
 install: all
-	install $(TARGETS) "$(PREFIX)/sbin/"
+	install $(TARGETS) "$(PREFIX)/$(SBIN)/"
 
 uninstall:
-	@($foreach t,$(TARGETS),rm -f '$(PREFIX)/sbin/$t' && ) echo Removed TLS Pool daemon
+	@($foreach t,$(TARGETS),rm -f '$(PREFIX)/$(SBIN)/$t' && ) echo Removed TLS Pool daemon
 
