@@ -75,10 +75,6 @@ int dbcred_interpret (pool_datum_t *creddata, uint32_t *flags, char **p11priv, u
 	}
 	*pubdata    = ((uint8_t *) creddata->data) + 4 + p11privlen + 1;
 	*pubdatalen =              creddata->size  - 4 - p11privlen - 1;
-	if (*pubdatalen < 20) {
-		// Unbelievably short certificate (arbitrary sanity limit 20)
-		return 0;
-	}
 	return 1;
 }
 #endif

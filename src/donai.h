@@ -25,9 +25,10 @@
 #define LID_TYPE_PGP	0x00000002	/* OpenPGP public key, binary form */
 #define LID_TYPE_SRP	0x00000003	/* No data, flags existence */
 #define LID_TYPE_KRB5	0x00000004	/* Kerberos5 ticket */
+#define LID_TYPE_VALEXP	0x00000005	/* Validation expression in PKCS #11 */
 
 #define LID_TYPE_MIN	LID_TYPE_X509
-#define LID_TYPE_MAX	LID_TYPE_KRB5
+#define LID_TYPE_MAX	LID_TYPE_VALEXP
 #define LID_TYPE_OFS	LID_TYPE_MIN
 #define LID_TYPE_CNT	(1 + LID_TYPE_MAX - LID_TYPE_MIN)
 

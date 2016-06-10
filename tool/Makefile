@@ -1,7 +1,10 @@
 
 TARGETS = testcli testsrv tlstunnel \
 	pingpool lidsel pinentry \
-	get_localid set_localid get_disclose set_disclose pgp11_genkey
+	get_localid set_localid \
+	get_disclose set_disclose \
+	get_trust set_trust \
+	pgp11_genkey
 
 OBJS = *.o
 
@@ -67,6 +70,12 @@ get_disclose: get_disclose.c $(config_SRC) $(donai_SRC)
 	gcc -std=gnu11 $(CFLAGS) $(config_CFLAGS) $(donai_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(config_SRC) $(donai_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
 
 set_disclose: set_disclose.c $(config_SRC)
+	gcc -std=gnu11 $(CFLAGS) $(config_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(config_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+
+get_trust: get_trust.c $(config_SRC) $(donai_SRC)
+	gcc -std=gnu11 $(CFLAGS) $(config_CFLAGS) $(donai_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(config_SRC) $(donai_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+
+set_trust: set_trust.c $(config_SRC)
 	gcc -std=gnu11 $(CFLAGS) $(config_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(config_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
 
 pgp11_genkey: pgp11_genkey.c

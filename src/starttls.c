@@ -32,6 +32,7 @@
 
 #include "manage.h"
 #include "donai.h"
+#include "trust.h"
 
 
 #if EXPECTED_LID_TYPE_COUNT != LID_TYPE_CNT
@@ -1347,6 +1348,20 @@ gnutls_pcert_st *load_certificate_chain (uint32_t flags, unsigned int *chainlen,
 }
 
 
+/********** VALIDATION EXPRESSION LINKUP TO GNUTLS **********/
+
+
+/*
+ * The following functions implement the various validation expression
+ * components in terms of the GnuTLS sessions of this code file.
+ * Some work is repeated in various expression variables, notably the
+ * lookup of a session's peer credentials, and possibly importing them
+ * into X.509 structures.  We may at some point decide to instead do
+ * this ahead of time, ath the expense of some compleity and possibly
+ * slow-down of the start of the computations.
+ */
+
+
 /* The global variable holding the valexp handlers for starttls.c.
  */
 static struct valexp_handling starttls_valexp_handling [VALEXP_NUM_HANDLERS];
@@ -1454,8 +1469,14 @@ static void valexp_Tt_start (void *vcmd, struct valexp *ve, char pred) {
 	struct command *cmd = (struct command *) vcmd;
 	int flagval = 0;
 	gnutls_credentials_type_t authtp;
+	gnutls_certificate_type_t certtp;
 	const gnutls_datum_t *certs;
 	unsigned int num_certs;
+	gnutls_x509_crt_t x509peers [11]; // Peers + Root for GNUTLS_CRT_X509
+	int x509peers_inited = 0;
+	unsigned int vfyresult;
+	int bad;
+	int i;
 	if (cmd->vfystatus == 0) {
 		goto setflagval;
 	}
@@ -1463,20 +1484,193 @@ static void valexp_Tt_start (void *vcmd, struct valexp *ve, char pred) {
 	if (authtp != GNUTLS_CRD_CERTIFICATE) {
 		goto setflagval;
 	}
+	certtp = gnutls_certificate_type_get (cmd->session);
 	certs = gnutls_certificate_get_peers (cmd->session, &num_certs);
 	// "certs" points into GnuTLS' internal data structures
-	if (num_certs < 1) {
+	if ((num_certs < 1) || (num_certs > 10)) {
 		goto setflagval;
 	}
-	if ((num_certs == 1) && (pred == 't')) {
-		//TODO// if (self-signature-correct) {
-		//TODO// 	flagval = 1;
-		//TODO// 	goto setflagval;
-		//TODO// }
+	if (certtp == GNUTLS_CRT_X509) {
+		bad = 0;
+		for (i=0; i < num_certs; i++) {
+			bad = bad || gnutls_x509_crt_init (
+				&x509peers [i]);
+			if (!bad) {
+				x509peers_inited++;
+			}
+			bad = bad || gnutls_x509_crt_import (
+				x509peers [i],
+				&certs [i], GNUTLS_X509_FMT_DER);
+		}
+		if (bad) {
+			goto setflagval;
+		}
 	}
-	//TODO// Look in trust.db for H(cert[num_certs-1])
-	//TODO// flagval = 1;
+	//
+	// Handle self-signed peer certificates in a special way
+	if ((num_certs == 1) && (pred == 't')) {
+		int bad = 0;
+		if (certtp == GNUTLS_CRT_X509) {
+			bad = bad || gnutls_x509_crt_verify (
+				x509peers [0],
+				&x509peers [0], 1,
+				GNUTLS_VERIFY_DISABLE_CA_SIGN,
+				&vfyresult);
+			// Apply the most stringent test.  This includes all of
+			// GNUTLS_CERT_INVALID (always set, often with others)
+			// GNUTLS_CERT_NOT_ACTIVATED
+			// GNUTLS_CERT_EXPIRED
+			// GNUTLS_CERT_SIGNER_CONSTRAINTS_FAILURE
+			// GNUTLS_CERT_SIGNER_NOT_FOUND
+			// GNUTLS_CERT_SIGNER_NOT_CA => oops...
+			//	stopped with GNUTLS_VERIFY_DISABLE_CA_SIGN
+			// GNUTLS_CERT_SIGNATURE_FAILURE
+			// GNUTLS_CERT_INSECURE_ALGORITHM
+			bad = bad || (vfyresult != 0);
+			if (!bad) {
+				flagval = 1;
+				goto setflagval;
+			}
+		} else if (certtp == GNUTLS_CRT_OPENPGP) {
+			//TODO// Prefer to actually check PGP self-signature
+			//TODO// But only value is check private-key ownership
+			flagval = 1;
+			goto setflagval;
+#ifdef GNUTLS_CRT_KRB
+		} else if (certtp == GNUTLS_CRT_KRB) {
+			// Kerberos has authenticated the ticket for us
+			//TODO// Should we try reading from the ticket/auth?
+			flagval = 1;
+			goto setflagval;
+#endif
+		}
+		if (bad) {
+			goto setflagval;
+		}
+	}
+	//
+	// Lookup the trusted party that the peers certificates is promoting.
+	// Note that even if the peer ends in a CA cert (which it may not
+	// always send along) then we can still add it ourselves again :-)
+	// Only worry might be that CA certs require no AuthorityKeyIdentifier.
+	if (certtp == GNUTLS_CRT_X509) {
+		// Retrieve the AuthorityKeyIdentifier from last (or semi-last)
+		int bad;
+		uint8_t id [100];
+		size_t idsz = sizeof (id);
+		DBT rootca;
+		DBT anchor;
+		DBC *crs_trust = NULL;
+		int db_errno;
+		gnutls_datum_t anchor_gnutls;
+		gnutls_x509_crt_t dbroot;
+		bad = gnutls_x509_crt_get_authority_key_id (
+			x509peers [num_certs-1],
+			id, &idsz,
+			NULL);
+		if (bad == GNUTLS_E_X509_UNSUPPORTED_EXTENSION) {
+			// Assume the last is a root cert, as it lacks authid
+			idsz = sizeof (id);
+			gnutls_x509_crt_deinit (x509peers [--num_certs]);
+			bad = gnutls_x509_crt_get_authority_key_id (
+				x509peers [num_certs-1],
+				id, &idsz,
+				NULL);
+		}
+		if (bad != GNUTLS_E_SUCCESS) {
+			goto setflagval;
+		}
+		// Get root cert from trustdb into x509peers [num_certs++]
+		dbt_init_fixbuf (&rootca, id, idsz);
+		dbt_init_malloc (&anchor);
+		E_d2e ("Failed to create db_disclose cursor",
+			dbh_trust->cursor (
+				dbh_trust,
+				cmd->txn,
+				&crs_trust,
+				0));
+		E_d2e ("X.509 authority key identifier not found in trust database",
+			dba_trust_iterate (
+				crs_trust, &rootca, &anchor));
+		while (db_errno == 0) {
+			// Process "anchor" entry (inasfar as meaningful)
+			uint32_t anchorflags;
+			uint8_t *trustdata;
+			int trustdatalen;
+			char *valexp;	//TODO// Initiate this before cleanup
+			int tstatus = trust_interpret (&anchor, &anchorflags, &valexp, &trustdata, &trustdatalen);
+			dbt_free (&anchor);
+			if (tstatus != TAD_STATUS_SUCCESS) {
+				// Signal any DB error to bail out of this loop
+				db_errno = DB_KEYEMPTY;
+			} else if ((anchorflags & TAD_TYPE_MASK) == TAD_TYPE_X509) {
+				bad = 0;
+				// Turn the anchor into an X.509 certificate
+				bad = bad || gnutls_x509_crt_init (&dbroot);
+				if (!bad) {
+					anchor_gnutls.data = anchor.data;
+					anchor_gnutls.size = anchor.size;
+					bad = bad || gnutls_x509_crt_import (dbroot, &anchor_gnutls, GNUTLS_X509_FMT_DER);
+					// Verify last cert against this dbroot
+					bad = bad || gnutls_x509_crt_verify (
+							x509peers [num_certs-1],
+							&dbroot, 1,
+							0 /* We want a CA */,
+							&vfyresult);
+					bad = bad || (vfyresult != 0);
+					// Cleanup the X.509 certificate before ending
+					gnutls_x509_crt_deinit (dbroot);
+				}
+				if (bad) {
+					// Signal arbitrary DB error
+					db_errno = DB_KEYEMPTY;
+				}
+			} else if ((anchorflags & TAD_TYPE_MASK) == TAD_TYPE_REVOKE_X509) {
+				//TODO// Ensure the first cert is not revoked
+				...;
+			} else {
+				/* Ignore entry, continue with the next */;
+			}
+			db_errno = dba_trust_iterate (crs_trust, &rootca, &anchor);
+		}
+		if (crs_trust != NULL) {
+			crs_trust->close (crs_trust);
+			crs_trust = NULL;
+		}
+		dbt_free (&anchor);
+		dbt_free (&rootca);
+		if (db_errno != DB_NOTFOUND) {
+			goto setflagval;
+		}
+		// Now check the certificate chain, taking CA bits into account
+		for (i=1; i<num_certs; i++) {
+			bad = bad || gnutls_x509_crt_verify (
+				x509peers [i-1],
+				&x509peers [i], 1,
+				0,
+				&vfyresult);
+			// Apply the most stringent test.  This includes all of
+			// GNUTLS_CERT_INVALID (always set, often with others)
+			// GNUTLS_CERT_NOT_ACTIVATED
+			// GNUTLS_CERT_EXPIRED
+			// GNUTLS_CERT_SIGNER_CONSTRAINTS_FAILURE
+			// GNUTLS_CERT_SIGNER_NOT_FOUND
+			// GNUTLS_CERT_SIGNER_NOT_CA => oops...
+			//	stopped with GNUTLS_VERIFY_DISABLE_CA_SIGN
+			// GNUTLS_CERT_SIGNATURE_FAILURE
+			// GNUTLS_CERT_INSECURE_ALGORITHM
+			bad = bad || (vfyresult != 0);
+		}
+	} else if (certtp == GNUTLS_CRT_OPENPGP) {
+		; //TODO// Check PGP direct signature (and also use in self-sig)
+#ifdef GNUTLS_CRT_KRB
+	} else if (certtp == GNUTLS_CRT_KRB) {
+#endif
+	}
 setflagval:
+	for (i=0; i < x509peers_inited; i++) {
+		gnutls_x509_crt_deinit (x509peers [i]);
+	}
 	valexp_setpredicate (ve, pred, flagval);
 }
 
@@ -1528,6 +1722,7 @@ static void valexp_Dd_start (void *vcmd, struct valexp *ve, char pred) {
 		port = ntohs (((struct sockaddr_in6 *) &peername)->sin6_port);
 		goto setflagval;
 	}
+	//TODO// We might use online.c code instead?
 	if (dane_state_init (&stat, /*TODO:*/ 0) != GNUTLS_E_SUCCESS) {
 		goto setflagval;
 	}

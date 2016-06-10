@@ -13,7 +13,7 @@
 #include <db.h>
 
 
-#define EXPECTED_LID_TYPE_COUNT 4
+#define EXPECTED_LID_TYPE_COUNT 5
 
 
 /* A simple (data*,size) construct named pool_datum_t
@@ -128,6 +128,7 @@ unsigned int cfg_log_filter (void);
 char *cfg_dbenv_dir (void);
 char *cfg_db_localid (void);
 char *cfg_db_disclose (void);
+char *cfg_db_trust (void);
 char *cfg_tls_dhparamfile (void);
 unsigned int cfg_tls_maxpreauth (void);
 uint32_t cfg_facilities (void);

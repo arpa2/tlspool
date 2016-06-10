@@ -235,3 +235,4 @@ bool pgp_enter (pgpcursor_t seq, uint8_t *tag, pgpcursor_t sub) {
 	return 1;
 }
 
+//TODO// Extract self-signature + check it

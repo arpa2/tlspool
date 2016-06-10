@@ -63,6 +63,7 @@ enum VARS {
 	CFGVAR_DBENV_DIR,
 	CFGVAR_DB_LOCALID,
 	CFGVAR_DB_DISCLOSE,
+	CFGVAR_DB_TRUST,
 	CFGVAR_TLS_DHPARAMFILE,
 	CFGVAR_TLS_MAXPREAUTH,
 	CFGVAR_TLS_ONTHEFLY_SIGNCERT,
@@ -111,6 +112,7 @@ struct cfgopt config_options [] = {
 	"dbenv_dir",		cfg_setvar,	CFGVAR_DBENV_DIR,
 	"db_localid",		cfg_setvar,	CFGVAR_DB_LOCALID,
 	"db_disclose",		cfg_setvar,	CFGVAR_DB_DISCLOSE,
+	"db_trust",		cfg_setvar,	CFGVAR_DB_TRUST,
 	"tls_dhparamfile",	cfg_setvar,	CFGVAR_TLS_DHPARAMFILE,
 	"tls_maxpreauth",	cfg_setvar,	CFGVAR_TLS_MAXPREAUTH,
 	"tls_onthefly_signcert",cfg_setvar,	CFGVAR_TLS_ONTHEFLY_SIGNCERT,
@@ -579,6 +581,14 @@ char *cfg_db_disclose (void) {
 	char *dbname = configvars [CFGVAR_DB_DISCLOSE];
 	if (dbname == NULL) {
 		dbname = "disclose.db";
+	}
+	return dbname;
+}
+
+char *cfg_db_trust (void) {
+	char *dbname = configvars [CFGVAR_DB_TRUST];
+	if (dbname == NULL) {
+		dbname = "trust.db";
 	}
 	return dbname;
 }

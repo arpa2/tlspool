@@ -1,7 +1,7 @@
-/* tool/get_localid.c -- Retrieve local identity credentials
+/* tool/get_trust.c -- Retrieve local identity credentials
  *
- * Provide a config, a NAI and see what types of credentials are available
- * in localid.db.
+ * Provide a config and a hex-encoded key to see what trust settings are
+ * defined in trust.db.
  *
  * From: Rick van Rein <rick@openfortress.nl>
  */
@@ -27,13 +27,13 @@
 
 
 const char const *usage =
-"Usage: %s tlspool.conf [user@]fqdn type [outfile.der]\n"
-" - tlspool.conf      is the configuration file for the TLS Pool\n"
-" - user@fqdn or fqdn is a network access identifier\n"
-" - type              comma-sep: X.509|OpenPGP, client|server, noP11?, chained?\n"
-" - outfile.der       optional output file for binary encoded public data\n"
-"Since the public data is stored in a binary format, it will never be printed\n"
-"on stdout; in absense of outfile.der the value is simply not output.\n";
+"Usage: %s tlspool.conf flags aabbccdd [outfile.bin]\n"
+" - tlspool.conf is the configuration file for the TLS Pool\n"
+" - flags        selection of x509,pgp,revoke,pinned,client,server,notroot\n"
+" - aabbccdd     is an anchor's key in hexadecimal notation\n"
+" - outfile.bin  optional output file for binary encoded anchor data\n"
+"Since the anchor data is stored in a binary format, it will never be printed\n"
+"on stdout; in absense of outfile.bin the value is simply not output.\n";
 
 
 struct typemap_t {
@@ -42,12 +42,13 @@ struct typemap_t {
 };
 
 struct typemap_t typemap [] = {
-	{ "X.509",	1 },
-	{ "OpenPGP",	2 },
+	{ "x509",	1 },
+	{ "pgp",	2 },
 	{ "client",	256 },
 	{ "server",	512 },
-	{ "noP11",	4096 },
-	{ "chained",	8192 },
+	{ "revoke",	1024 },
+	{ "pinned",	2048 },
+	{ "notroot",	65536 },
 	{ NULL,		0 }
 };
 
@@ -55,13 +56,13 @@ struct typemap_t typemap [] = {
 /* Setup and tear down management */
 int setup_management (DB_ENV **dbenv, DB_TXN **txn, DB **dbh) {
 	char *dbenv_dir = cfg_dbenv_dir ();
-	char *dblid_fnm = cfg_db_localid ();
+	char *dbtad_fnm = cfg_db_trust ();
 	if (dbenv_dir == NULL) {
 		fprintf (stderr, "Please configure database environment directory\n");
 		return 0;
 	}
-	if (dblid_fnm == NULL) {
-		fprintf (stderr, "Please configure localid database name\n");
+	if (dbtad_fnm == NULL) {
+		fprintf (stderr, "Please configure trust database name\n");
 		return 0;
 	}
 	if (db_env_create (dbenv, 0) != 0) {
@@ -77,15 +78,15 @@ int setup_management (DB_ENV **dbenv, DB_TXN **txn, DB **dbh) {
 		exit (1);
 	}
 	if (db_create (dbh, *dbenv, 0) != 0) {
-		fprintf (stderr, "Failed to create localid database\n");
+		fprintf (stderr, "Failed to create trust database\n");
 		return 0;
 	}
 	if ((*dbh)->set_flags (*dbh, DB_DUP) != 0) {
-		fprintf (stderr, "Failed to setup localid database for duplicate entries\n");
+		fprintf (stderr, "Failed to setup trust database for duplicate entries\n");
 		return 0;
 	}
-	if ((*dbh)->open (*dbh, *txn, dblid_fnm, NULL, DB_HASH, DB_THREAD | DB_RDONLY, 0) != 0) {
-		fprintf (stderr, "Failed to open localid database\n");
+	if ((*dbh)->open (*dbh, *txn, dbtad_fnm, NULL, DB_HASH, DB_THREAD | DB_RDONLY, 0) != 0) {
+		fprintf (stderr, "Failed to open trust database\n");
 		return 0;
 	}
 	return 1;
@@ -98,21 +99,21 @@ void cleanup_management (DB_ENV *dbenv, DB *db) {
 }
 
 int main (int argc, char *argv []) {
-	char *localid = NULL;
+	char *trust = NULL;
 	char *partstr = NULL;
 	char *saveptr = NULL;
-	char *p11uri = NULL;
+	char *valexp = NULL;
 	uint8_t e_buf [5000];
+	int hexlen;
 	int argi = argc;
 	int filesz = 0;
-	int p11len = 0;
 	struct stat statbuf;
 	uint32_t flags = 0;
 	DB_ENV *dbenv;
 	DB_TXN *txn;
 	DB *dbh;
 	DBC *crs;
-	DBT k_localid;
+	DBT k_trust;
 	DBT e_value;
 	int nomore;
 	int fd;
@@ -131,13 +132,32 @@ int main (int argc, char *argv []) {
 			exit (1);
 		}
 	}
+	hexlen = strlen (argv [3]);
+	if (hexlen & 0x0001) {
+		fprintf (stderr, "Hexadecimal string with an odd number of digits\n");
+		exit (1);
+	}
+	//
+	// Parse the hex string into a key value
+	uint8_t keybytes [hexlen >> 1];
+	char hexchars [3];
+	int i;
+	hexchars [2] = '\0';
+	for (i=0; i<hexlen; i+=2) {
+		hexchars [0] = argv [3] [i + 0];
+		hexchars [1] = argv [3] [i + 1];
+		keybytes [i] = strtol (hexchars, &saveptr, 16);
+		if (saveptr != &hexchars [2]) {
+			fprintf (stderr, "Illegal character in hex byte: 0x%s\n", hexchars);
+			exit (1);
+		}
+	}
 	//
 	// Initialise the modules taken from the src directory
 	parse_cfgfile (argv [1], 0);
 	//
 	// Prepare variables from arguments
-	localid = argv [2];
-	partstr = strtok_r (argv [3], ",", &saveptr);
+	partstr = strtok_r (argv [2], ",", &saveptr);
 	if (partstr == NULL) {
 		fprintf (stderr, "Flags must not be empty\n");
 		exit (1);
@@ -163,16 +183,16 @@ int main (int argc, char *argv []) {
 		exit (1);
 	}
 	if (dbh->cursor (dbh, txn, &crs, 0) != 0) {
-		fprintf (stderr, "Failed to open cursor on localid.db\n");
+		fprintf (stderr, "Failed to open cursor on trust.db\n");
 		goto failure;
 	}
-	bzero (&k_localid, sizeof (k_localid));
-	k_localid.data = localid;
-	k_localid.size = strlen (localid);
-	nomore = crs->get (crs, &k_localid, &e_value, DB_SET);
+	bzero (&k_trust, sizeof (k_trust));
+	k_trust.data = keybytes;
+	k_trust.size = hexlen >> 1;
+	nomore = crs->get (crs, &k_trust, &e_value, DB_SET);
 	while (nomore == 0) {
 		uint32_t e_flags = 0;
-		char *e_p11uri = NULL;
+		char *e_valexp = NULL;
 		uint8_t *e_bindata;
 		int e_binlen;
 		if (e_value.size < 4) {
@@ -181,9 +201,9 @@ int main (int argc, char *argv []) {
 			goto failure;
 		}
 		e_flags = ntohl (* (uint32_t *) e_value.data);
-		e_p11uri = (char *) & ((uint32_t *) e_value.data) [1];
-		e_bindata = e_p11uri + strnlen (e_p11uri, e_value.size - 4) + 1;
-		e_binlen = e_value.size - 4 - strnlen (e_p11uri, e_value.size - 4) - 1;
+		e_valexp = (char *) & ((uint32_t *) e_value.data) [1];
+		e_bindata = e_valexp + strnlen (e_valexp, e_value.size - 4) + 1;
+		e_binlen = e_value.size - 4 - strnlen (e_valexp, e_value.size - 4) - 1;
 		if (e_binlen <= 0) {
 			fprintf (stderr, "Error retrieving binary data\n");
 			crs->close (crs);
@@ -203,7 +223,7 @@ int main (int argc, char *argv []) {
 			if (todo_flags != 0) {
 				printf (" UNKNOWN_%d", todo_flags);
 			}
-			printf ("\nPrivate: %s\n", e_p11uri);
+			printf ("\nValidation expression: %s\n", e_valexp);
 			written = 0;
 			if (outfile >= 0) {
 				if (write (outfile, e_bindata, e_binlen) == e_binlen) {
@@ -213,13 +233,13 @@ printf ("Written %d bytes\n", e_binlen);
 				close (outfile);
 				outfile = -1;	// No more than one binary write
 			}
-			printf ("Public: %02x %02x...%02x %02x (length %d)%s\n",
+			printf ("Binary data: %02x %02x...%02x %02x (length %d)%s\n",
 				e_bindata [0], e_bindata [1],
 				e_bindata [e_binlen-2], e_bindata [e_binlen-1],
 				e_binlen,
 				written? " (written)": "");
 		}
-		nomore = crs->get (crs, &k_localid, &e_value, DB_NEXT_DUP);
+		nomore = crs->get (crs, &k_trust, &e_value, DB_NEXT_DUP);
 	}
 	crs->close (crs);
 	if (nomore != DB_NOTFOUND) {

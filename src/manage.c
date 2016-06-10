@@ -38,6 +38,7 @@ static DB_ENV *dbenv = NULL;
 
 DB *dbh_localid  = NULL;
 DB *dbh_disclose = NULL;
+DB *dbh_trust    = NULL;
 
 
 static int manage_secondary_disclose (DB *secondary, const DBT *key, const DBT *data, DBT *result) {
@@ -109,16 +110,22 @@ success_t setup_management (void) {
 		db_create (&dbh_localid,  dbenv, 0));
 	E_d2e ("Failed to create db_disclose handle",
 		db_create (&dbh_disclose, dbenv, 0));
+	E_d2e ("Failed to create db_trust handle",
+		db_create (&dbh_trust, dbenv, 0));
 	flags = DB_DUP;
 	E_d2e ("Failed to set db_localid flags",
 		dbh_localid->set_flags (dbh_localid,  flags));
 	E_d2e ("Failed to set db_disclose flags",
 		dbh_disclose->set_flags (dbh_disclose, flags));
+	E_d2e ("Failed to set db_trust flags",
+		dbh_trust->set_flags (dbh_trust, flags));
 	flags = DB_RDONLY | DB_THREAD | DB_AUTO_COMMIT;
 	E_d2e ("Failed to open db_localid",
 		dbh_localid->open (dbh_localid,  tract, cfg_db_localid (),  NULL, DB_HASH, flags, 0));
 	E_d2e ("Failed to open db_disclose",
 		dbh_disclose->open (dbh_disclose, tract, cfg_db_disclose (), NULL, DB_HASH, flags, 0));
+	E_d2e ("Failed to open db_trust",
+		dbh_trust->open (dbh_trust, tract, cfg_db_trust (), NULL, DB_HASH, flags, 0));
 	if (db_errno != 0) {
 		cleanup_management ();
 	}
@@ -135,6 +142,10 @@ void cleanup_management (void) {
 	if (dbh_localid != NULL) {
 		dbh_localid->close (dbh_localid, 0);
 		dbh_localid = NULL;
+	}
+	if (dbh_trust != NULL) {
+		dbh_trust->close (dbh_trust, 0);
+		dbh_trust = NULL;
 	}
 	if (dbenv != NULL) {
 		dbenv->close (dbenv, 0);

@@ -1,9 +1,7 @@
-/* tool/set_localid.c -- Add local identity credential
+/* tool/set_trust.c -- Change trust anchor database values
  *
- * Provide a config, a NAI and a type of credential.  The command erases all
- * old entries that match and replaces them with what is provided, if anything.
- * The provided information should be a PKCS #11 URI and a binary file holding
- * public credentials (not a base64 / Armoured / PEM notation).
+ * Provide a config and a hex-encoded key to change the trust settings as
+ * defined in trust.db.
  *
  * From: Rick van Rein <rick@openfortress.nl>
  */
@@ -29,14 +27,13 @@
 
 
 const char const *usage =
-"Usage: %s tlspool.conf [user@]fqdn type [p11priv pubdata...]\n"
-" - tlspool.conf      is the configuration file for the TLS Pool\n"
-" - user@fqdn or fqdn is a network access identifier\n"
-" - type              comma-sep: X.509|OpenPGP, client|server, nop11?, chained?\n"
-" - p11priv           is a PKCS #11 URI string for the private key\n"
-" - pubdata           is a file name    string for the public key package\n"
-"The pairs of p11priv and pubdata replace the old content.  An empty list of\n"
-"pairs is nothing special; it replaces the old content with zero entries.\n";
+"Usage: %s tlspool.conf flags aabbccdd valexp [infile.bin]\n"
+" - tlspool.conf is the configuration file for the TLS Pool\n"
+" - flags        selection of x509,pgp,revoke,pinned,client,server,notroot\n"
+" - aabbccdd     is an anchor's key in hexadecimal notation\n"
+" - valexp       is a validation expression for this entry\n"
+" - infile.bin   optional input file with binary encoded anchor data\n"
+"When the infile.bin argument is absent, the corresponding entry is deleted.\n";
 
 
 struct typemap_t {
@@ -45,15 +42,13 @@ struct typemap_t {
 };
 
 struct typemap_t typemap [] = {
-	{ "X.509",	1 },
 	{ "x509",	1 },
-	{ "OpenPGP",	2 },
-	{ "cli",	256 },
-	{ "srv",	512 },
+	{ "pgp",	2 },
 	{ "client",	256 },
 	{ "server",	512 },
-	{ "noP11",	4096 },
-	{ "chained",	8192 },
+	{ "revoke",	1024 },
+	{ "pinned",	2048 },
+	{ "notroot",	65536 },
 	{ NULL,		0 }
 };
 
@@ -61,13 +56,13 @@ struct typemap_t typemap [] = {
 /* Setup and tear down management */
 int setup_management (DB_ENV **dbenv, DB_TXN **txn, DB **dbh) {
 	char *dbenv_dir = cfg_dbenv_dir ();
-	char *dblid_fnm = cfg_db_localid ();
+	char *dbtad_fnm = cfg_db_trust ();
 	if (dbenv_dir == NULL) {
 		fprintf (stderr, "Please configure database environment directory\n");
 		return 0;
 	}
-	if (dblid_fnm == NULL) {
-		fprintf (stderr, "Please configure localid database name\n");
+	if (dbtad_fnm == NULL) {
+		fprintf (stderr, "Please configure trust database name\n");
 		return 0;
 	}
 	if (db_env_create (dbenv, 0) != 0) {
@@ -83,15 +78,15 @@ int setup_management (DB_ENV **dbenv, DB_TXN **txn, DB **dbh) {
 		exit (1);
 	}
 	if (db_create (dbh, *dbenv, 0) != 0) {
-		fprintf (stderr, "Failed to create localid database\n");
+		fprintf (stderr, "Failed to create trust database\n");
 		return 0;
 	}
 	if ((*dbh)->set_flags (*dbh, DB_DUP) != 0) {
-		fprintf (stderr, "Failed to setup localid database for duplicate entries\n");
+		fprintf (stderr, "Failed to setup trust database for duplicate entries\n");
 		return 0;
 	}
-	if ((*dbh)->open (*dbh, *txn, dblid_fnm, NULL, DB_HASH, DB_CREATE | DB_THREAD, 0) != 0) {
-		fprintf (stderr, "Failed to open localid database\n");
+	if ((*dbh)->open (*dbh, *txn, dbtad_fnm, NULL, DB_HASH, DB_CREATE | DB_THREAD, 0) != 0) {
+		fprintf (stderr, "Failed to open trust database\n");
 		return 0;
 	}
 	return 1;
@@ -104,27 +99,27 @@ void cleanup_management (DB_ENV *dbenv, DB *db) {
 }
 
 int main (int argc, char *argv []) {
-	char *localid = NULL;
+	char *keystr = NULL;
+	int hexlen;
+	char *binfile = NULL;
 	char *partstr = NULL;
 	char *saveptr = NULL;
-	char *p11uri = NULL;
+	char *valexp = NULL;
 	uint8_t e_buf [5000];
-	int argi = argc;
 	int filesz = 0;
-	int p11len = 0;
 	struct stat statbuf;
 	uint32_t flags = 0;
 	DB_ENV *dbenv;
 	DB_TXN *txn;
 	DB *dbh;
 	DBC *crs;
-	DBT k_localid;
+	DBT k_trust;
 	DBT e_value;
 	int nomore;
 	int fd;
 	//
 	// Sanity check
-	if ((argc < 4) || ((argc % 2) != 0)) {
+	if ((argc < 5) || (argc > 6)) {
 		fprintf (stderr, usage, argv [0]);
 		exit (1);
 	}
@@ -133,8 +128,12 @@ int main (int argc, char *argv []) {
 	parse_cfgfile (argv [1], 0);
 	//
 	// Prepare variables from arguments
-	localid = argv [2];
-	partstr = strtok_r (argv [3], ",", &saveptr);
+	if (argc >= 6) {
+		binfile = argv [5];
+	}
+	valexp = argv [4];
+	keystr = argv [3];
+	partstr = strtok_r (argv [2], ",", &saveptr);
 	if (partstr == NULL) {
 		fprintf (stderr, "Flags must not be empty\n");
 		exit (1);
@@ -154,13 +153,25 @@ int main (int argc, char *argv []) {
 		}
 		partstr = strtok_r (NULL, ",", &saveptr);
 	}
-	argi = 4;
-	while (argi < argc) {
-		if (strncmp (argv [argi], "pkcs11:", 7) != 0) {
-			fprintf (stderr, "PKCS #11 URIs must start with \"pkcs11:\"\n");
+	//
+	// Parse the hex string into a key value
+	hexlen = strlen (argv [3]);
+	if (hexlen & 0x0001) {
+		fprintf (stderr, "Hexadecimal string with an odd number of digits\n");
+		exit (1);
+	}
+	uint8_t keybytes [hexlen >> 1];
+	char hexchars [3];
+	int i;
+	hexchars [2] = '\0';
+	for (i=0; i<hexlen; i+=2) {
+		hexchars [0] = argv [3] [i + 0];
+		hexchars [1] = argv [3] [i + 1];
+		keybytes [i] = strtol (hexchars, &saveptr, 16);
+		if (saveptr != &hexchars [2]) {
+			fprintf (stderr, "Illegal character in hex byte: 0x%s\n", hexchars);
 			exit (1);
 		}
-		argi += 2;
 	}
 	//
 	// Now modify the matching entries
@@ -168,16 +179,16 @@ int main (int argc, char *argv []) {
 		exit (1);
 	}
 	if (dbh->cursor (dbh, txn, &crs, 0) != 0) {
-		fprintf (stderr, "Failed to open cursor on localid.db\n");
+		fprintf (stderr, "Failed to open cursor on trust.db\n");
 		goto failure;
 	}
-	bzero (&k_localid, sizeof (k_localid));
-	k_localid.data = localid;
-	k_localid.size = strlen (localid);
-	nomore = crs->get (crs, &k_localid, &e_value, DB_SET);
+	bzero (&k_trust, sizeof (k_trust));
+	k_trust.data = keybytes;
+	k_trust.size = hexlen >> 1;
+	nomore = crs->get (crs, &k_trust, &e_value, DB_SET);
 	while (nomore == 0) {
 		uint32_t e_flags = 0;
-		char *e_p11uri = NULL;
+		char *e_valexp = NULL;
 		uint8_t *e_bindata;
 		int e_binlen;
 		if (e_value.size < 4) {
@@ -186,16 +197,16 @@ int main (int argc, char *argv []) {
 			goto failure;
 		}
 		e_flags = ntohl (* (uint32_t *) e_value.data);
-		e_p11uri = (char *) & ((uint32_t *) e_value.data) [1];
-		e_bindata = e_p11uri + strnlen (e_p11uri, e_value.size - 4) + 1;
-		e_binlen = e_value.size - 4 - strnlen (e_p11uri, e_value.size - 4) - 1;
+		e_valexp = (char *) & ((uint32_t *) e_value.data) [1];
+		e_bindata = e_valexp + strnlen (e_valexp, e_value.size - 4) + 1;
+		e_binlen = e_value.size - 4 - strnlen (e_valexp, e_value.size - 4) - 1;
 		if (e_binlen <= 0) {
 			fprintf (stderr, "Error retrieving binary data;\n");
 		}
 		printf ("Object flags are 0x%x\n", e_flags);
 		if ((e_flags & 0xff) == (flags & 0xff)) {
 			printf ("Deleting old entry 0x%x, %s, #%d\n",
-				e_flags, e_p11uri, e_binlen);
+				e_flags, e_valexp, e_binlen);
 			if (crs->del (crs, 0) != 0) {
 				fprintf (stderr, "Failed to delete record\n");
 				crs->close (crs);
@@ -207,7 +218,7 @@ int main (int argc, char *argv []) {
 			printf ("Won't remove, type is 0x%x and not 0x%x\n",
 				e_flags & 255, flags & 255);
 		}
-		nomore = crs->get (crs, &k_localid, &e_value, DB_NEXT_DUP);
+		nomore = crs->get (crs, &k_trust, &e_value, DB_NEXT_DUP);
 	}
 	crs->close (crs);
 	if (nomore != DB_NOTFOUND) {
@@ -216,43 +227,41 @@ int main (int argc, char *argv []) {
 	}
 	//
 	// Now append any new values
-	argi = 4;
-	while (argi < argc) {
-		p11len = strlen (argv [argi]);
-		if (stat (argv [argi+1], &statbuf) != 0) {
+	if (binfile != NULL) {
+		int valexplen = strlen (valexp);
+		if (stat (binfile, &statbuf) != 0) {
 			fprintf (stderr, "Failed to stat %s: %s\n",
-				argv [argi+1], strerror (errno));
+				binfile, strerror (errno));
 			goto failure;
 		}
 		filesz = statbuf.st_size;
-		if (4 + p11len + 1 + filesz > sizeof (e_buf)) {
+		if (4 + valexplen + 1 + filesz > sizeof (e_buf)) {
 			fprintf (stderr, "Out of buffer memory trying to fill %s\n",
-				argv [argi]);
+				binfile);
 			goto failure;
 		}
 		* (uint32_t *) e_buf = htonl (flags);
-		strcpy ((char *) & ((uint32_t *) e_buf) [1], argv [argi]);
-		fd = open (argv [argi+1], O_RDONLY);
+		strcpy ((char *) & ((uint32_t *) e_buf) [1], valexp);
+		fd = open (binfile, O_RDONLY);
 		if (fd == -1) {
 			fprintf (stderr, "Failed to open %s: %s\n",
-				argv [argi+1], strerror (errno));
+				binfile, strerror (errno));
 			goto failure;
 		}
-		if (read (fd, &e_buf [4 + p11len + 1], filesz) != filesz) {
+		if (read (fd, &e_buf [4 + valexplen + 1], filesz) != filesz) {
 			fprintf (stderr, "Failed to read from %s: %s\n",
-				argv [argi+1], strerror (errno));
+				binfile, strerror (errno));
 			close (fd);
 			goto failure;
 		}
 		close (fd);
 		e_value.data = e_buf;
-		e_value.size = 4 + p11len + 1 + filesz;
-		if (dbh->put (dbh, txn, &k_localid, &e_value, 0) != 0) {
+		e_value.size = 4 + valexplen + 1 + filesz;
+		if (dbh->put (dbh, txn, &k_trust, &e_value, 0) != 0) {
 			fprintf (stderr, "Failed to write record to database\n");
 			goto failure;
 		}
-		printf ("Written %s and %s\n", argv [argi], argv [argi+1]);
-		argi += 2;
+		printf ("Written the new record\n");
 	}
 	if (txn->commit (txn, 0) != 0) {
 		txn->abort (txn);

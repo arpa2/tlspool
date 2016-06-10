@@ -1,7 +1,8 @@
 TARGETS = tlspool
 
 OBJS = daemon.o config.o manage.o service.o cache.o pinentry.o lidentry.o \
-	starttls.o donai.o remote.o error.o ctlkey.o validate.o online.o pgp.o
+	starttls.o donai.o remote.o error.o ctlkey.o \
+	validate.o online.o pgp.o trust.o
 
 CFLAGS += -pthread -I ../include
 CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS) $(UNBOUND_CFLAGS) $(QUICKDER_CFLAGS)
