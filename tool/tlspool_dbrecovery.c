@@ -157,7 +157,6 @@ int main (int argc, char *argv []) {
 	if (dbfname != NULL) {
 		printf " * Disclosure database, file %s/%s\n", dbenvdir, dbfname);
 	}
-#if 0
 	if (wanted (argc_opt, argv_opt, "trust")) {
 		dbfname = cfg_db_trust ();
 	} else {
@@ -166,7 +165,6 @@ int main (int argc, char *argv []) {
 	if (dbfname != NULL) {
 		printf " * Trust anchor database, file %s/%s\n", dbenvdir, dbfname);
 	}
-#endif
 	//
 	// Ask for confirmation
 	printf ("\nNote well:\n");
@@ -188,9 +186,7 @@ chdir (dbenvdir);
 	}
 	recover (argc_opt, argv_opt, "localid",  cfg_db_localid  ());
 	recover (argc_opt, argv_opt, "disclose", cfg_db_disclose ());
-#if 0
 	recover (argc_opt, argv_opt, "trust",    cfg_db_trust    ());
-#endif
 	//
 	// End recovery
 	printf ("\nIf you are happy with the foregoing, we can commit the change.\n");
