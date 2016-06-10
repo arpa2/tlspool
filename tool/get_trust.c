@@ -146,7 +146,7 @@ int main (int argc, char *argv []) {
 	for (i=0; i<hexlen; i+=2) {
 		hexchars [0] = argv [3] [i + 0];
 		hexchars [1] = argv [3] [i + 1];
-		keybytes [i] = strtol (hexchars, &saveptr, 16);
+		keybytes [i >> 1] = strtol (hexchars, &saveptr, 16);
 		if (saveptr != &hexchars [2]) {
 			fprintf (stderr, "Illegal character in hex byte: 0x%s\n", hexchars);
 			exit (1);
