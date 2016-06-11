@@ -1,7 +1,7 @@
 ifdef WINVER
-TARGETS = libtlspool.so libtlspool.a tlspool.pyc tlspool.pyo
-else
 TARGETS = libtlspool.dll libtlspool.lib
+else
+TARGETS = libtlspool.so libtlspool.a tlspool.pyc tlspool.pyo
 endif
 
 CFLAGS = -fPIC -I ../include
