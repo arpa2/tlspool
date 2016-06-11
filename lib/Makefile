@@ -13,9 +13,9 @@ LIBS =
 PREFIX ?= /usr/local
 
 ifdef WINVER
-TARGETS libtlspool_OBJS = libtlspool.o
+libtlspool_OBJS = libtlspool.o
 else
-TARGETS libtlspool_OBJS = libtlspool.o libtlspool_lidentry.o libtlspool_pinentry.o
+libtlspool_OBJS = libtlspool.o libtlspool_lidentry.o libtlspool_pinentry.o
 endif
 
 OBJS = $(libtlspool_OBJS)
