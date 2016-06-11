@@ -1,4 +1,8 @@
+ifdef WINVER
 TARGETS = libtlspool.so libtlspool.a tlspool.pyc tlspool.pyo
+else
+TARGETS = libtlspool.dll libtlspool.lib
+endif
 
 CFLAGS = -fPIC -I ../include
 
@@ -6,16 +10,26 @@ LDFLAGS =
 
 LIBS = 
 
-PREFIX = /usr/local
+PREFIX ?= /usr/local
 
-libtlspool_OBJS = libtlspool.o libtlspool_lidentry.o libtlspool_pinentry.o
+ifdef WINVER
+TARGETS libtlspool_OBJS = libtlspool.o
+else
+TARGETS libtlspool_OBJS = libtlspool.o libtlspool_lidentry.o libtlspool_pinentry.o
+endif
 
 OBJS = $(libtlspool_OBJS)
+
+ifdef WINVER
+CFLAGS += -D_WIN32_WINNT=0x0600 -I ../include/windows
+libtlspool_OBJS += windows/syslog.o windows/socketpair.o
+LIBS += -lkernel32 -ladvapi32 -lmsvcrt -lwsock32 -lws2_32
+endif
 
 all: $(TARGETS)
 
 libtlspool.so: $(libtlspool_OBJS)
-	gcc -shared $(LDFLAGS) -o "$@" $(libtlspool_OBJS) $(LIBS)
+	$(CC) -shared $(LDFLAGS) -o "$@" $(libtlspool_OBJS) $(LIBS)
 
 libtlspool.a: $(libtlspool_OBJS)
 	rm -f "$@"
@@ -27,12 +41,26 @@ tlspool.pyo: tlspool.py
 tlspool.pyc: tlspool.py
 	python -m compileall "$<"
 
+libtlspool.dll: $(libtlspool_OBJS)
+	$(CC) -shared $(LDFLAGS) -o "$@" $(libtlspool_OBJS) $(LIBS)
+
+libtlspool.lib: windows/libtlspool.def
+	$(DLLTOOL) --input-def "$<" --output-lib "$@"
+
 .c.o:
-	gcc -c $(CFLAGS) -o $@ $<
+	$(CC) -c $(CFLAGS) -o $@ $<
 
 clean:
 	rm -f $(OBJS) *.lo *.la $(TARGETS)
 
+ifdef WINVER
+install: all
+	install libtlspool.dll "$(PREFIX)/lib/"
+	install libtlspool.lib "$(PREFIX)/bin/"
+
+uninstall:
+	rm -f "$(PREFIX)/lib/libtlspool.dll"
+else
 install: all
 	install libtlspool.so libtlspool.a "$(PREFIX)/lib/"
 	@echo #
@@ -47,3 +75,4 @@ uninstall:
 	@echo #
 	@echo # Python libraries not yet removed
 	@echo #
+endif
