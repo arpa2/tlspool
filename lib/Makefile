@@ -8,7 +8,7 @@ CFLAGS = -fPIC -I ../include
 
 LDFLAGS =  
 
-LIBS = 
+LIBS = -lpthread
 
 PREFIX ?= /usr/local
 
