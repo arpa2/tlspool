@@ -165,6 +165,9 @@ struct tlspool_command {
 	} pio_data;
 #ifdef WINDOWS_PORT
 	HANDLE hPipe;
+#if defined(_M_IX86) || defined(__i386)
+	uint32_t _pad1;
+#endif
 	enum anciltype pio_ancil_type;
 	union pio_ancil_data {
 		HANDLE pioa_filehandle;

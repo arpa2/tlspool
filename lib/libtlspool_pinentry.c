@@ -9,15 +9,18 @@
 #include <unistd.h>
 #include <pthread.h>
 
+#include <tlspool/starttls.h>
+#include <tlspool/commands.h>
+
+#ifdef WINDOWS_PORT
+#include <winsock2.h>
+#else
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/select.h>
 #include <sys/resource.h>
-
-#include <tlspool/starttls.h>
-#include <tlspool/commands.h>
-
+#endif
 
 /* Cleanup routine */
 static void tlspool_pin_service_closepool (void *poolfdptr) {
