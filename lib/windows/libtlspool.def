@@ -1,0 +1,5 @@
+LIBRARY LIBTLSPOOL
+EXPORTS
+    tlspool_ping
+    tlspool_starttls
+
