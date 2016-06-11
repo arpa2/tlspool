@@ -55,11 +55,14 @@ clean:
 
 ifdef WINVER
 install: all
-	install libtlspool.dll "$(PREFIX)/lib/"
-	install libtlspool.lib "$(PREFIX)/bin/"
-
+	install libtlspool.dll libtlspool.lib "$(PREFIX)/bin/"
+	mkdir -p "$(PREFIX)/include/tlspool"
+	install ../include/tlspool/starttls.h "$(PREFIX)/include/tlspool"
+	install ../include/tlspool/commands.h "$(PREFIX)/include/tlspool"	
 uninstall:
-	rm -f "$(PREFIX)/lib/libtlspool.dll"
+	rm -f "$(PREFIX)/bin/libtlspool.dll"
+	rm -f "$(PREFIX)/bin/libtlspool.lib"
+	rm -rf "$(PREFIX)/include/tlspool/"
 else
 install: all
 	install libtlspool.so libtlspool.a "$(PREFIX)/lib/"
