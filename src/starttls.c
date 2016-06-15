@@ -1970,7 +1970,7 @@ static gtls_error fetch_remote_credentials (struct command *cmd) {
 		for (i=0; i < num_certs; i++) {
 			E_g2e ("Failed to initialise peer X.509 certificate",
 				gnutls_x509_crt_init (
-					cmd->remote_cert [i]));
+					(gnutls_x509_crt_t *) &cmd->remote_cert [i]));
 			if (gtls_errno == GNUTLS_E_SUCCESS) {
 				cmd->remote_cert_count++;
 			}
@@ -1986,7 +1986,7 @@ static gtls_error fetch_remote_credentials (struct command *cmd) {
 		peer_tad = TAD_TYPE_PGP;
 		E_g2e ("Failed to initialise peer PGP key",
 				gnutls_x509_crt_init (
-					cmd->remote_cert [0]));
+					(gnutls_x509_crt_t *) &cmd->remote_cert [0]));
 		if (gtls_errno == GNUTLS_E_SUCCESS) {
 			cmd->remote_cert_count = 1;
 		}
@@ -2063,7 +2063,7 @@ static gtls_error fetch_remote_credentials (struct command *cmd) {
 					: GNUTLS_E_SUCCESS);
 				// Turn the anchor into an X.509 certificate
 				E_g2e ("Failet to initialise X.509 peer trust anchor",
-					gnutls_x509_crt_init (cmd->remote_cert [cmd->remote_cert_count]));
+					gnutls_x509_crt_init ((gnutls_x509_crt_t *) &cmd->remote_cert [cmd->remote_cert_count]));
 				if (gtls_errno == GNUTLS_E_SUCCESS) {
 					cmd->remote_cert_count++;
 					anchor_gnutls.data = anchor.data;
