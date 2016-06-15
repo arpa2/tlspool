@@ -15,6 +15,8 @@
 
 #define EXPECTED_LID_TYPE_COUNT 5
 
+#define CERTS_MAX_DEPTH 10
+
 
 /* A simple (data*,size) construct named pool_datum_t
  */
@@ -41,9 +43,16 @@ struct command {
 	int session_errno;
 	intptr_t session_certificate;
 	intptr_t session_privatekey;
+	char *trust_valexp;
+	int valexp_result;
 	int anonpre;
 	char valflags [32];
 	unsigned int vfystatus;
+	int remote_auth_type;
+	void *remote_cert_raw;
+	int remote_cert_type;
+	void *remote_cert [CERTS_MAX_DEPTH];
+	uint8_t remote_cert_count;
 };
 
 
