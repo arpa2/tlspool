@@ -154,7 +154,7 @@ struct tlspool_command {
 		} pioc_prng;
 	} pio_data;
 #ifdef WINDOWS_PORT
-	union { HANDLE hPipe; uint32_t _pad1; };
+	union { HANDLE hPipe; uint64_t _pad1; };
 	enum anciltype pio_ancil_type;
 	union pio_ancil_data {
 		HANDLE pioa_filehandle;
