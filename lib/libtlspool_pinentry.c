@@ -81,7 +81,7 @@ int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec
 	}
 
 	/* Prepare command structure */
-	bzero (&cmd, sizeof (cmd));	/* Do not leak old stack info */
+	memset (&cmd, 0, sizeof (cmd));	/* Do not leak old stack info */
 	cmd.pio_cbid = 0;
 	cmd.pio_cmd = PIOC_PINENTRY_V2;
 	cmd.pio_data.pioc_pinentry.flags = regflags;
@@ -100,7 +100,8 @@ int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec
 		}
 
 		/* Erase the password that has just been sent */
-		bzero (&cmd.pio_data.pioc_pinentry.pin,
+		memset (&cmd.pio_data.pioc_pinentry.pin,
+				0,
 				sizeof (cmd.pio_data.pioc_pinentry.pin));
 
 		/* receive and process the response */

@@ -10,6 +10,10 @@
 #include <pthread.h>
 #include <assert.h>
 
+#ifndef WINDOWS_PORT
+#include <unistd.h>
+#endif /* WINDOWS_PORT */
+
 #include <syslog.h>
 #include <fcntl.h>
 
@@ -121,7 +125,7 @@ static struct command *allocate_command_for_clientfd (pool_handle_t fd) {
 			tlog (TLOG_UNIXSOCK, LOG_CRIT, "Failed to allocate command pool");
 			exit (1);
 		}
-		bzero (cmdpool, 1000 * sizeof (struct command));
+		memset (cmdpool, 0, 1000 * sizeof (struct command));
 	}
 	pos = cmdpool_pos;
 	while (cmdpool [pos].claimed) {
@@ -233,7 +237,7 @@ static void process_command (struct command *cmd);
 PIPEINST Pipe[INSTANCES];
 HANDLE hEvents[INSTANCES];
 
-#if defined(WINDOWS_PORT) && !defined(__CYGWIN__)
+#if defined(WINDOWS_PORT)
 static int socket_from_protocol_info (LPWSAPROTOCOL_INFOW lpProtocolInfo)
 {
 	return WSASocketW (FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, lpProtocolInfo, 0, 0); 
@@ -361,12 +365,8 @@ static int create_named_pipes (LPCTSTR lpszPipename)
 						//HANDLE winsock = (HANDLE) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
 						//cmd->passfd = cygwin_attach_handle_to_fd(NULL, -1, winsock, NULL, GENERIC_READ | GENERIC_WRITE);
 						//tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d, winsock = %d\n", cmd->passfd, winsock);
-#ifdef __CYGWIN__
-						cmd->passfd = cygwin_socket_from_protocol_info(&cmd->cmd.pio_ancil_data.pioa_socket);
-#else /* __CYGWIN__ */
 						cmd->passfd = socket_from_protocol_info(&cmd->cmd.pio_ancil_data.pioa_socket);
 if (cmd->passfd == -1) printf("WSAGetLastError(void) = %d\n", WSAGetLastError());
-#endif /* __CYGWIN__ */
 						tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d\n", cmd->passfd);
 					} else {
 						//int superfd = (int) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
@@ -552,7 +552,9 @@ printf("DEBUG: Message sent to server, receiving reply as follows:\n");
 int send_command (struct command *cmd, int passfd) {
 #ifdef WINDOWS_PORT
 	cmd->cmd.pio_ancil_type = ANCIL_TYPE_NONE;
-	bzero (&cmd->cmd.pio_ancil_data, sizeof (cmd->cmd.pio_ancil_data));
+	memset (&cmd->cmd.pio_ancil_data,
+			0,
+			sizeof (cmd->cmd.pio_ancil_data));
 	return !np_send_command(&cmd->cmd) ? 1 : 0;
 #else /* WINDOWS_PORT */
 	char anc [CMSG_SPACE(sizeof (int))];
@@ -564,9 +566,9 @@ int send_command (struct command *cmd, int passfd) {
 		return 1;	// Success guaranteed when nobody is listening
 	}
 	assert (passfd == -1);	// Working passfd code retained but not used
-	bzero (anc, sizeof (anc));
-	bzero (&iov, sizeof (iov));
-	bzero (&mh, sizeof (mh));
+	memset (anc, 0, sizeof (anc));
+	memset (&iov, 0, sizeof (iov));
+	memset (&mh, 0, sizeof (mh));
 	iov.iov_base = &cmd->cmd;
 	iov.iov_len = sizeof (cmd->cmd);
 	mh.msg_iov = &iov;

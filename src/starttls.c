@@ -528,7 +528,7 @@ static gtls_error load_dh_params (void) {
 	gnutls_datum_t pkcs3;
 	char *filename = cfg_tls_dhparamfile ();
 	int gtls_errno = GNUTLS_E_SUCCESS;
-	bzero (&pkcs3, sizeof (pkcs3));
+	memset (&pkcs3, 0, sizeof (pkcs3));
 	if (filename) {
 		E_g2e ("No PKCS #3 PEM file with DH params",
 			gnutls_load_file (
@@ -1269,7 +1269,9 @@ gnutls_pcert_st *load_certificate_chain (uint32_t flags, unsigned int *chainlen,
 		(*chainlen)++;
 		chain = (gnutls_pcert_st *) calloc (*chainlen, sizeof (gnutls_pcert_st));
 		if (chain != NULL) {
-			bzero (chain, (*chainlen) * sizeof (gnutls_pcert_st));
+			memset (chain,
+				0,
+				(*chainlen) * sizeof (gnutls_pcert_st));
 		} else {
 			gtls_errno = GNUTLS_E_MEMORY_ERROR;
 		}
@@ -2195,7 +2197,7 @@ printf ("DEBUG: Client-side invocation flagged as wrong; compensated error\n");
 	//
 	// Setup BDB transactions and reset credential datum fields
 	if (!anonpost) {
-		bzero (&cmd->lids, sizeof (cmd->lids));
+		memset (&cmd->lids, 0, sizeof (cmd->lids));
 		manage_txn_begin (&cmd->txn);
 	}
 
@@ -2630,7 +2632,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 			free (cmd->lids [i - LID_TYPE_MIN].data);
 		}
 	}
-	bzero (cmd->lids, sizeof (cmd->lids));
+	memset (cmd->lids, 0, sizeof (cmd->lids));
 
 #if 0
 /* This is not proper.  gnutls_certificate_set_key() suggests that these are

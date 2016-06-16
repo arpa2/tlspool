@@ -8,14 +8,9 @@
 #include <stdint.h>
 
 #ifdef WINDOWS_PORT
-#define bzero(b,len) (memset((b), '\0', (len)), (void) 0)
 #define _usleep(usec) (Sleep((usec) / 1000))
 #define poll(fds, nfds, timeout) WSAPoll(fds, nfds, timeout)
-#ifdef __CYGWIN__
-#include <windows/winsock2.h>
-#else /* __CYGWIN__ */
 #include <winsock2.h>
-#endif /* __CYGWIN__ */
 #else /* WINDOWS_PORT */
 #define _usleep(usec) usleep(usec)
 #endif /* WINDOWS_PORT */
@@ -159,10 +154,7 @@ struct tlspool_command {
 		} pioc_prng;
 	} pio_data;
 #ifdef WINDOWS_PORT
-	HANDLE hPipe;
-#if defined(_M_IX86) || defined(__i386)
-	uint32_t _pad1;
-#endif
+	union { HANDLE hPipe; uint32_t _pad1; }
 	enum anciltype pio_ancil_type;
 	union pio_ancil_data {
 		HANDLE pioa_filehandle;

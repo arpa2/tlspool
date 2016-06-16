@@ -6,11 +6,6 @@
 
 #include <tlspool/commands.h>
 
-#ifdef __MINGW64__
-#define bzero(b,len) (memset((b), '\0', (len)), (void) 0)
-//typedef __useconds_t useconds_t;
-#endif
-
 #ifdef WINDOWS_PORT
 #include <windows.h>
 #endif /* WINDOWS_PORT */

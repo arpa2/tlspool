@@ -29,11 +29,7 @@
 #include <sys/resource.h>
 #endif
 
-#ifdef __CYGWIN__
-#define WEOF ((wint_t)(0xFFFF))
-#endif
-
-#if !defined(WINDOWS_PORT) || defined(__CYGWIN__)
+#if !defined(WINDOWS_PORT)
 #define closesocket(s) close(s)
 #endif
 
@@ -400,7 +396,6 @@ static void *master_thread (void *path) {
 #ifndef WINDOWS_PORT
 	useconds_t usec;
 	struct sockaddr_un sun;
-	struct tlspool_command cmd;
 	//NOT-USED// char anc [CMSG_SPACE(sizeof (int))];
 	struct iovec iov;
 	struct cmsghdr *cmsg;
@@ -419,7 +414,7 @@ static void *master_thread (void *path) {
 #ifndef WINDOWS_PORT
 	//
 	// Setup path information -- value and size were checked
-	bzero (&sun, sizeof (sun));
+	memset (&sun, 0, sizeof (sun));
 	strcpy (sun.sun_path, (char *) path);
 	sun.sun_family = AF_UNIX;
 #endif
@@ -647,7 +642,7 @@ printf ("DEBUG: poolfd = %d\n", poolfd);
 		errno = EBUSY;
 		return -1;
 	}
-	bzero (&cmd, sizeof (cmd));	/* Do not leak old stack info */
+	memset (&cmd, 0, sizeof (cmd));	/* Do not leak old stack info */
 	cmd.pio_reqid = entry_reqid;
 	cmd.pio_cbid = 0;
 	cmd.pio_cmd = PIOC_PING_V2;
@@ -687,7 +682,7 @@ printf ("DEBUG: poolfd = %d\n", poolfd);
 	}
 }
 
-#if defined(WINDOWS_PORT) && !defined(__CYGWIN__)
+#if defined(WINDOWS_PORT)
 static int socket_dup_protocol_info(int fd, int pid, LPWSAPROTOCOL_INFOW lpProtocolInfo)
 {
 	if (WSADuplicateSocketW((SOCKET)fd, pid, lpProtocolInfo) == SOCKET_ERROR) {
@@ -776,7 +771,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		errno = EBUSY;
 		return -1;
 	}
-	bzero (&cmd, sizeof (cmd));	/* Do not leak old stack info */
+	memset (&cmd, 0, sizeof (cmd));	/* Do not leak old stack info */
 	cmd.pio_reqid = entry_reqid;
 	cmd.pio_cbid = 0;
 	cmd.pio_cmd = PIOC_STARTTLS_V2;
@@ -830,19 +825,9 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		// cmd was already set to 0, including ancilary data simulation
 		if (1 /*is_sock(wsock)*/) {
 			// Send a socket
-#ifdef __CYGWIN__
-			int pid = tlspool_pid(NULL);
-			if (pid == -1) {
-				close (cryptfd);
-				registry_update (&entry_reqid, NULL);
-				// errno inherited from tlspool_pid()
-				return -1;
-			}
-#else			 
 			LONG pid;
 
 			GetNamedPipeServerProcessId(poolfd, &pid);
-#endif
 			cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
 			printf("DEBUG: pid = %d, cryptfd = %d\n", pid, cryptfd);
 			if (socket_dup_protocol_info(cryptfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
@@ -904,7 +889,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				/* default namedconnect() implementation */
 				plainfd = * (int *) privdata;
 				if ((plainfd < 0) && (cmd.pio_cmd == PIOC_PLAINTEXT_CONNECT_V2)) {
-#if !defined(WINDOWS_PORT) || defined(__CYGWIN__)
+#if !defined(WINDOWS_PORT)
 					int soxx[2];
 #else
 					// https://github.com/ncm/selectable-socketpair
@@ -915,11 +900,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 #ifndef WINDOWS_PORT
 					if (socketpair (AF_UNIX, SOCK_SEQPACKET, 0, soxx) == 0) {
 #else /* WINDOWS_PORT */
-#ifdef __CYGWIN__
-					if (socketpair(AF_UNIX, SOCK_STREAM, 0, soxx) == 0) {
-#else /* __CYGWIN__ */
 					if (dumb_socketpair(soxx, 1) == 0) {
-#endif /* __CYGWIN__ */
 #endif /* WINDOWS_PORT */
 						// printf("DEBUG: socketpair succeeded\n");
 						/* Socketpair created */
@@ -948,18 +929,8 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 				// cmd was already set to 0, including ancilary data simulation
 				if (1 /*is_sock(wsock)*/) {
 					// Send a socket
-#ifdef __CYGWIN__
-					int pid = tlsp
-					if (pid == -1) {
-						closesocket(plainfd);
-						registry_update (&entry_reqid, NULL);
-						// errno inherited from tlspool_pid()
-						return -1;
-					}
-#else			 
 					ULONG pid;
 					GetNamedPipeServerProcessId(poolfd, &pid);
-#endif
 					cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
 					printf("DEBUG: pid = %d, plainfd = %d\n", pid, plainfd);
 					if (socket_dup_protocol_info(plainfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
@@ -1052,7 +1023,7 @@ int _tlspool_control_command (int cmdcode, uint8_t *ctlkey) {
 		errno = EBUSY;
 		return -1;
 	}
-	bzero (&cmd, sizeof (cmd));	/* Do not leak old stack info */
+	memset (&cmd, 0, sizeof (cmd));	/* Do not leak old stack info */
 	cmd.pio_reqid = entry_reqid;
 	cmd.pio_cbid = 0;
 	cmd.pio_cmd = cmdcode;
@@ -1144,7 +1115,7 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
 	int entry_reqid = -1;
 	pool_handle_t poolfd = INVALID_POOL_HANDLE;
-	bzero (prng_buf, prng_len);
+	memset (prng_buf, 0, prng_len);
 
 	/* Sanity checks */
 	if ((prng_len > TLSPOOL_PRNGBUFLEN) ||
@@ -1171,7 +1142,7 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 		errno = EBUSY;
 		return -1;
 	}
-	bzero (&cmd, sizeof (cmd));	/* Do not leak old stack info */
+	memset (&cmd, 0, sizeof (cmd));	/* Do not leak old stack info */
 	cmd.pio_reqid = entry_reqid;
 	cmd.pio_cbid = 0;
 	cmd.pio_cmd = PIOC_PRNG_V2;

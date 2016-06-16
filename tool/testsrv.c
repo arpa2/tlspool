@@ -122,7 +122,7 @@ reconnect:
 		perror ("Failed to create socket on testsrv");
 		exit (1);
 	}
-	bzero (&sin6, sizeof (sin6));
+	memset (&sin6, 0, sizeof (sin6));
 	sin6.sin6_family = AF_INET6;
 	sin6.sin6_port = htons (12345);
 	memcpy (&sin6.sin6_addr, &in6addr_loopback, 16);

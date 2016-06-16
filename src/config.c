@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 #include <pwd.h>
 #include <grp.h>
+#include <unistd.h>
 #endif /* WINDOWS_PORT */
 
 #include <syslog.h>
@@ -353,7 +354,7 @@ retry:
 	if (flock (fh, LOCK_EX | LOCK_NB) != 0) {
 		if (errno == EWOULDBLOCK) {
 			pid_t oldpid;
-			bzero (pidbuf, sizeof (pidbuf));
+			memset (pidbuf, 0, sizeof (pidbuf));
 			read (fh, pidbuf, sizeof (pidbuf)-1);
 			oldpid = atoi (pidbuf);
 			if (kill_old_pid) {
@@ -525,7 +526,7 @@ unsigned int cfg_log_filter (void) {
 static void free_p11pin (void) {
 	char *pin = configvars [CFGVAR_PKCS11_PIN];
 	if (pin) {
-		bzero (pin, strlen (pin));
+		memset (pin, 0, strlen (pin));
 		free (pin);
 		configvars [CFGVAR_PKCS11_PIN] = NULL;
 	}

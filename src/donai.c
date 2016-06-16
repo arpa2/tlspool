@@ -10,7 +10,8 @@
 
 #ifndef WINDOWS_PORT
 #include <arpa/inet.h>
-#endif
+#include <unistd.h>
+#endif /* WINDOWS_PORT */
 
 #include <tlspool/internal.h>
 

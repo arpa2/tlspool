@@ -228,7 +228,9 @@ success_t pin_callback (	int attempt,
 		return 0;
 	}
 	strcpy (pin, cmd->cmd.pio_data.pioc_pinentry.pin);
-	bzero (cmd->cmd.pio_data.pioc_pinentry.pin, sizeof (cmd->cmd.pio_data.pioc_pinentry.pin));
+	memset (cmd->cmd.pio_data.pioc_pinentry.pin,
+			0,
+			sizeof (cmd->cmd.pio_data.pioc_pinentry.pin));
 	tlog (TLOG_PKCS11, LOG_DEBUG, "Returning entered PIN and OK from PIN entry");
 	return 1;
 }

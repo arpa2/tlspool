@@ -296,7 +296,7 @@ int connect_remote (starttls_t *curtlsdata, void *vlai) {
 				return -1;
 			}
 			if (sai->sa_family == AF_UNIX) {
-				bzero (&sun, sizeof (sun));
+				memset (&sun, 0, sizeof (sun));
 				sun.sun_family = AF_UNIX;
 				if (fmtcpy (sun.sun_path, ((struct sockaddr_un *) sai)->sun_path, sizeof (sun.sun_path), curtlsdata) != 0) {
 					fprintf (stderr, "Formatted socket path too long or badly formatted: %s\n");
@@ -422,7 +422,7 @@ int main (int argc, char *argv []) {
 	}
 	//
 	// Parse the command line arguments
-	bzero (&hint, sizeof (hint));
+	memset (&hint, 0, sizeof (hint));
 	hint.ai_family = AF_UNSPEC;
 	hint.ai_socktype = SOCK_STREAM;
 	//
