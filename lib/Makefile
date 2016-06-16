@@ -4,15 +4,16 @@ else
 TARGETS = libtlspool.so libtlspool.a tlspool.pyc tlspool.pyo
 endif
 
-CFLAGS = -fPIC -I ../include
+CFLAGS += -fPIC -I ../include -std=gnu11
 
-LDFLAGS =  
+LDFLAGS += -std=gnu11
 
-LIBS = -lpthread
+LIBS += -lpthread
 
 PREFIX ?= /usr/local
 
 ifdef WINVER
+# TODO libtlspool_lidentry and libtlspool_pinentry
 libtlspool_OBJS = libtlspool.o
 else
 libtlspool_OBJS = libtlspool.o libtlspool_lidentry.o libtlspool_pinentry.o
@@ -48,33 +49,36 @@ libtlspool.lib: windows/libtlspool.def
 	$(DLLTOOL) --input-def "$<" --output-lib "$@"
 
 .c.o:
-	$(CC) -c $(CFLAGS) -o $@ $<
+	$(CC) -c $(CFLAGS) -o "$@" "$<"
 
 clean:
 	rm -f $(OBJS) *.lo *.la $(TARGETS)
 
+anew: clean all
+
+install: all
 ifdef WINVER
-install: all
-	install libtlspool.dll libtlspool.lib "$(PREFIX)/bin/"
-	mkdir -p "$(PREFIX)/include/tlspool"
-	install ../include/tlspool/starttls.h "$(PREFIX)/include/tlspool"
-	install ../include/tlspool/commands.h "$(PREFIX)/include/tlspool"	
-uninstall:
-	rm -f "$(PREFIX)/bin/libtlspool.dll"
-	rm -f "$(PREFIX)/bin/libtlspool.lib"
-	rm -rf "$(PREFIX)/include/tlspool/"
-else
-install: all
-	install libtlspool.so libtlspool.a "$(PREFIX)/lib/"
+	install libtlspool.dll libtlspool.lib "$(DESTDIR)$(PREFIX)/bin/"
+	mkdir -p "$(DESTDIR)$(PREFIX)/include/tlspool"
+	install ../include/tlspool/starttls.h "$(DESTDIR)$(PREFIX)/include/tlspool"
+	install ../include/tlspool/commands.h "$(DESTDIR)$(PREFIX)/include/tlspool"	
+else	
+	install libtlspool.so libtlspool.a "$(DESTDIR)$(PREFIX)/lib/"
 	@echo #
 	@echo # Python libraries not yet installed
 	@echo #
 	@echo # You may need to run ldconfig to update the ld.so cache
 	@echo #
+endif
 
 uninstall:
-	rm -f "$(PREFIX)/lib/libtlspool.so"
-	rm -f "$(PREFIX)/lib/libtlspool.a"
+ifdef WINVER
+	rm -f "$(DESTDIR)$(PREFIX)/bin/libtlspool.dll"
+	rm -f "$(DESTDIR)$(PREFIX)/bin/libtlspool.lib"
+	rm -rf "$(DESTDIR)$(PREFIX)/include/tlspool/"
+else
+	rm -f "$(DESTDIR)$(PREFIX)/lib/libtlspool.so"
+	rm -f "$(DESTDIR)$(PREFIX)/lib/libtlspool.a"
 	@echo #
 	@echo # Python libraries not yet removed
 	@echo #

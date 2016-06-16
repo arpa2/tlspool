@@ -67,7 +67,7 @@ int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout,
 	sun.sun_family = AF_UNIX;
 	strcpy (sun.sun_path, path);
 	pthread_cleanup_push (tlspool_localid_service_closepool, &poolfd);
-	poolfd = socket (AF_UNIX, SOCK_DGRAM, 0);
+	poolfd = socket (AF_UNIX, SOCK_STREAM, 0);
 	if (poolfd < 0) {
 		return -1;
 	}
@@ -88,7 +88,7 @@ int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout,
 	while (1) {
 
 		/* send the request or, when looping, the callback result */
-printf ("DEBUG: LIDENTRY command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.pio_cmd, cmd.pio_cbid, cmd.pio_data.pioc_lidentry.flags);
+//DEBUG// printf ("DEBUG: LIDENTRY command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.pio_cmd, cmd.pio_cbid, cmd.pio_data.pioc_lidentry.flags);
 		if (send (poolfd, &cmd, sizeof (cmd), MSG_NOSIGNAL) == -1) {
 			// errno inherited from send()
 			// let SIGPIPE be reported as EPIPE
@@ -103,7 +103,7 @@ printf ("DEBUG: LIDENTRY command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.
 			close (poolfd);
 			return -1;
 		}
-printf ("DEBUG: LIDENTRY callback command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.pio_cmd, cmd.pio_cbid, cmd.pio_data.pioc_lidentry.flags);
+//DEBUG// printf ("DEBUG: LIDENTRY callback command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.pio_cmd, cmd.pio_cbid, cmd.pio_data.pioc_lidentry.flags);
 		switch (cmd.pio_cmd) {
 		case PIOC_LIDENTRY_CALLBACK_V2:
 			cberr = (*cb) (&cmd.pio_data.pioc_lidentry, data);

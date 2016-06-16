@@ -100,6 +100,7 @@ void send_error (struct command *cmd, int tlserrno, char *msg);
 void send_success (struct command *cmd);
 int send_command (struct command *cmd, int passfd);
 struct command *send_callback_and_await_response (struct command *cmdresp, time_t opt_timeout);
+void register_server_socket (int srvsox);
 
 /* pinentry.c */
 void setup_pinentry (void);
@@ -107,13 +108,13 @@ void cleanup_pinentry (void);
 void register_pinentry_command (struct command *cmd);
 success_t token_callback (const char *const label, unsigned retry);
 success_t pin_callback (int attempt, const char *token_url, const char *token_label, char *pin, size_t pin_max);
+void pinentry_forget_clientfd (int fd);
 
 /* starttls.c */
 void setup_starttls (void);
 void cleanup_starttls (void);
 void starttls_pkcs11_provider (char *p11path);
-void starttls_client (struct command *cmd);
-void starttls_server (struct command *cmd);
+void starttls (struct command *cmd);
 void starttls_prng (struct command *cmd);
 
 /* config.c */
@@ -271,6 +272,22 @@ int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, enum security_laye
  *      }
  */
 int ctlkey_unregister (uint8_t *ctlkey);
+
+/* Look through the ctlkey registry, to find sessions that depend on a closing
+ * control connection meaning that they cannot survive it being closed;
+ * those entries will be unregistered and deallocated ; this is used when a
+ * client socket closes its link to the TLS Pool.
+ *
+ * This implementation closes all entries whose ctlfd matches; this is needed
+ * for detached nodes that have been reattached.  Nodes that are attached
+ * will usually be removed before they hit this routine, which is also good.
+ *
+ * Note that detached keys are (by definition) protected against this cleanup
+ * procedure; however, when their TLS connection breaks down, they too will
+ * be cleaned up.  Note that detaching is not done before the TLS handshake
+ * is complete.
+ */
+void ctlkey_close_ctlfd (int clisox);
 
 /* Find a ctlkeynode based on a ctlkey.  Returns NULL if not found.
  * 

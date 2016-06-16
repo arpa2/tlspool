@@ -6,6 +6,8 @@
 #include <syslog.h>
 #include <errno.h>
 
+#include <arpa/inet.h>
+
 #include <tlspool/internal.h>
 
 #include "manage.h"

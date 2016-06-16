@@ -7,7 +7,15 @@
 #include <string.h>
 #include <limits.h>
 
-
+#ifndef WINDOWS_PORT
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/file.h>
+#include <sys/un.h>
+#include <sys/stat.h>
+#include <pwd.h>
+#include <grp.h>
+#endif /* WINDOWS_PORT */
 
 #include <syslog.h>
 #include <fcntl.h>
@@ -23,13 +31,6 @@
 
 #ifdef WINDOWS_PORT
 #include <windows.h>
-#else
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/file.h>
-#include <sys/un.h>
-#include <pwd.h>
-#include <grp.h>
 #endif
 
 //NOTYET// #include <libmemcached/memcached.h>

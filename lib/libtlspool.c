@@ -639,12 +639,6 @@ int tlspool_ping (pingpool_t *pingdata) {
 	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
 	int entry_reqid = -1;
 	pool_handle_t poolfd = INVALID_POOL_HANDLE;
-#ifdef WINDOWS_PORT
-	BOOL   fSuccess = FALSE;
-#else
-	struct iovec iov;
-	struct msghdr mh = { 0 };
-#endif
 
 	/* Prepare command structure */
 	poolfd = tlspool_open_poolhandle (NULL);
@@ -674,11 +668,7 @@ printf ("DEBUG: poolfd = %d\n", poolfd);
 	}
 #else
 	/* Send the request */
-	iov.iov_base = &cmd;
-	iov.iov_len = sizeof (cmd);
-	mh.msg_iov = &iov;
-	mh.msg_iovlen = 1;
-	if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
+	if (send (poolfd, &cmd, sizeof (cmd), MSG_NOSIGNAL) == -1) {
 		// Let SIGPIPE be reported as EPIPE
 		registry_update (&entry_reqid, NULL);
 		// errno inherited from sendmsg()
@@ -1177,11 +1167,7 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
 	int entry_reqid = -1;
 	pool_handle_t poolfd = INVALID_POOL_HANDLE;
-#ifndef WINDOWS_PORT
-	struct iovec iov;
-	struct msghdr mh = { 0 };
-#endif
-	bzero(prng_buf, prng_len);
+	bzero (prng_buf, prng_len);
 
 	/* Sanity checks */
 	if ((prng_len > TLSPOOL_PRNGBUFLEN) ||
@@ -1231,11 +1217,7 @@ if (np_send_command (&cmd) == -1) {
 }
 #else
 	/* Send the request */
-	iov.iov_base = &cmd;
-	iov.iov_len = sizeof (cmd);
-	mh.msg_iov = &iov;
-	mh.msg_iovlen = 1;
-	if (sendmsg (poolfd, &mh, MSG_NOSIGNAL) == -1) {
+	if (send (poolfd, &cmd, sizeof (cmd), MSG_NOSIGNAL) == -1) {
 		// Let SIGPIPE be reported as EPIPE
 		registry_update (&entry_reqid, NULL);
 		// errno inherited from sendmsg()

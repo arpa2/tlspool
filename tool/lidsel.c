@@ -36,7 +36,7 @@ struct data {
  * and stores them for future reference.  It also requests entry of the
  * local identity or the index number of the database entries printed.
  */
-void lidcb (lidentry_t *entry, void *data) {
+char *lidcb (lidentry_t *entry, void *data) {
 	//
 	// Declare & initialise
 	struct data *d = (struct data *) data;
@@ -58,7 +58,7 @@ printf ("DEBUG: lidsel.c lidcb() called with localid %s\n", entry->localid);
 		}
 		d->dblidctr++;
 printf ("DEBUG: lidsel.c lidcb() returns after processing database entry\n");
-		return;
+		return NULL;
 	}
 
 	//
@@ -103,7 +103,7 @@ printf ("DEBUG: lidsel.c lidcb() returns after processing database entry\n");
 	} while (error);
 	d->dblidctr = 0;
 printf ("DEBUG: lidsel.c lidcb() returns after setting localid to %s and flags to 0x%08lx\n", entry->localid, entry->flags);
-	return;
+	return NULL;
 }
 
 

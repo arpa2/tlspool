@@ -3,12 +3,12 @@ TARGETS = tlspool$(EXE)
 OBJS = daemon.o config.o manage.o service.o cache.o pinentry.o lidentry.o \
 	starttls.o donai.o remote.o error.o ctlkey.o validate.o
 
-CFLAGS += -pthread -I ../include
+CFLAGS += -pthread -I ../include -std=gnu11
 CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS)
 
-LDFLAGS =
+LDFLAGS += -std=gnu11
 
-LIBS = $(GNUTLS_LIBS) $(P11KIT_LIBS) $(BDB_LIBS) $(TASN1_LIBS) -lpthread
+LIBS += $(GNUTLS_LIBS) $(P11KIT_LIBS) $(BDB_LIBS) $(TASN1_LIBS) -lpthread
 
 ifdef WITH_SYSTEMD
 CFLAGS += -DHAVE_SYSTEMD
@@ -55,9 +55,11 @@ tlspool$(EXE): $(OBJS)
 clean:
 	rm -f $(OBJS) $(TARGETS)
 
+anew: clean all
+
 install: all
-	install $(TARGETS) "$(PREFIX)/$(SBIN)/"
+	install $(TARGETS) "$(DESTDIR)$(PREFIX)/$(SBIN)/"
 
 uninstall:
-	@($foreach t,$(TARGETS),rm -f '$(PREFIX)/$(SBIN)/$t' && ) echo Removed TLS Pool daemon
+	@($foreach t,$(TARGETS),rm -f '$(DESTDIR)$(PREFIX)/$(SBIN)/$t' && ) echo Removed TLS Pool daemon
 

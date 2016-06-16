@@ -140,7 +140,7 @@ success_t token_callback (const char *const label, unsigned retry) {
  */
 void p11cpy (char *cstr, CK_UTF8CHAR *p11str, int p11len) {
 	memcpy (cstr, p11str, p11len);
-	while ((p11len >= 0) && (cstr [p11len-1] == ' ')) {
+	while ((p11len > 0) && (cstr [p11len-1] == ' ')) {
 		p11len--;
 	}
 	cstr [p11len] = 0;
