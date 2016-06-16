@@ -777,14 +777,6 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 	cmd.pio_cmd = PIOC_STARTTLS_V2;
 	memcpy (&cmd.pio_data.pioc_starttls, tlsdata, sizeof (struct pioc_starttls));
 
-#if RAND_MAX < 0xfffff
-#ifdef _MSC_VER
-#pragma message("Failure on assumption of 16 bits of random material per random() call")
-#else
-#warning "Failure on assumption of 16 bits of random material per random() call"
-#endif
-#endif
-
 #if TLSPOOL_CTLKEYLEN != 16
 #  error "Failure on assumption of 16 bytes per ctlkey"
 #endif
