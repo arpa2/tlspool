@@ -166,7 +166,7 @@ int main (int argc, char *argv []) {
 		fprintf (stderr, "Failed to open cursor on localid.db\n");
 		goto failure;
 	}
-	bzero (&k_localid, sizeof (k_localid));
+	memset (&k_localid, 0, sizeof (k_localid));
 	k_localid.data = localid;
 	k_localid.size = strlen (localid);
 	nomore = crs->get (crs, &k_localid, &e_value, DB_SET);

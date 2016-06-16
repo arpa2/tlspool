@@ -152,7 +152,7 @@ int main (int argc, char *argv []) {
 		goto failure;
 	}
 	while (argi < argc) {
-		bzero (&k_localid, sizeof (k_localid));
+		memset (&k_localid, 0, sizeof (k_localid));
 		k_localid.data = argv [argi];
 		k_localid.size = strlen (argv [argi]);
 		if (crs->get (crs, &k_localid, &e_value, DB_SET) != 0) {
@@ -170,7 +170,7 @@ int main (int argc, char *argv []) {
 		fprintf (stderr, "Failed to open cursor on disclose.db\n");
 		goto failure;
 	}
-	bzero (&k_selector, sizeof (k_selector));
+	memset (&k_selector, 0, sizeof (k_selector));
 	k_selector.data = selector;
 	k_selector.size = strlen (selector);
 	nomore = crs->get (crs, &k_selector, &e_value, DB_SET);

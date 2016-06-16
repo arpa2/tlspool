@@ -3,6 +3,7 @@
  * From: Rick van Rein <rick@openfortress.nl>
  */
 
+#include "whoami.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -32,6 +33,9 @@
 #define ENOTRECOVERABLE EIO
 #endif
 
+#ifndef EBADSLT
+#define EBADSLT ENOMEM
+#endif
 
 /* Data structures for logging configuration */
 

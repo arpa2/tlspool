@@ -78,7 +78,7 @@ typedef struct userdomain selector_t;  /* userlen<0 should be read as userlen==0
  * before the last use of the data handle.
  */
 static inline void dbt_init_fixbuf (DBT *dbt, void *buffer, u_int32_t bufsize) {
-	bzero (dbt, sizeof (DBT));
+	memset (dbt, 0, sizeof (DBT));
 	dbt->data = buffer;
 	dbt->size =
 	dbt->ulen = bufsize;
@@ -91,7 +91,7 @@ static inline void dbt_init_fixbuf (DBT *dbt, void *buffer, u_int32_t bufsize) {
  * that succeeded.
  */
 static inline void dbt_init_malloc (DBT *dbt) {
-	bzero (dbt, sizeof (DBT));
+	memset (dbt, 0, sizeof (DBT));
 	dbt->flags |= DB_DBT_MALLOC;
 }
 
