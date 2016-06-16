@@ -791,6 +791,12 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 
 	if (!renegotiate) {
 		assert (pthread_mutex_lock (&prng_lock) == 0);
+#if RAND_MAX >= 0xffffffff
+		* (uint32_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 0] = random ();
+		* (uint32_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 4] = random ();
+		* (uint32_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 8] = random ();
+		* (uint32_t *) &cmd.pio_data.pioc_starttls.ctlkey [12] = random ();
+#elif RAND_MAX >= 0xffff
 		* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 0] = random ();
 		* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 2] = random ();
 		* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 4] = random ();
@@ -799,6 +805,26 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [10] = random ();
 		* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [12] = random ();
 		* (uint16_t *) &cmd.pio_data.pioc_starttls.ctlkey [14] = random ();
+#elif RAND_MAX >= 0xff
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 0] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 1] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 2] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 3] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 4] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 5] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 6] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 7] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 8] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [ 9] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [10] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [11] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [12] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [13] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [14] = random ();
+		* (uint8_t *) &cmd.pio_data.pioc_starttls.ctlkey [15] = random ();
+#else
+#  error "Unsuitable random() function due to RAND_MAX value < 0xff"
+#endif
 		pthread_mutex_unlock (&prng_lock);
 	}
 // printf ("DEBUG: ctlkey =");
