@@ -1,5 +1,6 @@
 /* tlspool/pinentry.c -- Connect to the local tlspool and enter PINs. */
 
+#include "whoami.h"
 
 #include <stdlib.h>
 #include <stdio.h>

@@ -7,11 +7,6 @@
 
 #include <stdint.h>
 
-#if  defined(__CYGWIN__) || defined(__MINGW64__) || defined(_WIN32)
-#define WINDOWS_PORT
-#endif
-
-
 #ifdef WINDOWS_PORT
 #define bzero(b,len) (memset((b), '\0', (len)), (void) 0)
 #define _usleep(usec) (Sleep((usec) / 1000))

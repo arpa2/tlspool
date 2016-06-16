@@ -1,5 +1,6 @@
 /* tlspool/manage.c -- Management setup in local databases */
 
+#include "whoami.h"
 
 #include <syslog.h>
 #include <errno.h>

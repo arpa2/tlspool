@@ -1,12 +1,16 @@
 /* tlspool/donai.c -- Map the keys of local identities to credentials */
 
+#include "whoami.h"
+
 #include <stdlib.h>
 #include <string.h>
 
 #include <syslog.h>
 #include <errno.h>
 
+#ifndef WINDOWS_PORT
 #include <arpa/inet.h>
+#endif
 
 #include <tlspool/internal.h>
 

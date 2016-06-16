@@ -100,7 +100,7 @@ void send_error (struct command *cmd, int tlserrno, char *msg);
 void send_success (struct command *cmd);
 int send_command (struct command *cmd, int passfd);
 struct command *send_callback_and_await_response (struct command *cmdresp, time_t opt_timeout);
-void register_server_socket (int srvsox);
+void register_server_socket (pool_handle_t srvsox);
 
 /* pinentry.c */
 void setup_pinentry (void);
@@ -108,7 +108,7 @@ void cleanup_pinentry (void);
 void register_pinentry_command (struct command *cmd);
 success_t token_callback (const char *const label, unsigned retry);
 success_t pin_callback (int attempt, const char *token_url, const char *token_label, char *pin, size_t pin_max);
-void pinentry_forget_clientfd (int fd);
+void pinentry_forget_clientfd (pool_handle_t fd);
 
 /* starttls.c */
 void setup_starttls (void);
@@ -287,7 +287,7 @@ int ctlkey_unregister (uint8_t *ctlkey);
  * be cleaned up.  Note that detaching is not done before the TLS handshake
  * is complete.
  */
-void ctlkey_close_ctlfd (int clisox);
+void ctlkey_close_ctlfd (pool_handle_t clisox);
 
 /* Find a ctlkeynode based on a ctlkey.  Returns NULL if not found.
  * 

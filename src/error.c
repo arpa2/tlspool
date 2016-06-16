@@ -3,6 +3,7 @@
  * From: Rick van Rein <rick@openfortress.nl>
  */
 
+#include "whoami.h"
 
 #include <stdlib.h>
 #include <stdio.h>

@@ -1,5 +1,7 @@
 /* tlspool/daemon.c -- Daemon setup code */
 
+#include "whoami.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <signal.h>

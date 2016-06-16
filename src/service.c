@@ -1,5 +1,7 @@
 /* tlspool/service.c -- TLS pool service, socket handling, command dispatcher */
 
+#include "whoami.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -537,8 +539,7 @@ printf ("DEBUG: Write I/O pending\n");
 	if (!fSuccess)
 	{
 		_tprintf(TEXT("WriteFile to pipe failed. GLE=%d\n"), GetLastError());
-#warning better errno
-		errno = ENOSYS;
+		errno = EPIPE;
 		return -1;
 	} else {
 printf ("DEBUG: Wrote %ld bytes to pipe\n", cbWritten);

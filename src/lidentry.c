@@ -1,5 +1,6 @@
 /* tlspool/lidentry.c -- A client of the TLS Pool that can choose localids. */
 
+#include "whoami.h"
 
 #include <stdlib.h>
 #include <stdio.h>

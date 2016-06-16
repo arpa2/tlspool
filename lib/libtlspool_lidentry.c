@@ -1,5 +1,6 @@
 /* tlspool/libfun.c -- Library function for starttls go-get-it */
 
+#include "whoami.h"
 
 #include <stdlib.h>
 #include <errno.h>

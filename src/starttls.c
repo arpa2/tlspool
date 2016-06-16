@@ -1,5 +1,6 @@
 /* tlspool/starttls.c -- Setup and validation handler for TLS session */
 
+#include "whoami.h"
 
 #include <stdlib.h>
 #include <stdint.h>

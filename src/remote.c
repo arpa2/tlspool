@@ -1,5 +1,7 @@
 /* tlspool/remote.c -- Contact remote information sources like DNS and LDAP */
 
+#include "whoami.h"
+
 #ifdef UNCONSIDERED_OLD_CODE_WITHOUT_DB_CONFIGURATION
 
 #include <stdlib.h>

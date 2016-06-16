@@ -1,5 +1,7 @@
 /* tlspool/libtlspool.c -- Library function for starttls go-get-it */
 
+#include "whoami.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -158,12 +160,7 @@ pool_handle_t tlspool_open_poolhandle (char *path) {
  */
 int tlspool_simultaneous_starttls(void) {
 #ifdef WINDOWS_PORT
-#ifdef _MSC_VER
-#pragma message("TODO")
-#else
-#warning TODO
-#endif
-		return 512;
+	return 512;
 #else /* WINDOWS_PORT */
 	static int simu = -1;
 	if (simu < 0) {
@@ -373,12 +370,7 @@ printf ("DEBUG: Write I/O pending\n");
 	if (!fSuccess)
 	{
 		_tprintf(TEXT("WriteFile to pipe failed. GLE=%d\n"), GetLastError());
-#ifdef _MSC_VER
-#pragma message("better errno")
-#else
-#warning better errno
-#endif
-		errno = ENOSYS;
+		errno = EPIPE;
 		return -1;
 	} else {
 printf ("DEBUG: Wrote %ld bytes to pipe\n", cbWritten);
@@ -698,7 +690,12 @@ printf ("DEBUG: poolfd = %d\n", poolfd);
 #if defined(WINDOWS_PORT) && !defined(__CYGWIN__)
 static int socket_dup_protocol_info(int fd, int pid, LPWSAPROTOCOL_INFOW lpProtocolInfo)
 {
-	return WSADuplicateSocketW((SOCKET)fd, pid, lpProtocolInfo) == SOCKET_ERROR ? -1 : 0;
+	if (WSADuplicateSocketW((SOCKET)fd, pid, lpProtocolInfo) == SOCKET_ERROR) {
+		errno = EPIPE;
+		return -1;
+	} else {
+		return 0;
+	}	
 }
 #endif
 
@@ -848,22 +845,12 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 #endif
 			cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
 			printf("DEBUG: pid = %d, cryptfd = %d\n", pid, cryptfd);
-#ifdef __CYGWIN__
-			if (cygwin_socket_dup_protocol_info(cryptfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
-#else /* __CYGWIN__ */
 			if (socket_dup_protocol_info(cryptfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
-#endif /* __CYGWIN__ */
-
-#ifdef _MSC_VER
-#pragma message("set errno")
-#else
-#warning set errno
-#endif
 				// printf("DEBUG: cygwin_socket_dup_protocol_info error\n");
 				// Let SIGPIPE be reported as EPIPE
-					closesocket(cryptfd);
+				closesocket(cryptfd);
 				registry_update (&entry_reqid, NULL);
-				// errno inherited from sendmsg()
+				// errno inherited from socket_dup_protocol_info()
 				return -1;
 			}
 			//... (..., &cmd.pio_ancil_data.pioa_socket, ...);
@@ -975,22 +962,12 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 #endif
 					cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
 					printf("DEBUG: pid = %d, plainfd = %d\n", pid, plainfd);
-#ifdef __CYGWIN__
-					if (cygwin_socket_dup_protocol_info(plainfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
-#else /* __CYGWIN__ */
 					if (socket_dup_protocol_info(plainfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
-#endif /* __CYGWIN__ */
-
-#ifdef _MSC_VER
-#pragma message("set errno")
-#else
-#warning set errno
-#endif
 						// printf("DEBUG: cygwin_socket_dup_protocol_info error\n");
 						// Let SIGPIPE be reported as EPIPE
-							closesocket(plainfd);
+						closesocket(plainfd);
 						registry_update (&entry_reqid, NULL);
-						// errno inherited from cygwin_socket_dup_protocol_info()
+						// errno inherited from socket_dup_protocol_info()
 						return -1;
 					}
 					//... (..., &cmd.pio_ancil_data.pioa_socket, ...);
