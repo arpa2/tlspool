@@ -6,6 +6,9 @@
 
 #include <tlspool/commands.h>
 
+#ifdef WINDOWS_PORT
+#include <windows.h>
+#endif /* WINDOWS_PORT */
 
 
 /*
@@ -22,13 +25,37 @@
  */
 
 
+#ifdef WINDOWS_PORT
+#define TLSPOOL_DEFAULT_SOCKET_PATH "\\\\.\\pipe\\tlspool"
+#define TLSPOOL_DEFAULT_PIDFILE_PATH "/var/run/tlspool.pid"
+#else
 #define TLSPOOL_DEFAULT_SOCKET_PATH "/var/run/tlspool.sock"
 #define TLSPOOL_DEFAULT_PIDFILE_PATH "/var/run/tlspool.pid"
+#endif /* WINDOWS_PORT */
 
 /* Retrieve the process identity of the TLS Pool from the named file, or fall
  * back on the default file if the name is set to NULL.  Returns -1 on failure.
  */
 int tlspool_pid (char *opt_pidfile);
+
+/* OS independent pool handle
+ */
+#ifdef WINDOWS_PORT
+typedef struct
+{
+	OVERLAPPED oOverlap;
+	HANDLE hPipeInst;
+	struct tlspool_command chRequest;
+	DWORD cbRead;
+	DWORD dwState;
+	BOOL fPendingIO;
+} PIPEINST, *LPPIPEINST;
+typedef LPPIPEINST pool_handle_t;
+#define INVALID_POOL_HANDLE NULL
+#else /* WINDOWS_PORT */
+typedef int pool_handle_t;
+#define INVALID_POOL_HANDLE -1
+#endif /* WINDOWS_PORT */ 
 
 /* Setup the TLS pool socket to use, if it is not the default path name
  * /var/run/tlspool.sock.  The return value is the file descriptor for the
@@ -37,7 +64,19 @@ int tlspool_pid (char *opt_pidfile);
  * be called with NULL in the first call, in which case the default location
  * is used.
  */
-int tlspool_socket (char *path);
+pool_handle_t tlspool_open_poolhandle (char *path);
+
+/* Close a pool handle
+ */
+#ifdef WINDOWS_PORT
+static inline void tlspool_close_poolhandle (pool_handle_t poolh) {
+	CloseHandle (poolh);
+}
+#else /* WINDOWS_PORT */
+static inline void tlspool_close_poolhandle (pool_handle_t poolh) {
+	close (poolh);
+}
+#endif /* WINDOWS_PORT */
 
 
 /* The library function for ping, which is called to establish the API

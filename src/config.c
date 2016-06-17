@@ -1,5 +1,7 @@
 /* tlspool/config.c -- Parse & Process the configuration file */
 
+#include "whoami.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
@@ -7,16 +9,19 @@
 #include <string.h>
 #include <limits.h>
 
+#ifndef WINDOWS_PORT
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/file.h>
 #include <sys/un.h>
 #include <sys/stat.h>
+#include <pwd.h>
+#include <grp.h>
+#include <unistd.h>
+#endif /* WINDOWS_PORT */
 
 #include <syslog.h>
 #include <fcntl.h>
-#include <pwd.h>
-#include <grp.h>
 #include <signal.h>
 
 //NOTYET// #include <ldap.h>
@@ -27,11 +32,19 @@
 
 #include <tlspool/internal.h>
 
+#ifdef WINDOWS_PORT
+#include <windows.h>
+#endif
+
 //NOTYET// #include <libmemcached/memcached.h>
 
 //NOTYET// static LDAP *ldap_handle;
 
 //NOTYET// static struct memcached_st *cache;
+
+#ifdef WINDOWS_PORT
+char szPipename[1024];
+#endif
 
 static int kill_old_pid = 0;
 
@@ -316,12 +329,15 @@ void cfg_setvar (char *item, int itemno, char *value) {
 }
 
 void unlink_pidfile (void) {
+#ifndef WINDOWS_PORT
 #ifndef CONFIG_PARSE_ONLY
 	unlink (configvars [CFGVAR_DAEMON_PIDFILE]);
+#endif
 #endif
 }
 
 void cfg_pidfile (char *item, int itemno, char *value) {
+#ifndef WINDOWS_PORT
 	static int fh = 0;
 	if (fh) {
 		fprintf (stderr, "You can specify only one PID file\n");
@@ -340,7 +356,7 @@ retry:
 	if (flock (fh, LOCK_EX | LOCK_NB) != 0) {
 		if (errno == EWOULDBLOCK) {
 			pid_t oldpid;
-			bzero (pidbuf, sizeof (pidbuf));
+			memset (pidbuf, 0, sizeof (pidbuf));
 			read (fh, pidbuf, sizeof (pidbuf)-1);
 			oldpid = atoi (pidbuf);
 			if (kill_old_pid) {
@@ -371,10 +387,18 @@ retry:
 	//
 	// Note: The file remains open -- to sustain the flock on it
 	//
-#endif
+#endif /* CONFIG_PARSE_ONLY */
+#endif /* WINDOWS_PORT */
 }
 
 void cfg_socketname (char *item, int itemno, char *value) {
+#ifdef WINDOWS_PORT
+	if (strlen (value) + 1 > sizeof (szPipename)) {
+		fprintf (stderr, "Socket path too long: %s\n", value);
+		exit (1);
+	}
+	strcpy (szPipename, value);
+#else
 	struct sockaddr_un sun;
 	int sox;
 #ifndef CONFIG_PARSE_ONLY
@@ -444,13 +468,15 @@ void cfg_socketname (char *item, int itemno, char *value) {
 	sox = SD_LISTEN_FDS_START + 0;
 #endif /* HAVE_SYSTEMD */
 	register_server_socket (sox);
-#endif
+#endif /* CONFIG_PARSE_ONLY */
+#endif /* WINDOWS_PORT */
 }
 
 void cfg_user (char *item, int itemno, char *value) {
+#ifndef WINDOWS_PORT
 #ifdef DEBUG
 	fprintf (stdout, "DEBUG: DECLARE %s AS %s\n", item, value);
-#endif
+#endif /* DEBUG */
 #ifndef CONFIG_PARSE_ONLY
 	struct passwd *pwd = getpwnam (value);
 	if (!pwd) {
@@ -458,13 +484,15 @@ void cfg_user (char *item, int itemno, char *value) {
 		exit (1);
 	}
 	setuid (pwd->pw_uid);
-#endif
+#endif /* CONFIG_PARSE_ONLY */
+#endif /* WINDOWS_PORT */
 }
 
 void cfg_group (char *item, int itemno, char *value) {
+#ifndef WINDOWS_PORT
 #ifdef DEBUG
 	fprintf (stdout, "DEBUG: DECLARE %s AS %s\n", item, value);
-#endif
+#endif /* DEBUG */
 #ifndef CONFIG_PARSE_ONLY
 	struct group *grp = getgrnam (value);
 	if (!grp) {
@@ -472,14 +500,17 @@ void cfg_group (char *item, int itemno, char *value) {
 		exit (1);
 	}
 	setgid (grp->gr_gid);
-#endif
+#endif /* CONFIG_PARSE_ONLY */
+#endif /* WINDOWS_PORT */
 }
 
 void cfg_chroot (char *item, int itemno, char *value) {
+#ifndef WINDOWS_PORT
 	if (chroot (value) != 0) {
 		perror ("Failed to chroot");
 		exit (1);
 	}
+#endif
 }
 
 unsigned int cfg_log_perror (void) {
@@ -497,7 +528,7 @@ unsigned int cfg_log_filter (void) {
 static void free_p11pin (void) {
 	char *pin = configvars [CFGVAR_PKCS11_PIN];
 	if (pin) {
-		bzero (pin, strlen (pin));
+		memset (pin, 0, strlen (pin));
 		free (pin);
 		configvars [CFGVAR_PKCS11_PIN] = NULL;
 	}

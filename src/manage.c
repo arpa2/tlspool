@@ -1,5 +1,6 @@
 /* tlspool/manage.c -- Management setup in local databases */
 
+#include "whoami.h"
 
 #include <syslog.h>
 #include <errno.h>
@@ -90,7 +91,11 @@ success_t setup_management (void) {
 	dbenv_dir = cfg_dbenv_dir ();
 	if (dbenv_dir != NULL) {
 		if (errno == 0) {
+#ifdef WINDOWS_PORT
+			mkdir (dbenv_dir);
+#else /* WINDOWS_PORT */
 			mkdir (dbenv_dir, S_IRWXU);
+#endif /* WINDOWS_PORT */
 			if (errno == 0) {
 				tlog (TLOG_DB | TLOG_USER, LOG_NOTICE, "Created DB environment directory");
 			} else {

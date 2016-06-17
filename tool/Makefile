@@ -93,8 +93,8 @@ clean:
 anew: clean all
 
 install: all
-	install $(TARGETS) "$(PREFIX)/sbin/"
+	install $(TARGETS) "$(DESTDIR)$(PREFIX)/sbin/"
 
 uninstall:
-	@($foreach t,$(TARGETS),rm -f '$(PREFIX)/sbin/$t' && ) echo Removed TLS Pool utilities
+	@($foreach t,$(TARGETS),rm -f '$(DESTDIR)$(PREFIX)/sbin/$t' && ) echo Removed TLS Pool utilities
 

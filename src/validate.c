@@ -10,6 +10,10 @@
 
 #include <syslog.h>
 
+#ifndef WINDOWS_PORT
+#include <unistd.h>
+#endif /* WINDOWS_PORT */
+
 #include <tlspool/internal.h>
 
 

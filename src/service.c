@@ -1,5 +1,7 @@
 /* tlspool/service.c -- TLS pool service, socket handling, command dispatcher */
 
+#include "whoami.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -8,23 +10,47 @@
 #include <pthread.h>
 #include <assert.h>
 
+#ifndef WINDOWS_PORT
+#include <unistd.h>
+#endif /* WINDOWS_PORT */
+
 #include <syslog.h>
 #include <fcntl.h>
-#include <poll.h>
-
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/un.h>
 
 #include <tlspool/commands.h>
 #include <tlspool/internal.h>
 
+#ifdef WINDOWS_PORT
+#include <winsock2.h>
+#else
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <poll.h>
+#endif
+
+#ifdef WINDOWS_PORT
+#include <windows.h>
+#ifndef __MINGW64__
+#define WEOF ((wint_t)(0xFFFF))
+#endif
+
+#define PIPE_TIMEOUT 5000
+#define BUFSIZE 4096
+
+#define _tprintf printf
+#define _tmain main
+#endif /* WINDOWS_PORT */
+
+#ifdef WINDOWS_PORT
+extern char szPipename[1024];
+#endif
 
 /* The data stored in this module consists of lists of sockets to listen to
  * for connection setup and command exchange, but not data communication.
  * Commands are received from the various clients and processed, always
  * ensuring exactly one reply.
- * 
+ *
  * Some command requests are actually callbacks in reaction to something
  * the TLS pool sent to an application.  Those callbacks are recognised
  * by their pio_cbid parameter, and after security scrutiny they are passed
@@ -89,7 +115,7 @@ void cleanup_service (void) {
  */
 static struct command *cmdpool = NULL;
 static int cmdpool_len = 1000;
-static struct command *allocate_command_for_clientfd (int fd) {
+static struct command *allocate_command_for_clientfd (pool_handle_t fd) {
 	static int cmdpool_pos = 0;
 	int pos;
 	struct command *cmd;
@@ -99,7 +125,7 @@ static struct command *allocate_command_for_clientfd (int fd) {
 			tlog (TLOG_UNIXSOCK, LOG_CRIT, "Failed to allocate command pool");
 			exit (1);
 		}
-		bzero (cmdpool, 1000 * sizeof (struct command));
+		memset (cmdpool, 0, 1000 * sizeof (struct command));
 	}
 	pos = cmdpool_pos;
 	while (cmdpool [pos].claimed) {
@@ -109,7 +135,7 @@ static struct command *allocate_command_for_clientfd (int fd) {
 		}
 		if (pos == cmdpool_pos) {
 			/* A full rotation -- delay of 10ms */
-			usleep (10000);
+			_usleep (10000);
 		}
 	}
 	cmdpool [pos].clientfd = fd;
@@ -128,7 +154,7 @@ static struct command *allocate_command_for_clientfd (int fd) {
  *
  * TODO: This is O(cmdpool_len) so linked lists could help to avoid trouble.
  */
-static void free_commands_by_clientfd (int clientfd) {
+static void free_commands_by_clientfd (pool_handle_t clientfd) {
 	int i;
 	if (cmdpool == NULL) {
 		return;
@@ -146,7 +172,8 @@ static void free_commands_by_clientfd (int clientfd) {
 
 
 /* Register a socket.  It is assumed that first all server sockets register */
-void register_socket (int sox, uint32_t soxinfo_flags) {
+void register_socket (pool_handle_t sox, uint32_t soxinfo_flags) {
+#ifndef WINDOWS_PORT
 	int flags = fcntl (sox, F_GETFD);
 	flags |= O_NONBLOCK;
 	fcntl (sox, F_SETFD, flags);
@@ -163,25 +190,26 @@ void register_socket (int sox, uint32_t soxinfo_flags) {
 	soxinfo [num_sox].flags = soxinfo_flags;
 	soxinfo [num_sox].cbq = NULL;
 	num_sox++;
+#endif /* !WINDOWS_PORT */
 }
 
 
-void register_server_socket (int srvsox) {
+void register_server_socket (pool_handle_t srvsox) {
 	register_socket (srvsox, SOF_SERVER);
 }
 
 
-void register_client_socket (int clisox) {
+void register_client_socket (pool_handle_t clisox) {
 	register_socket (clisox, SOF_CLIENT);
 }
 
-
-static void free_callbacks_by_clientfd (int clientfd);
+static void free_callbacks_by_clientfd (pool_handle_t clientfd);
 
 /* TODO: This may copy information back and thereby avoid processing in the
  * current loop passthrough.  No problem, poll() will show it once more. */
 static void unregister_client_socket_byindex (int soxidx) {
-	int sox = soxpoll [soxidx].fd;
+#ifndef WINDOWS_PORT
+	pool_handle_t sox = soxpoll [soxidx].fd;
 	free_callbacks_by_clientfd (sox);
 	free_commands_by_clientfd (sox);
 	pinentry_forget_clientfd (sox);
@@ -192,11 +220,343 @@ static void unregister_client_socket_byindex (int soxidx) {
 		memcpy (&soxinfo [soxidx], &soxinfo [num_sox], sizeof (*soxinfo));
 		memcpy (&soxpoll [soxidx], &soxpoll [num_sox], sizeof (*soxpoll));
 	}
+#endif /* !WINDOWS_PORT */
+}
+#ifdef WINDOWS_PORT
+#define CONNECTING_STATE 0
+#define READING_STATE 1
+#define INSTANCES 4
+#define PIPE_TIMEOUT 5000
+#define BUFSIZE 4096
+
+VOID DisconnectAndReconnect(DWORD);
+BOOL ConnectToNewClient(HANDLE, LPOVERLAPPED);
+void copy_tls_command(struct command *cmd, struct tlspool_command *tls_command);
+static void process_command (struct command *cmd);
+
+PIPEINST Pipe[INSTANCES];
+HANDLE hEvents[INSTANCES];
+
+#if defined(WINDOWS_PORT)
+static int socket_from_protocol_info (LPWSAPROTOCOL_INFOW lpProtocolInfo)
+{
+	return WSASocketW (FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, lpProtocolInfo, 0, 0); 
+}
+#endif
+
+static int create_named_pipes (LPCTSTR lpszPipename)
+{
+   DWORD i, dwWait, cbRet, dwErr;
+   BOOL fSuccess;
+// The initial loop creates several instances of a named pipe
+// along with an event object for each instance.  An
+// overlapped ConnectNamedPipe operation is started for
+// each instance.
+
+   for (i = 0; i < INSTANCES; i++)
+   {
+
+   // Create an event object for this instance.
+
+      hEvents[i] = CreateEvent(
+         NULL,    // default security attribute
+         TRUE,    // manual-reset event
+         TRUE,    // initial state = signaled
+         NULL);   // unnamed event object
+
+      if (hEvents[i] == NULL)
+      {
+         printf("CreateEvent failed with %d.\n", GetLastError());
+         return 0;
+      }
+
+      Pipe[i].oOverlap.hEvent = hEvents[i];
+
+      Pipe[i].hPipeInst = CreateNamedPipe(
+         lpszPipename,            // pipe name
+         PIPE_ACCESS_DUPLEX |     // read/write access
+         FILE_FLAG_OVERLAPPED,    // overlapped mode
+         PIPE_TYPE_MESSAGE |      // message-type pipe
+         PIPE_READMODE_MESSAGE |  // message-read mode
+         PIPE_WAIT,               // blocking mode
+         INSTANCES,               // number of instances
+         BUFSIZE*sizeof(TCHAR),   // output buffer size
+         BUFSIZE*sizeof(TCHAR),   // input buffer size
+         PIPE_TIMEOUT,            // client time-out
+         NULL);                   // default security attributes
+
+      if (Pipe[i].hPipeInst == INVALID_HANDLE_VALUE)
+      {
+         printf("CreateNamedPipe failed with %d.\n", GetLastError());
+         return 0;
+      }
+
+   // Call the subroutine to connect to the new client
+
+      Pipe[i].fPendingIO = ConnectToNewClient(
+         Pipe[i].hPipeInst,
+         &Pipe[i].oOverlap);
+
+      Pipe[i].dwState = Pipe[i].fPendingIO ?
+         CONNECTING_STATE : // still connecting
+         READING_STATE;     // ready to read
+   }
+
+   while (1)
+   {
+   // Wait for the event object to be signaled, indicating
+   // completion of an overlapped read, write, or
+   // connect operation.
+
+      dwWait = WaitForMultipleObjects(
+         INSTANCES,    // number of event objects
+         hEvents,      // array of event objects
+         FALSE,        // does not wait for all
+         INFINITE);    // waits indefinitely
+
+   // dwWait shows which pipe completed the operation.
+
+      i = dwWait - WAIT_OBJECT_0;  // determines which pipe
+      if (i < 0 || i > (INSTANCES - 1))
+      {
+         printf("Index out of range.\n");
+         return 0;
+      }
+
+   // Get the result if the operation was pending.
+
+      if (Pipe[i].fPendingIO)
+      {
+         fSuccess = GetOverlappedResult(
+            Pipe[i].hPipeInst, // handle to pipe
+            &Pipe[i].oOverlap, // OVERLAPPED structure
+            &cbRet,            // bytes transferred
+            FALSE);            // do not wait
+
+         switch (Pipe[i].dwState)
+         {
+         // Pending connect operation
+            case CONNECTING_STATE:
+               if (! fSuccess)
+               {
+                   printf("Error %d.\n", GetLastError());
+                   return 0;
+               }
+               printf("Connected.\n");
+               Pipe[i].dwState = READING_STATE;
+               break;
+
+         // Pending read operation
+            case READING_STATE:
+               if (! fSuccess || cbRet == 0)
+               {
+                  printf("Error fSuccess = %d, cbRet = %d.\n", fSuccess, cbRet);
+                  DisconnectAndReconnect(i);
+                  continue;
+               }
+               printf("OK cbRet = %d.\n", cbRet);
+               Pipe[i].cbRead = cbRet;
+				struct command *cmd = allocate_command_for_clientfd (&Pipe[i]);
+				Pipe[i].chRequest.hPipe = Pipe[i].hPipeInst;
+				copy_tls_command (cmd, &Pipe[i].chRequest);
+				if (cmd->cmd.pio_ancil_type == ANCIL_TYPE_SOCKET) {
+					if (cmd->passfd == -1) {
+						//WRONG: no support for sockets
+						//HANDLE winsock = (HANDLE) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
+						//cmd->passfd = cygwin_attach_handle_to_fd(NULL, -1, winsock, NULL, GENERIC_READ | GENERIC_WRITE);
+						//tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d, winsock = %d\n", cmd->passfd, winsock);
+						cmd->passfd = socket_from_protocol_info(&cmd->cmd.pio_ancil_data.pioa_socket);
+if (cmd->passfd == -1) printf("WSAGetLastError(void) = %d\n", WSAGetLastError());
+						tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d\n", cmd->passfd);
+					} else {
+						//int superfd = (int) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
+						//tlog (TLOG_UNIXSOCK, LOG_ERR, "Received superfluous file descriptor as %d", superfd);
+						//close (superfd);
+					}
+				}
+				process_command (cmd);
+
+               break;
+
+            default:
+            {
+               printf("Invalid pipe state.\n");
+               return 0;
+            }
+         }
+      }
+
+   // The pipe state determines which operation to do next.
+
+      switch (Pipe[i].dwState)
+      {
+      // READING_STATE:
+      // The pipe instance is connected to the client
+      // and is ready to read a request from the client.
+
+         case READING_STATE:
+            fSuccess = ReadFile(
+               Pipe[i].hPipeInst,
+               &Pipe[i].chRequest,
+               sizeof (Pipe[i].chRequest),
+               &Pipe[i].cbRead,
+               &Pipe[i].oOverlap);
+
+         // The read operation completed successfully.
+
+            if (fSuccess && Pipe[i].cbRead != 0)
+            {
+				Pipe[i].fPendingIO = FALSE;
+
+               continue;
+            }
+
+         // The read operation is still pending.
+
+            dwErr = GetLastError();
+            if (! fSuccess && (dwErr == ERROR_IO_PENDING))
+            {
+               printf("read pending. %d\n", sizeof (Pipe[i].chRequest));
+               Pipe[i].fPendingIO = TRUE;
+               continue;
+            }
+            printf("The read failed with %d.\n", GetLastError());
+
+         // An error occurred; disconnect from the client.
+
+            DisconnectAndReconnect(i);
+            break;
+
+         default:
+         {
+            printf("Invalid pipe state.\n");
+            return 0;
+         }
+      }
+  }
+  return 0;
 }
 
 
+// DisconnectAndReconnect(DWORD)
+// This function is called when an error occurs or when the client
+// closes its handle to the pipe. Disconnect from this client, then
+// call ConnectNamedPipe to wait for another client to connect.
+
+VOID DisconnectAndReconnect(DWORD i)
+{
+// Disconnect the pipe instance.
+
+   if (! DisconnectNamedPipe(Pipe[i].hPipeInst) )
+   {
+      printf("DisconnectNamedPipe failed with %d.\n", GetLastError());
+   }
+
+// Call a subroutine to connect to the new client.
+
+   Pipe[i].fPendingIO = ConnectToNewClient(
+      Pipe[i].hPipeInst,
+      &Pipe[i].oOverlap);
+
+   Pipe[i].dwState = Pipe[i].fPendingIO ?
+      CONNECTING_STATE : // still connecting
+      READING_STATE;     // ready to read
+}
+
+// ConnectToNewClient(HANDLE, LPOVERLAPPED)
+// This function is called to start an overlapped connect operation.
+// It returns TRUE if an operation is pending or FALSE if the
+// connection has been completed.
+
+BOOL ConnectToNewClient(HANDLE hPipe, LPOVERLAPPED lpo)
+{
+   BOOL fConnected, fPendingIO = FALSE;
+
+// Start an overlapped connection for this pipe instance.
+   fConnected = ConnectNamedPipe(hPipe, lpo);
+
+// Overlapped ConnectNamedPipe should return zero.
+   if (fConnected)
+   {
+      printf("ConnectNamedPipe failed with %d.\n", GetLastError());
+      return 0;
+   }
+
+   switch (GetLastError())
+   {
+   // The overlapped connection in progress.
+      case ERROR_IO_PENDING:
+         fPendingIO = TRUE;
+         break;
+
+   // Client is already connected, so signal an event.
+
+      case ERROR_PIPE_CONNECTED:
+         if (SetEvent(lpo->hEvent))
+            break;
+
+   // If an error occurs during the connect operation...
+      default:
+      {
+         printf("ConnectNamedPipe failed with %d.\n", GetLastError());
+         return 0;
+      }
+   }
+   return fPendingIO;
+}
+
+static int np_send_command(struct tlspool_command *cmd) {
+	DWORD  cbToWrite, cbWritten;
+	OVERLAPPED overlapped;
+	BOOL fSuccess;
+
+	/* Send the request */
+	// Send a message to the pipe server.
+
+	cbToWrite = sizeof (struct tlspool_command);
+	_tprintf(TEXT("Sending %d byte cmd\n"), cbToWrite);
+
+	memset(&overlapped, 0, sizeof(overlapped));
+	overlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+	fSuccess = WriteFile(
+		cmd->hPipe,                  // pipe handle
+		cmd,                    // cmd message
+		cbToWrite,              // cmd message length
+		NULL,                  // bytes written
+		&overlapped);            // overlapped
+
+	if (!fSuccess && GetLastError() == ERROR_IO_PENDING )
+	{
+printf ("DEBUG: Write I/O pending\n");
+		fSuccess = WaitForSingleObject(overlapped.hEvent, INFINITE) == WAIT_OBJECT_0;
+	}
+
+	if (fSuccess) {
+		fSuccess = GetOverlappedResult(cmd->hPipe, &overlapped, &cbWritten, TRUE);
+	}
+
+	if (!fSuccess)
+	{
+		_tprintf(TEXT("WriteFile to pipe failed. GLE=%d\n"), GetLastError());
+		errno = EPIPE;
+		return -1;
+	} else {
+printf ("DEBUG: Wrote %ld bytes to pipe\n", cbWritten);
+	}
+printf("DEBUG: Message sent to server, receiving reply as follows:\n");
+	return 0;
+}
+#endif /* WINDOWS_PORT */
+
 int send_command (struct command *cmd, int passfd) {
-	int newfd;
+#ifdef WINDOWS_PORT
+	cmd->cmd.pio_ancil_type = ANCIL_TYPE_NONE;
+	memset (&cmd->cmd.pio_ancil_data,
+			0,
+			sizeof (cmd->cmd.pio_ancil_data));
+	return !np_send_command(&cmd->cmd) ? 1 : 0;
+#else /* WINDOWS_PORT */
 	char anc [CMSG_SPACE(sizeof (int))];
 	struct iovec iov;
 	struct msghdr mh;
@@ -206,18 +566,13 @@ int send_command (struct command *cmd, int passfd) {
 		return 1;	// Success guaranteed when nobody is listening
 	}
 	assert (passfd == -1);	// Working passfd code retained but not used
-#ifdef __CYGWIN__
-	cmd->cmd.pio_ancil_type = ANCIL_TYPE_NONE;
-	bzero (&cmd->cmd.pio_ancil_data, sizeof (cmd->cmd.pio_ancil_data));
-#endif
-	bzero (anc, sizeof (anc));
-	bzero (&iov, sizeof (iov));
-	bzero (&mh, sizeof (mh));
+	memset (anc, 0, sizeof (anc));
+	memset (&iov, 0, sizeof (iov));
+	memset (&mh, 0, sizeof (mh));
 	iov.iov_base = &cmd->cmd;
 	iov.iov_len = sizeof (cmd->cmd);
 	mh.msg_iov = &iov;
 	mh.msg_iovlen = 1;
-#ifndef __CYGWIN__
 	if (passfd >= 0) {
 		mh.msg_control = anc;
 		mh.msg_controllen = sizeof (anc);
@@ -227,8 +582,7 @@ int send_command (struct command *cmd, int passfd) {
 		cmsg->cmsg_len = CMSG_LEN (sizeof (int));
 		* (int *) CMSG_DATA (cmsg) = passfd;
 	}
-#endif
-	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Sending command 0x%08x and fd %d to socket %d", cmd->cmd.pio_cmd, passfd, cmd->clientfd);
+	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Sending command 0x%08x and fd %d to socket %d", cmd->cmd.pio_cmd, passfd, (int) cmd->clientfd);
 	if (sendmsg (cmd->clientfd, &mh, MSG_NOSIGNAL) == -1) {
 		//TODO// Differentiate behaviour based on errno?
 		perror ("Failed to send command");
@@ -239,8 +593,8 @@ int send_command (struct command *cmd, int passfd) {
 		cmd->claimed = 0;
 		return 1;
 	}
+#endif /* WINDOWS_PORT */
 }
-
 
 /* Report success to the user.  Note that this function does not terminate
  * actions, but it should be the last response to the client.
@@ -291,9 +645,9 @@ void send_error (struct command *cmd, int tlserrno, char *msg) {
 }
 
 
-#ifndef __CYGWIN__
+#ifndef WINDOWS_PORT
 /* Receive a command.  Return nonzero on success, zero on failure. */
-int receive_command (int sox, struct command *cmd) {
+int receive_command (pool_handle_t sox, struct command *cmd) {
 	int newfds [2];
 	int newfdcnt = 0;
 	char anc [CMSG_SPACE (sizeof (int))];
@@ -333,37 +687,11 @@ int receive_command (int sox, struct command *cmd) {
 
 	return 1;
 }
-#endif /* !__CYGWIN__ */
+#endif /* !WINDOWS_PORT */
 
-
-#ifdef __CYGWIN__
-extern cygwin_socket_from_protocol_info (LPWSAPROTOCOL_INFOW lpProtocolInfo);
-
-/* Receive a command.  Return nonzero on success, zero on failure. */
-int receive_command (int sox, struct command *cmd) {
-	if (recv(sox, &cmd->cmd, sizeof(cmd->cmd), 0) == -1) {
-		//TODO// Differentiate behaviour based on errno?
-		perror ("Failed to receive command");
-		return 0;	
-	}
-	if (cmd->cmd.pio_ancil_type == ANCIL_TYPE_SOCKET) {
-			if (cmd->passfd == -1) {
-				//WRONG: no support for sockets
-				//HANDLE winsock = (HANDLE) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
-				//cmd->passfd = cygwin_attach_handle_to_fd(NULL, -1, winsock, NULL, GENERIC_READ | GENERIC_WRITE);
-				//tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d, winsock = %d\n", cmd->passfd, winsock);
-				cmd->passfd = cygwin_socket_from_protocol_info(&cmd->cmd.pio_ancil_data.pioa_socket);
-				tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Received file descriptor as %d\n", cmd->passfd);
-			} else {
-				//int superfd = (int) WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO, &cmd->cmd.pio_ancil_data.pioa_socket, 0, 0);
-				//tlog (TLOG_UNIXSOCK, LOG_ERR, "Received superfluous file descriptor as %d", superfd);
-				//close (superfd);
-			}
-	}
-	return 1;
+void copy_tls_command(struct command *cmd, struct tlspool_command *tls_command) {
+	memcpy(&cmd->cmd, tls_command, sizeof(struct tlspool_command));
 }
-#endif /* __CYGWIN__ */
-
 
 /* Check if a command request is a proper callback response.
  * Return 1 if it is, othterwise return 0.
@@ -462,7 +790,7 @@ struct command *send_callback_and_await_response (struct command *cmdresp, time_
  */
 static void post_callback (struct command *cmd) {
 	uint16_t cbid = cmd->cmd.pio_cbid - 1;
-	cblist [cbid].fd = -1;
+	cblist [cbid].fd = INVALID_POOL_HANDLE;
 	cblist [cbid].followup = cmd;
 	assert (pthread_mutex_lock (&cbfree_mutex) == 0);
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Signaling on the semaphore of callback 0x%08x", &cblist [cbid]);
@@ -485,7 +813,7 @@ static void post_callback (struct command *cmd) {
  * in the TLS Pool when a clientfd is closed by the client (perhaps due to
  * a crash in response to the callback).
  */
-static void free_callbacks_by_clientfd (int clientfd) {
+static void free_callbacks_by_clientfd (pool_handle_t clientfd) {
 	int i;
 	for (i=0; i<1024; i++) {
 //TODO// == clientfd was >= 0 (and managed to get closes sent back to all)
@@ -511,7 +839,7 @@ printf ("DEBUG: Freed   callback with cbid=%d for clientfd %d\n", i+1, clientfd)
 /* Process a command packet that entered on a TLS pool socket
  */
 static void process_command (struct command *cmd) {
-	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing command 0x%08x", cmd->cmd.pio_cmd);
+	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing command 0x%08x, passfd=%d", cmd->cmd.pio_cmd, cmd->passfd);
 	union pio_data *d = &cmd->cmd.pio_data;
 	if (is_callback (cmd)) {
 printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
@@ -540,9 +868,11 @@ printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
 	case PIOC_CONTROL_REATTACH_V2:
 		ctlkey_reattach (cmd);
 		return;
+#ifndef WINDOWS_PORT
 	case PIOC_PINENTRY_V2:
 		register_pinentry_command (cmd);
 		return;
+#endif
 	case PIOC_LIDENTRY_REGISTER_V2:
 		register_lidentry_command (cmd);
 		return;
@@ -558,19 +888,20 @@ printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
  *  - to trigger a thread that is hoping writing after EAGAIN
  *  - to read a message and further process it
  */
-void process_activity (int sox, int soxidx, struct soxinfo *soxi, short int revents) {
+#ifndef WINDOWS_PORT
+void process_activity (pool_handle_t sox, int soxidx, struct soxinfo *soxi, short int revents) {
 	if (revents & POLLOUT) {
 		//TODO// signal waiting thread that it may continue
 		tlog (TLOG_UNIXSOCK, LOG_CRIT, "Eekk!!  Could send a packet?!?  Unregistering client");
 		unregister_client_socket_byindex (soxidx);
-		close (sox);
+		tlspool_close_poolhandle (sox);
 	}
 	if (revents & POLLIN) {
 		if (soxi->flags & SOF_SERVER) {
 			struct sockaddr sa;
 			socklen_t salen = sizeof (sa);
-			int newsox = accept (sox, &sa, &salen);
-			if (newsox != -1) {
+			pool_handle_t newsox = accept (sox, &sa, &salen);
+			if (newsox != INVALID_POOL_HANDLE) {
 				tlog (TLOG_UNIXSOCK, LOG_NOTICE, "Received incoming connection.  Registering it");
 				register_client_socket (newsox);
 			}
@@ -585,6 +916,7 @@ void process_activity (int sox, int soxidx, struct soxinfo *soxi, short int reve
 		}
 	}
 }
+#endif
 
 /* Request orderly hangup of the service.
  */
@@ -596,7 +928,7 @@ void hangup_service (void) {
 /* The main service loop.  It uses poll() to find things to act upon. */
 void run_service (void) {
 	int i;
-	int polled;
+
 	cbfree = NULL;
 	errno = pthread_setcancelstate (PTHREAD_CANCEL_DISABLE, NULL);
 	if (errno) {
@@ -605,17 +937,21 @@ void run_service (void) {
 	}
 	for (i=0; i<1024; i++) {
 		cblist [i].next = cbfree;
-		cblist [i].fd = -1; // Mark as unused
+		cblist [i].fd = INVALID_POOL_HANDLE; // Mark as unused
 		pthread_cond_init (&cblist [i].semaphore, NULL);
 		cblist [i].followup = NULL;
 		cbfree = &cblist [i];
 	}
+#ifdef WINDOWS_PORT
+	create_named_pipes ((LPCTSTR) szPipename);
+#else /* WINDOWS_PORT */
+	int polled;
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Polling %d sockets numbered %d, %d, %d, ...", num_sox, soxpoll [0].fd, soxpoll [1].fd, soxpoll [2].fd);
 	while (polled = poll (soxpoll, num_sox, -1), polled > 0) {
 		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Polled %d sockets, returned %d", num_sox, polled);
 		for (i=0; i<num_sox; i++) {
 			if (soxpoll [i].revents & (POLLHUP|POLLERR|POLLNVAL)) {
-				int sox = soxpoll [i].fd;
+				pool_handle_t sox = soxpoll [i].fd;
 				tlog (TLOG_UNIXSOCK, LOG_NOTICE, "Unregistering socket %d", sox);
 				unregister_client_socket_byindex (i);
 				close (sox);
@@ -633,5 +969,5 @@ void run_service (void) {
 		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Polled %d sockets, returned %d", num_sox, polled);
 		perror ("Failed to poll for activity");
 	}
+#endif /* WINDOWS_PORT */
 }
-

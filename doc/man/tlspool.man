@@ -52,7 +52,7 @@ certificates.  This is possible if both client and server are willing to
 accept an initial anonymous connection.  Whether this is safe, especially
 when the remote party may be running any TLS stack, depends on the
 actual service being run.  The TLS Pool is made aware of this information,
-which helps to dael with this properly.
+which helps to deal with this properly.
 .TP
 \fB\-c configfile\fR
 points the

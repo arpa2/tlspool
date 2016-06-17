@@ -1,5 +1,7 @@
 /* tlspool/daemon.c -- Daemon setup code */
 
+#include "whoami.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <signal.h>
@@ -19,10 +21,50 @@ void process_hangup (int hangupsignal) {
 }
 
 
+#ifndef WINDOWS_PORT
 static struct sigaction hupaction = {
 	.sa_handler = process_hangup,
 };
+#endif
 
+#ifdef WINDOWS_PORT
+int setup_winsock(void)
+{
+    WORD wVersionRequested;
+    WSADATA wsaData;
+    int err;
+
+/* Use the MAKEWORD(lowbyte, highbyte) macro declared in Windef.h */
+    wVersionRequested = MAKEWORD(2, 2);
+
+    err = WSAStartup(wVersionRequested, &wsaData);
+    if (err != 0) {
+        /* Tell the user that we could not find a usable */
+        /* Winsock DLL.                                  */
+        printf("WSAStartup failed with error: %d\n", err);
+        return 1;
+    }
+
+/* Confirm that the WinSock DLL supports 2.2.*/
+/* Note that if the DLL supports versions greater    */
+/* than 2.2 in addition to 2.2, it will still return */
+/* 2.2 in wVersion since that is the version we      */
+/* requested.                                        */
+
+    if (LOBYTE(wsaData.wVersion) != 2 || HIBYTE(wsaData.wVersion) != 2) {
+        /* Tell the user that we could not find a usable */
+        /* WinSock DLL.                                  */
+        printf("Could not find a usable version of Winsock.dll\n");
+        WSACleanup();
+        return 1;
+    }
+    else {
+        printf("The Winsock 2.2 dll was found okay\n");
+	}
+	return 0;
+}
+        
+#endif
 
 int main (int argc, char *argv []) {
 	char *cfgfile = NULL;
@@ -61,7 +103,7 @@ int main (int argc, char *argv []) {
 	//TODO// setup syslogging
 
 	//UNDO// sigset_t sigblockmask;
-#ifdef HAVE_SYSTEMD
+#if defined(HAVE_SYSTEMD) || defined(WINDOWS_PORT)
 	int pid = -2;	/* Skip setsid() but otherwise proceed */
 #else
 	int pid = fork ();
@@ -71,9 +113,16 @@ int main (int argc, char *argv []) {
 		perror ("Failed to fork daemon");
 		exit (1);
 	case 0:
+#ifndef WINDOWS_PORT
 		// Detach from the startup session
 		setsid ();
+#endif
 	case -2:
+#ifdef WINDOWS_PORT
+		setup_winsock();
+#endif
+
+#ifndef WINDOWS_PORT
 		//TODO// close the common fd's 0/1/2
 		// Setup a SIGHUP handler to gracefully stop service
 		if (sigaction (SIGHUP, &hupaction, NULL) != 0) {
@@ -82,6 +131,7 @@ int main (int argc, char *argv []) {
 		if (signal (SIGPIPE, SIG_IGN) == SIG_ERR) {
 			perror ("Failed to protect daemon from SIGPIPE");
 		}
+#endif
 		//UNDO// // Block SIGINT, which is used between copycat() threads
 		//UNDO// sigemptyset (&sigblockmask);
 		//UNDO// sigaddset (&sigblockmask, SIGINT);

@@ -1,4 +1,4 @@
-prefix=/home/vanrein/tlspool
+prefix=/usr/local
 exec_prefix=${prefix}/bin
 includedir=${prefix}/include
 libdir=${exec_prefix}/lib
