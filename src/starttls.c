@@ -1928,10 +1928,10 @@ static gtls_error fetch_remote_credentials (struct command *cmd) {
 
 	// Did we run this before?  Then cleanup.
 	cleanup_any_remote_credentials (cmd);
-	// Prepare default return values
-	memset (cmd->remote_cert, 0, sizeof (cmd->remote_cert));
+	//INVOLVES// memset (cmd->remote_cert, 0, sizeof (cmd->remote_cert));
+	//INVOLVES// cmd->remote_cert_count = 0;
+	// Prepare as-yet-unset default return values
 	cmd->remote_auth_type = -1;
-	cmd->remote_cert_count = 0;
 	cmd->remote_cert_raw = NULL;
 	//
 	// Obtain the authentication type for the peer
@@ -2007,26 +2007,36 @@ static gtls_error fetch_remote_credentials (struct command *cmd) {
 	if (cmd->remote_cert_type == GNUTLS_CRT_X509) {
 		// Retrieve the AuthorityKeyIdentifier from last (or semi-last)
 		uint8_t id [100];
-		size_t idsz = sizeof (id);
+		size_t idsz;
 		DBT rootca;
 		DBT anchor;
 		DBC *crs_trust = NULL;
 		int db_errno;
 		gnutls_datum_t anchor_gnutls;
 		gnutls_x509_crt_t dbroot;
+		dbt_init_empty (&rootca);
+		dbt_init_empty (&anchor);
+		idsz = sizeof (id);
 		gtls_errno = gnutls_x509_crt_get_authority_key_id (
 			cmd->remote_cert [cmd->remote_cert_count-1],
 			id, &idsz,
 			NULL);
-		if ((gtls_errno == GNUTLS_E_X509_UNSUPPORTED_EXTENSION) && (cmd->remote_cert_count > 1)) {
-			// Assume the last is a root cert, as it lacks authid
-			idsz = sizeof (id);
-			gnutls_x509_crt_deinit (
-				cmd->remote_cert [--cmd->remote_cert_count]);
-			gtls_errno = gnutls_x509_crt_get_authority_key_id (
-				cmd->remote_cert [cmd->remote_cert_count-1],
-				id, &idsz,
-				NULL);
+		if (gtls_errno == GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE) {
+			// Only retry if the last is a signer, possibly CA
+			if (cmd->remote_cert_count == 1) {
+				// Permit self-signed certificate evaluation
+				gtls_errno = GNUTLS_E_SUCCESS;
+			} else if (cmd->remote_cert_count > 1) {
+				// Assume the last is a root cert, as it lacks authid
+				gnutls_x509_crt_deinit (
+					cmd->remote_cert [--cmd->remote_cert_count]);
+				cmd->remote_cert [cmd->remote_cert_count] = NULL;
+				idsz = sizeof (id);
+				gtls_errno = gnutls_x509_crt_get_authority_key_id (
+					cmd->remote_cert [cmd->remote_cert_count-1],
+					id, &idsz,
+					NULL);
+			}
 		}
 		if (gtls_errno != GNUTLS_E_SUCCESS) {
 			goto cleanup;
@@ -2094,7 +2104,7 @@ static gtls_error fetch_remote_credentials (struct command *cmd) {
 			crs_trust = NULL;
 		}
 		dbt_free (&anchor);
-		dbt_free (&rootca);
+		// No dbt_free (&rootca) because it is set to a fixed buffer
 		if (db_errno != DB_NOTFOUND) {
 			goto cleanup;
 		}

@@ -73,6 +73,12 @@ typedef struct userdomain selector_t;  /* userlen<0 should be read as userlen==0
 
 
 
+/* Setup a clean DBT data handle, so it can withstand dbt_free().
+ */
+static inline void dbt_init_empty (DBT *dbt) {
+	memset (dbt, 0, sizeof (DBT));
+}
+
 /* Setup a DBT data handle to point to a pre-allocated, fixed-size
  * data buffer that will be used throughout the use of the handle.
  * Cleanup is not necessary, but the buffer must not be cleared
@@ -102,7 +108,9 @@ static inline void dbt_init_malloc (DBT *dbt) {
  */
 static inline void dbt_free (DBT *dbt) {
 	/* assert (dbt->flags & DB_DBT_MALLOC); */
-	free (dbt->data);
+	if (dbt->data) {
+		free (dbt->data);
+	}
 	dbt->data = NULL;
 }
 
