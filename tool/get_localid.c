@@ -30,7 +30,7 @@ const char const *usage =
 "Usage: %s tlspool.conf [user@]fqdn type [outfile.der]\n"
 " - tlspool.conf      is the configuration file for the TLS Pool\n"
 " - user@fqdn or fqdn is a network access identifier\n"
-" - type              comma-sep: X.509|OpenPGP, client|server, noP11?, chained?\n"
+" - type              X.509,OpenPGP,valexp,client,server,noP11,chained\n"
 " - outfile.der       optional output file for binary encoded public data\n"
 "Since the public data is stored in a binary format, it will never be printed\n"
 "on stdout; in absense of outfile.der the value is simply not output.\n";
@@ -44,6 +44,7 @@ struct typemap_t {
 struct typemap_t typemap [] = {
 	{ "X.509",	1 },
 	{ "OpenPGP",	2 },
+	{ "valexp",	5 },
 	{ "client",	256 },
 	{ "server",	512 },
 	{ "noP11",	4096 },
@@ -184,7 +185,7 @@ int main (int argc, char *argv []) {
 		e_p11uri = (char *) & ((uint32_t *) e_value.data) [1];
 		e_bindata = e_p11uri + strnlen (e_p11uri, e_value.size - 4) + 1;
 		e_binlen = e_value.size - 4 - strnlen (e_p11uri, e_value.size - 4) - 1;
-		if (e_binlen <= 0) {
+		if (e_binlen < 0) {
 			fprintf (stderr, "Error retrieving binary data\n");
 			crs->close (crs);
 			goto failure;

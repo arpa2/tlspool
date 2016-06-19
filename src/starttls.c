@@ -673,7 +673,6 @@ void starttls_pkcs11_provider (char *p11path) {
 static void cleanup_starttls_credentials (void);/* Defined below */
 static void cleanup_starttls_validation (void);	/* Defined below */
 static int setup_starttls_credentials (void);	/* Defined below */
-static void setup_starttls_validation (void);	/* Defined below */
 
 /* The global and static setup function for the starttls functions.
  */
@@ -809,8 +808,6 @@ fprintf (stderr, "DEBUG: When it matters, gtls_errno = %d, onthefly_issuercrt %s
 	//MOVED// 	tlog (TLOG_DB, LOG_CRIT, "FATAL: Management databases setup failed: %s", strerror (errno));
 	//MOVED// 	exit (1);
 	//MOVED// }
-	// Setup the structures for validation expression evaluation
-	setup_starttls_validation ();
 }
 
 /* Cleanup the structures and resources that were setup for handling TLS.
@@ -1224,7 +1221,7 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 	//
 	// Return the overral error code, hopefully GNUTLS_E_SUCCESS
 	tlog (TLOG_TLS, LOG_DEBUG, "Returning %d / %s from clisrv_cert_retrieve()", gtls_errno, gnutls_strerror (gtls_errno));
-printf ("DEBUG: clisrv_cert_retrieve() sets *pcert to 0x%xl (length %d)... {pubkey = 0x%lx, cert= {data = 0x%lx, size=%ld}, type=%ld}\n", (long) *pcert, *pcert_length, (long) (*pcert)->pubkey, (long) (*pcert)->cert.data, (long) (*pcert)->cert.size, (long) (*pcert)->type);
+fprintf (stderr, "DEBUG: clisrv_cert_retrieve() sets *pcert to 0x%xl (length %d)... {pubkey = 0x%lx, cert= {data = 0x%lx, size=%ld}, type=%ld}\n", (long) *pcert, *pcert_length, (long) (*pcert)->pubkey, (long) (*pcert)->cert.data, (long) (*pcert)->cert.size, (long) (*pcert)->type);
 	return gtls_errno;
 }
 
@@ -1400,10 +1397,6 @@ gnutls_pcert_st *load_certificate_chain (uint32_t flags, unsigned int *chainlen,
  */
 
 
-/* The global variable holding the valexp handlers for starttls.c.
- */
-static struct valexp_handling starttls_valexp_handling [VALEXP_NUM_HANDLERS];
-
 
 /* valexp_store_final -- store the valexp outcome in cmd->valexp_result.
  */
@@ -1522,7 +1515,7 @@ static void valexp_Tt_start (void *vcmd, struct valexp *ve, char pred) {
 	unsigned int vfyresult;
 	int bad;
 	int i;
-	if (cmd->vfystatus == 0) {
+	if (cmd->vfystatus != 0) {
 		goto setflagval;
 	}
 	if (cmd->remote_auth_type != GNUTLS_CRD_CERTIFICATE) {
@@ -1534,9 +1527,10 @@ static void valexp_Tt_start (void *vcmd, struct valexp *ve, char pred) {
 		int bad = 0;
 		bad = bad || (pred == 'T');	// Reject self-signed
 		if (cmd->remote_cert_type == GNUTLS_CRT_X509) {
+			vfyresult = 0;
 			bad = bad || gnutls_x509_crt_verify (
-				cmd->remote_cert [0],
-				cmd->remote_cert [0], 1,
+				(gnutls_x509_crt_t   ) cmd->remote_cert [0],
+				(gnutls_x509_crt_t *) &cmd->remote_cert [0], 1,
 				GNUTLS_VERIFY_DISABLE_CA_SIGN,
 				&vfyresult);
 			// Apply the most stringent test.  This includes all of
@@ -1574,9 +1568,10 @@ static void valexp_Tt_start (void *vcmd, struct valexp *ve, char pred) {
 	if (cmd->remote_cert_type == GNUTLS_CRT_X509) {
 		// Now check the certificate chain, taking CA bits into account
 		for (i=1; i<cmd->remote_cert_count; i++) {
+			vfyresult = 0;
 			bad = bad || gnutls_x509_crt_verify (
-				cmd->remote_cert [i-1],
-				cmd->remote_cert [i  ], 1,
+				(gnutls_x509_crt_t  )  cmd->remote_cert [i-1],
+				(gnutls_x509_crt_t *) &cmd->remote_cert [i], 1,
 				0,
 				&vfyresult);
 			// Apply the most stringent test.  This includes all of
@@ -1849,75 +1844,85 @@ static void valexp_ignore_final (void *handler_data, struct valexp *ve, bool val
 	; // Nothing to do
 }
 
-/* Construct the valexp_ handling functions into a static structure, each at
- * their indexes as defined by valexp_handler_index(), for use as handling
- * functions in calls to valexp_register() that setup expressions.
+
+/* Given a predicate, invoke its start routine.
  */
-static void setup_starttls_validation (void) {
-	int i;
-	for (i=0; i < VALEXP_NUM_HANDLERS; i++) {
-		starttls_valexp_handling [i].handler_start = valexp_error_start;
-		starttls_valexp_handling [i].handler_stop  = valexp_ignore_stop;
-		starttls_valexp_handling [i].handler_final = valexp_store_final;
+static void valexp_switch_start (void *handler_data, struct valexp *ve, char pred) {
+	switch (pred) {
+	case 'I':
+		valexp_I_start (handler_data, ve, pred);
+		break;
+	case 'i':
+		valexp_i_start (handler_data, ve, pred);
+		break;
+	case 'F':
+	case 'f':
+		valexp_Ff_start (handler_data, ve, pred);
+		break;
+	case 'A':
+		valexp_A_start (handler_data, ve, pred);
+		break;
+	case 'a':
+		valexp_a_start (handler_data, ve, pred);
+		break;
+	case 'T':
+	case 't':
+		valexp_Tt_start (handler_data, ve, pred);
+		break;
+	case 'D':
+	case 'd':
+		valexp_Dd_start (handler_data, ve, pred);
+		break;
+	case 'R':
+	case 'r':
+		valexp_Rr_start (handler_data, ve, pred);
+		break;
+	case 'E':
+	case 'e':
+		valexp_Ee_start (handler_data, ve, pred);
+		break;
+	case 'O':
+	case 'o':
+		valexp_Oo_start (handler_data, ve, pred);
+		break;
+	case 'G':
+	case 'g':
+		valexp_Gg_start (handler_data, ve, pred);
+		break;
+	case 'P':
+	case 'p':
+		valexp_Pp_start (handler_data, ve, pred);
+		break;
+	case 'U':
+		valexp_U_start (handler_data, ve, pred);
+		break;
+	case 'S':
+	case 's':
+		valexp_Ss_start (handler_data, ve, pred);
+		break;
+	case 'C':
+	case 'c':
+		valexp_Cc_start (handler_data, ve, pred);
+		break;
+	default:
+		// Called on an unregistered symbol, that spells failure
+		valexp_setpredicate (ve, pred, 0);
+		break;
 	}
-	starttls_valexp_handling [valexp_handling_index ('I')]
-		.handler_start = valexp_I_start;
-	starttls_valexp_handling [valexp_handling_index ('i')]
-		.handler_start = valexp_i_start;
-	starttls_valexp_handling [valexp_handling_index ('F')]
-		.handler_start = valexp_Ff_start;
-	starttls_valexp_handling [valexp_handling_index ('f')]
-		.handler_start = valexp_Ff_start;
-	starttls_valexp_handling [valexp_handling_index ('A')]
-		.handler_start = valexp_A_start;
-	starttls_valexp_handling [valexp_handling_index ('a')]
-		.handler_start = valexp_a_start;
-	starttls_valexp_handling [valexp_handling_index ('T')]
-		.handler_start = valexp_Tt_start;
-	starttls_valexp_handling [valexp_handling_index ('t')]
-		.handler_start = valexp_Tt_start;
-	starttls_valexp_handling [valexp_handling_index ('D')]
-		.handler_start = valexp_Dd_start;
-	starttls_valexp_handling [valexp_handling_index ('d')]
-		.handler_start = valexp_Dd_start;
-	starttls_valexp_handling [valexp_handling_index ('R')]
-		.handler_start = valexp_Rr_start;
-	starttls_valexp_handling [valexp_handling_index ('r')]
-		.handler_start = valexp_Rr_start;
-	starttls_valexp_handling [valexp_handling_index ('E')]
-		.handler_start = valexp_Ee_start;
-	starttls_valexp_handling [valexp_handling_index ('e')]
-		.handler_start = valexp_Ee_start;
-	starttls_valexp_handling [valexp_handling_index ('O')]
-		.handler_start = valexp_Oo_start;
-	starttls_valexp_handling [valexp_handling_index ('o')]
-		.handler_start = valexp_Oo_start;
-	starttls_valexp_handling [valexp_handling_index ('G')]
-		.handler_start = valexp_Gg_start;
-	starttls_valexp_handling [valexp_handling_index ('g')]
-		.handler_start = valexp_Gg_start;
-	starttls_valexp_handling [valexp_handling_index ('P')]
-		.handler_start = valexp_Pp_start;
-	starttls_valexp_handling [valexp_handling_index ('p')]
-		.handler_start = valexp_Pp_start;
-	starttls_valexp_handling [valexp_handling_index ('U')]
-		.handler_start = valexp_U_start;
-	starttls_valexp_handling [valexp_handling_index ('S')]
-		.handler_start = valexp_Ss_start;
-	starttls_valexp_handling [valexp_handling_index ('s')]
-		.handler_start = valexp_Ss_start;
-	starttls_valexp_handling [valexp_handling_index ('C')]
-		.handler_start = valexp_Cc_start;
-	starttls_valexp_handling [valexp_handling_index ('c')]
-		.handler_start = valexp_Cc_start;
 }
 
-
-/* Cleanup any remaining global state for starttls.c's use of validate.c
+/* Return a shared constant structure for valexp_handling with GnuTLS.
+ * This function does not fail; it always returns a non-NULL value.
  */
-static void cleanup_starttls_validation (void) {
-	;	// Nothing to do
+static const struct valexp_handling *have_starttls_validation (void) {
+	static const struct valexp_handling starttls_valexp_handling = {
+		.handler_start = valexp_switch_start,
+		.handler_stop  = valexp_ignore_stop,
+		.handler_final = valexp_store_final,
+	};
+	return &starttls_valexp_handling;
 }
+
 
 
 /* If any remote credentials are noted, cleanup on them.  This removes
@@ -2954,18 +2959,18 @@ fprintf (stderr, "DEBUG: pthread_join returned %d\n", errno);
 	// that TLS has in this respect.  Maybe we'll capture it one giant loop
 	// at some point, but for now that does not seem to add any relief.
 	renegotiate:
-printf ("DEBUG: Renegotiating = %d, anonpost = %d, plainfd = %d, cryptfd = %d, flags = 0x%x, session = 0x%x, got_session = %d, lid = \"%s\", rid = \"%s\"\n", renegotiating, anonpost, plainfd, cryptfd, cmd->cmd.pio_data.pioc_starttls.flags, session, got_session, cmd->cmd.pio_data.pioc_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid);
+fprintf (stderr, "DEBUG: Renegotiating = %d, anonpost = %d, plainfd = %d, cryptfd = %d, flags = 0x%x, session = 0x%x, got_session = %d, lid = \"%s\", rid = \"%s\"\n", renegotiating, anonpost, plainfd, cryptfd, cmd->cmd.pio_data.pioc_starttls.flags, session, got_session, cmd->cmd.pio_data.pioc_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid);
 
 	//
 	// If this is server renegotiating, send a request to that end
 	//TODO// Only invoke gnutls_rehandshake() on the server
 	if (renegotiating && (taking_over || anonpost) && (gtls_errno == GNUTLS_E_SUCCESS)) {
-printf ("DEBUG: Invoking gnutls_rehandshake in renegotiation loop\n");
+fprintf (stderr, "DEBUG: Invoking gnutls_rehandshake in renegotiation loop\n");
 		gtls_errno = gnutls_rehandshake (session);
 		if (gtls_errno == GNUTLS_E_INVALID_REQUEST) {
 			// Clients should not do this; be forgiving
 			gtls_errno = GNUTLS_E_SUCCESS;
-printf ("DEBUG: Client-side invocation flagged as wrong; compensated error\n");
+fprintf (stderr, "DEBUG: Client-side invocation flagged as wrong; compensated error\n");
 		}
 	}
 
@@ -3071,7 +3076,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 			cmp = strncasecmp (anonpre_registry [anonpre_regidx].service,
 				cmd->cmd.pio_data.pioc_starttls.service,
 				TLSPOOL_SERVICELEN);
-printf ("DEBUG: anonpre_determination, comparing [%d] %s to %s, found cmp==%d\n", anonpre_regidx, anonpre_registry [anonpre_regidx].service, cmd->cmd.pio_data.pioc_starttls.service, cmp);
+fprintf (stderr, "DEBUG: anonpre_determination, comparing [%d] %s to %s, found cmp==%d\n", anonpre_regidx, anonpre_registry [anonpre_regidx].service, cmd->cmd.pio_data.pioc_starttls.service, cmp);
 			if (cmp == 0) {
 				// anonpre_regent matches
 				cmd->anonpre = anonpre_registry [anonpre_regidx].flags;
@@ -3190,7 +3195,7 @@ if (!renegotiating) {	//TODO:TEST//
 		// Setup for client credential installation in this session
 		//
 		// Setup client-specific credentials and priority string
-printf ("DEBUG: Configuring client credentials\n");
+fprintf (stderr, "DEBUG: Configuring client credentials\n");
 		E_g2e ("Failed to configure GnuTLS as a client",
 			configure_session (cmd,
 				session,
@@ -3201,7 +3206,7 @@ printf ("DEBUG: Configuring client credentials\n");
 	//
 	// Setup callback to server-specific behaviour if needed
 	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_SERVER) {
-printf ("DEBUG: Configuring for server credentials callback if %d==0\n", gtls_errno);
+fprintf (stderr, "DEBUG: Configuring for server credentials callback if %d==0\n", gtls_errno);
 if (!renegotiating) {	//TODO:TEST//
 		if (gtls_errno == GNUTLS_E_SUCCESS) {
 			gnutls_handshake_set_post_client_hello_function (
@@ -3216,7 +3221,7 @@ if (!renegotiating) {	//TODO:TEST//
 		// Setup server-specific credentials and priority string
 #if 0
 		if (! (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_CLIENT)) {
-printf ("DEBUG: Configuring server credentials (because it is not a client)\n");
+fprintf (stderr, "DEBUG: Configuring server credentials (because it is not a client)\n");
 			E_g2e ("Failed to configure GnuTLS as a server",
 				configure_session (cmd,
 					session,
@@ -3447,6 +3452,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 
 	//
 	// Run the validation expression logic, using expressions we ran into
+fprintf (stderr, "DEBUG: Prior to valexp, gtls_errno = %d\n", gtls_errno);
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
 		struct valexp *verun = NULL;
 		char *valexp_conj [3];
@@ -3454,6 +3460,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 		// Setup for validation expression runthrough
 		cmd->valexp_result = -1;
 		if (cmd->trust_valexp) {
+fprintf (stderr, "DEBUG: Trust valexp \"%s\" @ 0x%016x\n", cmd->trust_valexp, (uint64_t) cmd->trust_valexp);
 			valexp_conj [valexp_conj_count++] = cmd->trust_valexp;
 		}
 		if (cmd->lids [LID_TYPE_VALEXP - LID_TYPE_MIN].data != NULL) {
@@ -3468,19 +3475,22 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 				&lid_valexp,
 				&ignored.data,
 				&ignored.size);
+fprintf (stderr, "DEBUG: LocalID valexp \"%s\" @ 0x%016x (ok=%d)\n", lid_valexp, (uint64_t) lid_valexp, ok);
 			if (ok && (lid_valexp != NULL)) {
 				valexp_conj [valexp_conj_count++] = lid_valexp;
 			} else {
 				gtls_errno = GNUTLS_E_AUTH_ERROR;
 			}
 		}
+fprintf (stderr, "DEBUG: Number of valexp is %d, gtls_errno=%d\n", valexp_conj_count, gtls_errno);
 		// Optionally start computing the validation expression
 		if ((gtls_errno == GNUTLS_E_SUCCESS) && (valexp_conj_count > 0)) {
 			valexp_conj [valexp_conj_count] = NULL;
 			verun = valexp_register (
 				valexp_conj,
-				starttls_valexp_handling,
+				have_starttls_validation (),
 				(void *) cmd);
+fprintf (stderr, "DEBUG: Registered to verun = 0x%016x\n", (uint64_t) verun);
 			if (verun == NULL) {
 				gtls_errno = GNUTLS_E_AUTH_ERROR;
 			}
@@ -3490,11 +3500,15 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 			while (cmd->valexp_result == -1) {
 				; //TODO: Tickle async predicate run completion
 			}
+fprintf (stderr, "DEBUG: Finishing tickling \"async\" predicates for valexp\n");
 			if (cmd->valexp_result != 1) {
 				tlog (TLOG_TLS, LOG_INFO, "TLS validation expression result is %d", cmd->valexp_result);
 				gtls_errno = GNUTLS_E_AUTH_ERROR;
+fprintf (stderr, "DEBUG: valexp returns NEGATIVE result\n");
 			}
+else fprintf (stderr, "DEBUG: valexp returns POSITIVE result\n");
 			valexp_unregister (verun);
+fprintf (stderr, "DEBUG: Unregistered verun 0x%016x\n", (uint64_t) verun);
 		}
 	}
 
@@ -3712,7 +3726,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 				// Disabling the flag causing LOCALID_CHECK
 				// ...and plainfd >= 0 so no PLAINTEXT_CONNECT
 				// ...so there will be no callbacks to cmd
-printf ("DEBUG: Goto renegotiate with cmd.lid = \"%s\" and orig_cmd.lid = \"%s\" and cmd.rid = \"%s\" and orig_cmd.rid = \"%s\" and cmd.flags = 0x%x and orig_cmd.flags = 0x%x\n", cmd->cmd.pio_data.pioc_starttls.localid, orig_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid, orig_starttls.remoteid, cmd->cmd.pio_data.pioc_starttls.flags, orig_starttls.flags);
+fprintf (stderr, "DEBUG: Goto renegotiate with cmd.lid = \"%s\" and orig_cmd.lid = \"%s\" and cmd.rid = \"%s\" and orig_cmd.rid = \"%s\" and cmd.flags = 0x%x and orig_cmd.flags = 0x%x\n", cmd->cmd.pio_data.pioc_starttls.localid, orig_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid, orig_starttls.remoteid, cmd->cmd.pio_data.pioc_starttls.flags, orig_starttls.flags);
 				goto renegotiate;
 			}
 //DEBUG// fprintf (stderr, "Unregistering control key\n");

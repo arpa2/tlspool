@@ -32,7 +32,7 @@ const char const *usage =
 "Usage: %s tlspool.conf [user@]fqdn type [p11priv pubdata...]\n"
 " - tlspool.conf      is the configuration file for the TLS Pool\n"
 " - user@fqdn or fqdn is a network access identifier\n"
-" - type              comma-sep: X.509|OpenPGP, client|server, nop11?, chained?\n"
+" - type              X.509,OpenPGP,valexp,client,server,nop11,chained\n"
 " - p11priv           is a PKCS #11 URI string for the private key\n"
 " - pubdata           is a file name    string for the public key package\n"
 "The pairs of p11priv and pubdata replace the old content.  An empty list of\n"
@@ -48,6 +48,7 @@ struct typemap_t typemap [] = {
 	{ "X.509",	1 },
 	{ "x509",	1 },
 	{ "OpenPGP",	2 },
+	{ "valexp",     5 },
 	{ "cli",	256 },
 	{ "srv",	512 },
 	{ "client",	256 },
@@ -154,13 +155,15 @@ int main (int argc, char *argv []) {
 		}
 		partstr = strtok_r (NULL, ",", &saveptr);
 	}
-	argi = 4;
-	while (argi < argc) {
-		if (strncmp (argv [argi], "pkcs11:", 7) != 0) {
-			fprintf (stderr, "PKCS #11 URIs must start with \"pkcs11:\"\n");
-			exit (1);
+	if ((flags & 0x000000ff) != 5) {
+		argi = 4;
+		while (argi < argc) {
+			if (strncmp (argv [argi], "pkcs11:", 7) != 0) {
+				fprintf (stderr, "PKCS #11 URIs must start with \"pkcs11:\"\n");
+				exit (1);
+			}
+			argi += 2;
 		}
-		argi += 2;
 	}
 	//
 	// Now modify the matching entries

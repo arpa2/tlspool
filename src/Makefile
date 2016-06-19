@@ -6,6 +6,7 @@ OBJS = daemon.o config.o manage.o service.o cache.o pinentry.o lidentry.o \
 
 CFLAGS += -pthread -I ../include -std=gnu11
 CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS) $(UNBOUND_CFLAGS) $(QUICKDER_CFLAGS)
+CFLAGS += -O0 -ggdb3
 
 LDFLAGS += -std=gnu11
 

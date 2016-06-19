@@ -99,7 +99,7 @@ struct valexp {
 	int numcases_incomplete;
 	valexpreqs_t compute;
 	void *handler_data;
-	struct valexp_handling *handler_functions;
+	const struct valexp_handling *handler_functions;
 #ifdef DEBUG
 	pthread_t registering_thread;
 #endif
@@ -112,7 +112,6 @@ struct valexp {
  */
 void setup_validate (void) {
 	int i;
-	assert (VALEXP_NUM_HANDLERS == strlen (valexp_varchars));
 	for (i=0; i < 128; i++) {
 		valexp_char_bitnum [i] = -1;
 	}
@@ -121,6 +120,7 @@ void setup_validate (void) {
 		assert (i < 32);
 		valexp_char_bitnum [valexp_varchars [i]] = i++;
 	}
+for (i=32; i<128; i++) { fprintf (stderr, "DEBUG: valexp_varchars [%c] = %d\n", (char) i, valexp_char_bitnum [i]); }
 }
 
 /* Cleanup the validation processing module.
@@ -945,9 +945,11 @@ static int expand_cases (char *valexpstr, struct valexp *ve) {
  */
 int valexp_handling_index (char flag) {
 	if (flag == '\0') {
+fprintf (stderr, "DEBUG: Returning from valexp_handling_index() with special-value flag 0\n");
 		return strlen (valexp_varchars);
 	}
 	assert (VALEXP_CHARKNOWN (flag));
+fprintf (stderr, "DEBUG: Returning from valexp_handling_index() for flag '%c' with character bit value %d\n", flag, VALEXP_CHARBIT (flag));
 	return VALEXP_CHARBIT (flag);
 }
 
@@ -988,7 +990,7 @@ int valexp_handling_index (char flag) {
  * This function returns NULL on failure, otherwise an initialised valexp.
  */
 struct valexp *valexp_register (char **and_expressions,
-				struct valexp_handling handler_functions [VALEXP_NUM_HANDLERS],
+				const struct valexp_handling *handler_functions,
 				void *handler_data) {
 	bool found_true;
 	bool found_false;
@@ -1005,7 +1007,7 @@ struct valexp *valexp_register (char **and_expressions,
 	retval->registering_thread = pthread_self ();
 #endif
 	retval->handler_data = handler_data;
-	retval->handler_functions = handler_functions;
+	retval->handler_functions = (struct valexp_handling *) handler_functions;
 	//TODO// This only handles one expression, cover multiple as well!
 	assert (and_expressions [0] != NULL);
 	assert (and_expressions [1] == NULL);
