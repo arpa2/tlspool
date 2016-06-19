@@ -114,7 +114,7 @@ endif
 TARGET_PKCS11=$(PRIVKEYGEN)
 TARGET_CERT=tlspool-test-client-cert.der tlspool-test-server-cert.der tlspool-test-ca-cert.der tlspool-test-flying-signer.der tlspool-test-webhost-cert.der tlspool-test-srp
 TARGET_PGP=tlspool-test-client-pubkey.pgp tlspool-test-server-pubkey.pgp
-TARGET_DB=localid.db disclose.db
+TARGET_DB=localid.db disclose.db trust.db
 TARGET_DBE=tlspool.env
 
 .PHONY: all rebuild-pkcs11 rebuild-cert rebuild-pgp rebuild-db
@@ -268,8 +268,11 @@ tlspool-test-flying-signer.der: tlspool-test-flying-signer.template
 tlspool-test-webhost-cert.der: tlspool-test-webhost-cert.template
 	echo Using PRIVKEY7, '$(PRIVKEY7)'
 	$(CERTTOOL) --outfile $@ --outder --generate-self-signed --load-privkey='$(PRIVKEY7)' --template=$<
-	$(CERTTOOL) --certificate-info --infile $@ --inder --outfile $(@:.der=.pem)
 
+
+# Turn a .der into a .keyid
+%.keyid: %.der
+	$(CERTTOOL) --inraw --infile $< -i | sed -e '1,/Public Key ID:/d' -e '/Public key.s random art:/,$$d' -e 's/[ \t]*//' > $@
 
 #
 # SRP credentials are loaded from fixed paths ../testdata/tlspool-test-srp.* for now
@@ -294,12 +297,19 @@ localid.db: tlspool.env
 	../tool/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab OpenPGP,server '$(PRIVKEY2)' tlspool-test-server-pubkey.pgp
 	../tool/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab x.509,client '$(PRIVKEY3)' tlspool-test-client-cert.der
 	../tool/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab x.509,server '$(PRIVKEY4)' tlspool-test-server-cert.der
+	../tool/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server 'tI&' /dev/null
+	../tool/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server 'It&' /dev/null
 	../tool/set_localid $(CONFFILE) tlspool.arpa2.lab x.509,server,client '$(PRIVKEY7)' tlspool-test-webhost-cert.der
 	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
 
 disclose.db: tlspool.env localid.db
 	../tool/set_disclose $(CONFFILE) @.arpa2.lab testcli@tlspool.arpa2.lab testsrv@tlspool.arpa2.lab
 	../tool/set_disclose $(CONFFILE) . tlspool.arpa2.lab
+	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
+
+trust.db: tlspool.env tlspool-test-ca-cert.der tlspool-test-ca-cert.keyid tlspool-test-flying-signer.der tlspool-test-flying-signer.keyid
+	../tool/set_trust $(CONFFILE) x509,client,server `cat tlspool-test-ca-cert.keyid` 1 tlspool-test-ca-cert.der
+	../tool/set_trust $(CONFFILE) x509,client,server `cat tlspool-test-flying-signer.keyid` 1 tlspool-test-flying-signer.der
 	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
 
 clean: clean-db

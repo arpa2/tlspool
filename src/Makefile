@@ -1,14 +1,17 @@
 TARGETS = tlspool$(EXE)
 
 OBJS = daemon.o config.o manage.o service.o cache.o pinentry.o lidentry.o \
-	starttls.o donai.o remote.o error.o ctlkey.o validate.o
+	starttls.o donai.o remote.o error.o ctlkey.o \
+	validate.o online.o pgp.o trust.o
 
 CFLAGS += -pthread -I ../include -std=gnu11
-CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS)
+CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS) $(UNBOUND_CFLAGS) $(QUICKDER_CFLAGS)
+CFLAGS += -O0 -ggdb3
 
 LDFLAGS += -std=gnu11
 
-LIBS += $(GNUTLS_LIBS) $(P11KIT_LIBS) $(BDB_LIBS) $(TASN1_LIBS) -lpthread
+LIBS = $(GNUTLS_LIBS) $(P11KIT_LIBS) $(BDB_LIBS) $(TASN1_LIBS) $(UNBOUND_LIBS) $(QUICKDER_LIBS)
+LIBS += -lldap -lldns -lpthread
 
 ifdef WITH_SYSTEMD
 CFLAGS += -DHAVE_SYSTEMD
@@ -17,8 +20,16 @@ endif
 
 GNUTLS_CFLAGS = $(shell $(PKG_CONFIG) --cflags gnutls)
 GNUTLS_LIBS   = $(shell $(PKG_CONFIG) --libs   gnutls)
+GNUTLS_CFLAGS += $(shell $(PKG_CONFIG) --cflags gnutls-dane)
+GNUTLS_LIBS   += $(shell $(PKG_CONFIG) --libs   gnutls-dane)
 P11KIT_CFLAGS = $(shell $(PKG_CONFIG) --cflags p11-kit-1)
 P11KIT_LIBS   = $(shell $(PKG_CONFIG) --libs   p11-kit-1)
+TASN1_CFLAGS = $(shell $(PKG_CONFIG) --cflags libtasn1)
+TASN1_LIBS   = $(shell $(PKG_CONFIG) --libs   libtasn1)
+#HOWTOUSE# UNBOUND_FLAGS = $(shell $(PKG_CONFIG) --cflags libunbound)
+#HOWTOUSE# UNBOUBD_LIBS  = $(shell $(PKG_CONFIG) --libs   libunbound)
+QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags quick-der)
+QUICKDER_LIBS = $(shell $(PKG_CONFIG) --libs quick-der)
 
 ifdef WINVER
 CFLAGS += -D_WIN32_WINNT=0x0600 -DATTRIBUTE_UNUSED="" -I ../include/windows
@@ -41,8 +52,6 @@ BDB_LIBS   = -ldb-6.1
 else
 BDB_LIBS   = -ldb
 endif
-TASN1_CFLAGS = $(shell $(PKG_CONFIG) --cflags libtasn1)
-TASN1_LIBS   = $(shell $(PKG_CONFIG) --libs   libtasn1)
 
 all: $(TARGETS)
 

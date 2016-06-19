@@ -25,9 +25,10 @@
 #define LID_TYPE_PGP	0x00000002	/* OpenPGP public key, binary form */
 #define LID_TYPE_SRP	0x00000003	/* No data, flags existence */
 #define LID_TYPE_KRB5	0x00000004	/* Kerberos5 ticket */
+#define LID_TYPE_VALEXP	0x00000005	/* Validation expression in PKCS #11 */
 
 #define LID_TYPE_MIN	LID_TYPE_X509
-#define LID_TYPE_MAX	LID_TYPE_KRB5
+#define LID_TYPE_MAX	LID_TYPE_VALEXP
 #define LID_TYPE_OFS	LID_TYPE_MIN
 #define LID_TYPE_CNT	(1 + LID_TYPE_MAX - LID_TYPE_MIN)
 
@@ -72,6 +73,12 @@ typedef struct userdomain selector_t;  /* userlen<0 should be read as userlen==0
 
 
 
+/* Setup a clean DBT data handle, so it can withstand dbt_free().
+ */
+static inline void dbt_init_empty (DBT *dbt) {
+	memset (dbt, 0, sizeof (DBT));
+}
+
 /* Setup a DBT data handle to point to a pre-allocated, fixed-size
  * data buffer that will be used throughout the use of the handle.
  * Cleanup is not necessary, but the buffer must not be cleared
@@ -101,7 +108,9 @@ static inline void dbt_init_malloc (DBT *dbt) {
  */
 static inline void dbt_free (DBT *dbt) {
 	/* assert (dbt->flags & DB_DBT_MALLOC); */
-	free (dbt->data);
+	if (dbt->data) {
+		free (dbt->data);
+	}
 	dbt->data = NULL;
 }
 

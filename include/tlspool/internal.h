@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include <tlspool/commands.h>
 #include <tlspool/starttls.h>
@@ -13,7 +14,9 @@
 #include <db.h>
 
 
-#define EXPECTED_LID_TYPE_COUNT 4
+#define EXPECTED_LID_TYPE_COUNT 5
+
+#define CERTS_MAX_DEPTH 10
 
 
 /* A simple (data*,size) construct named pool_datum_t
@@ -37,10 +40,20 @@ struct command {
 	struct pioc_starttls *orig_starttls;
 	DB_TXN *txn;
 	pool_datum_t lids [EXPECTED_LID_TYPE_COUNT];
+	void *session;
 	int session_errno;
 	intptr_t session_certificate;
 	intptr_t session_privatekey;
+	char *trust_valexp;
+	int valexp_result;
 	int anonpre;
+	char valflags [32];
+	unsigned int vfystatus;
+	int remote_auth_type;
+	void *remote_cert_raw;
+	int remote_cert_type;
+	void *remote_cert [CERTS_MAX_DEPTH];
+	uint8_t remote_cert_count;
 };
 
 
@@ -125,6 +138,7 @@ unsigned int cfg_log_filter (void);
 char *cfg_dbenv_dir (void);
 char *cfg_db_localid (void);
 char *cfg_db_disclose (void);
+char *cfg_db_trust (void);
 char *cfg_tls_dhparamfile (void);
 unsigned int cfg_tls_maxpreauth (void);
 uint32_t cfg_facilities (void);
@@ -470,7 +484,7 @@ struct valexp_handling {
  * code simplicity.
  */
 struct valexp *valexp_register (char **and_expressions,
-				struct valexp_handling *handler_functions,
+				const struct valexp_handling *handler_functions,
 				void *handler_data);
 
 
@@ -517,5 +531,34 @@ void valexp_setpredicate (struct valexp *ve, char predicate, bool value);
  */
 void snprint_valexp (char *buf, int buflen, struct valexp *ve);
 
+
+/********** online.c definitions **********/
+
+
+/* Error levels: Proven correct, uncertain due to missing online info, or
+ * proven wrong.
+ */
+#define ONLINE_SUCCESS  0
+#define ONLINE_NOTFOUND 1
+#define ONLINE_INVALID  2
+
+typedef int (*online2success_t) (int online);
+int online2success_enforced (int online);
+int online2success_optional (int online);
+
+/* Check an X.509 end certificate or a concatenation of X.509 certificates
+ * from end certificate to root certificate against the global directory.
+ * Take care that the second use assumes mere binary concatenation, rather
+ * than the ASN.1 type SEQUENCE OF Certificate.
+ */
+int online_globaldir_x509 (char *rid, uint8_t *data, uint16_t len);
+
+/* Check an OpenPGP public key, provided in binary form, against the global
+ * directory.
+ * Note that public keys are isolated and compared; the role of identities
+ * is in finding the keys but not in checking whether they are contained
+ * within the keys.
+ */
+int online_globaldir_pgp (char *rid, uint8_t *data, uint16_t len);
 
 #endif //TLSPOOL_INTERNAL_H

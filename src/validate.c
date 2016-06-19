@@ -32,7 +32,7 @@
  * thanks to the limited number of variables, the size of this variable
  * can be limited to 32 bits only.
  */
-static char valexpvarchars [] = "LlIiFfAaTtDdRrEeOoGgPpUuSsCc";
+static char valexp_varchars [] = "LlIiFfAaTtDdRrEeOoGgPpUuSsCc";
 static int valexp_char_bitnum [128];
 typedef uint32_t valexpreqs_t;
 #define VALEXP_CHARBIT(c)  (valexp_char_bitnum [(c)])
@@ -99,7 +99,7 @@ struct valexp {
 	int numcases_incomplete;
 	valexpreqs_t compute;
 	void *handler_data;
-	struct valexp_handling *handler_functions;
+	const struct valexp_handling *handler_functions;
 #ifdef DEBUG
 	pthread_t registering_thread;
 #endif
@@ -108,7 +108,7 @@ struct valexp {
 
 
 /* Setup the validation processing module.  This involves mapping the rather
- * unhandy valexpvarchars to a direct char-to-bitnum map.
+ * unhandy valexp_varchars to a direct char-to-bitnum map.
  */
 void setup_validate (void) {
 	int i;
@@ -116,10 +116,11 @@ void setup_validate (void) {
 		valexp_char_bitnum [i] = -1;
 	}
 	i = 0;
-	while (valexpvarchars [i]) {
+	while (valexp_varchars [i]) {
 		assert (i < 32);
-		valexp_char_bitnum [valexpvarchars [i]] = i++;
+		valexp_char_bitnum [valexp_varchars [i]] = i++;
 	}
+for (i=32; i<128; i++) { fprintf (stderr, "DEBUG: valexp_varchars [%c] = %d\n", (char) i, valexp_char_bitnum [i]); }
 }
 
 /* Cleanup the validation processing module.
@@ -409,7 +410,7 @@ void snprint_valexp (char *buf, int buflen, struct valexp *ve) {
 		tmp = ve->cases [i].positive;
 		done = 0;
 		if (tmp != 0) {
-			c = valexpvarchars;
+			c = valexp_varchars;
 			while (*c) {
 				if (tmp & 0x00000001) {
 					if (--buflen >= 0) {
@@ -428,7 +429,7 @@ void snprint_valexp (char *buf, int buflen, struct valexp *ve) {
 			if (--buflen >= 0) {
 				*buf++ = '~';
 			}
-			c = valexpvarchars;
+			c = valexp_varchars;
 			while (*c) {
 				if (tmp & 0x00000001) {
 					if (--buflen >= 0) {
@@ -938,6 +939,20 @@ static int expand_cases (char *valexpstr, struct valexp *ve) {
 
 
 
+/* Request the valexp_handler index, that is, the index into the
+ * valexp_handling array used during valexp_register().  An assert() is done
+ * to ensure that the flag mentioned is defined.
+ */
+int valexp_handling_index (char flag) {
+	if (flag == '\0') {
+fprintf (stderr, "DEBUG: Returning from valexp_handling_index() with special-value flag 0\n");
+		return strlen (valexp_varchars);
+	}
+	assert (VALEXP_CHARKNOWN (flag));
+fprintf (stderr, "DEBUG: Returning from valexp_handling_index() for flag '%c' with character bit value %d\n", flag, VALEXP_CHARBIT (flag));
+	return VALEXP_CHARBIT (flag);
+}
+
 /* This is where a validation expression gets registered with the validation
  * processing framework.  The expressions are provided as a NULL-terminated
  * array of NUL-terminated strings, along with an uninitialised struct valexp
@@ -975,7 +990,7 @@ static int expand_cases (char *valexpstr, struct valexp *ve) {
  * This function returns NULL on failure, otherwise an initialised valexp.
  */
 struct valexp *valexp_register (char **and_expressions,
-				struct valexp_handling *handler_functions,
+				const struct valexp_handling *handler_functions,
 				void *handler_data) {
 	bool found_true;
 	bool found_false;
@@ -992,7 +1007,7 @@ struct valexp *valexp_register (char **and_expressions,
 	retval->registering_thread = pthread_self ();
 #endif
 	retval->handler_data = handler_data;
-	retval->handler_functions = handler_functions;
+	retval->handler_functions = (struct valexp_handling *) handler_functions;
 	//TODO// This only handles one expression, cover multiple as well!
 	assert (and_expressions [0] != NULL);
 	assert (and_expressions [1] == NULL);
@@ -1040,7 +1055,7 @@ struct valexp *valexp_register (char **and_expressions,
 		retval->compute = all_compute;	// signal to later invocations
 	}
 	// Now invoke handler_start() on all the bits in retval->compute
-	predicates = valexpvarchars;
+	predicates = valexp_varchars;
 	while (*predicates) {
 		if (all_compute & 0x00000001) {
 			handler_functions->handler_start
@@ -1068,7 +1083,7 @@ struct valexp *valexp_register (char **and_expressions,
 void valexp_unregister (struct valexp *ve) {
 	valexpreqs_t all_compute;
 	bool report_failure;
-	char *predicates = valexpvarchars;
+	char *predicates = valexp_varchars;
 #ifdef DEBUG
 	assert (pthread_equal (ve->registering_thread, pthread_self ()));
 #endif
@@ -1173,7 +1188,7 @@ void valexp_setpredicate (struct valexp *ve, char predicate, bool value) {
 		tobestopped = (ve->compute & ~newcompute) | newbit;
 	}
 	ve->compute &= ~tobestopped;	// None of these will be computing anymore
-	predicates = valexpvarchars;
+	predicates = valexp_varchars;
 	while (*predicates) {
 		if (tobestopped & 0x00000001) {
 			ve->handler_functions->handler_stop
@@ -1188,3 +1203,4 @@ void valexp_setpredicate (struct valexp *ve, char predicate, bool value) {
 		ve->handler_functions->handler_final (ve->handler_data, ve, 0);
 	}
 }
+
