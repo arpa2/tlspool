@@ -70,5 +70,5 @@ install: all
 	install $(TARGETS) "$(DESTDIR)$(PREFIX)/$(SBIN)/"
 
 uninstall:
-	@($foreach t,$(TARGETS),rm -f '$(DESTDIR)$(PREFIX)/$(SBIN)/$t' && ) echo Removed TLS Pool daemon
+	@$(foreach t,$(TARGETS),rm -f '$(DESTDIR)$(PREFIX)/$(SBIN)/$t' && ) echo Removed TLS Pool daemon
 

@@ -32,10 +32,10 @@ install: all
 	@echo #
 
 uninstall:
-	@($foreach $m,$(MAN3),rm -f '$(DESTDIR)$(PREFIX)/share/man/man3/$m.3' && ) echo Uninstalled man page section 3
-	@($foreach $m,$(MAN8),rm -f '$(DESTDIR)$(PREFIX)/share/man/man8/$m.8' && ) echo Uninstalled man page section 8
-	@($foreach $d,$(DOCS),rm -f "$(DESTDIR)$(PREFIX)/share/doc/tlspool/`basename '$d'` && ) echo Uninstalled technical documentation
-	@($foreach $l,$(LICS),rm -f '$(DESTDIR)$(PREFIX)/share/doc/tlspool/$l' && ) echo Uninstalled license documents
+	@$(foreach m,$(MAN3),rm -f '$(DESTDIR)$(PREFIX)/share/man/man3/$m.3' && ) echo Uninstalled man page section 3
+	@$(foreach m,$(MAN8),rm -f '$(DESTDIR)$(PREFIX)/share/man/man8/$m.8' && ) echo Uninstalled man page section 8
+	@$(foreach d,$(DOCS),rm -f '$(DESTDIR)$(PREFIX)/share/doc/tlspool/$d' && ) echo Uninstalled technical documentation
+	@$(foreach l,$(LICS),rm -f '$(DESTDIR)$(PREFIX)/share/doc/tlspool/$l' && ) echo Uninstalled license documents
 	rmdir --ignore-fail-on-non-empty "$(DESTDIR)$(PREFIX)/share/doc/tlspool/"
 
 clean:
