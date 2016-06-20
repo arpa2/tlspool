@@ -3459,7 +3459,7 @@ fprintf (stderr, "DEBUG: Prior to valexp, gtls_errno = %d\n", gtls_errno);
 		int valexp_conj_count = 0;
 		// Setup for validation expression runthrough
 		cmd->valexp_result = -1;
-		if (cmd->trust_valexp) {
+		if ((cmd->trust_valexp != NULL) && (0 != strcmp (cmd->trust_valexp, "1")) {
 fprintf (stderr, "DEBUG: Trust valexp \"%s\" @ 0x%016x\n", cmd->trust_valexp, (uint64_t) cmd->trust_valexp);
 			valexp_conj [valexp_conj_count++] = cmd->trust_valexp;
 		}

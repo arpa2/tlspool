@@ -122,9 +122,10 @@ attributetype ( 1.3.6.1.4.1.44469.666.11.443.1.1
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 attributetype ( 1.3.6.1.4.1.44469.666.11.443.1.2
     NAME 'tlsPoolSupportedRole'
-    DESC 'A role that this object can play; usually values are limited to "client" and "server" but symmetric peers may set both values using two supportedRole attributes in the same object'
+    DESC 'A role that this object can play; usually values are limited to "client" and "server" and symmetric peers capable of both roles may use "peer"'
     SYNTAX 1.3.6.1.4.1.1466.115.121.1.26 # IA5String
     EQUALITY 1.3.6.1.4.1.1466.109.114.2 # caseIgnoreIA5Match
+    SINGLE-VALUE
 )
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -147,7 +148,7 @@ objectclass ( 1.3.6.1.4.1.44469.666.11.443.1.6
     NAME 'tlsPoolTrustedIssuer'
     DESC 'A credential that is considered trustworthy under the given validation expression'
     SUP distinguishedName
-    MUST ( tlsPoolCredentialType $ tlsPoolSupportedRole )
+    MUST ( tlsPoolCredentialType $ tlsPoolSupportedRole $ tlsPoolValidationExpression )
 )
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
