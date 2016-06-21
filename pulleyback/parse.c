@@ -31,6 +31,7 @@ static const syntax_keywordlist syntax_parameters = {
 	{ "type",    "type parameter",    { MXG_TYPE,    MXG_NONE } },
 	{ "args",    "args parameter",    { MXG_ARGS,    MXG_NONE } },
 	{ "subtype", "subtype parameter", { MXG_SUBTYPE, MXG_NONE } },
+	{ "valexp",  "valexp parameter",  { MXG_VALEXP,  MXG_NONE } },
 	KEYWORD_LISTEND
 };
 
@@ -225,6 +226,7 @@ int parse_arguments (int argc, char *argv [], int varc,
 	self->config = NULL;
 	self->type = NULL;
 	self->subtypes = 0;
+	self->valexp = NULL;
 	assert (sizeof (resources) == sizeof (list_subtypes));
 	for (argi=0; argi < MXG_COUNT + 1; argi++) {
 		self->args [argi] =
@@ -243,6 +245,7 @@ int parse_arguments (int argc, char *argv [], int varc,
 			syslog (LOG_ERR, "No equals sign in %s", argv [argi]);
 			parsed = -1;
 		}
+		argofs++;  // Skip '=' sign
 		if (parsed == -1) {
 			return -1;
 		}
@@ -283,6 +286,8 @@ int parse_arguments (int argc, char *argv [], int varc,
 					resources,
 					argv [argi], &argofs);
 			break;
+		case MXG_VALEXP:
+			self->valexp = argv [argi] + argofs;
 		default:
 		case -1:
 			parsed = -1;

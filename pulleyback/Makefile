@@ -12,7 +12,7 @@ LIBS += -ldb
 
 PREFIX ?= /usr/local
 
-tlspool_OBJS = api.o parse.o connect.o
+tlspool_OBJS = api.o parse.o connect.o update.o
 
 OBJS = $(tlspool_OBJS)
 

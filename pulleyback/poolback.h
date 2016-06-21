@@ -126,6 +126,7 @@ struct pulleyback_tlspool {
 	// Parameters from Pulley Script, as supplied to pulleyback_open
 	const char *config;
 	const char *type;
+	const char *valexp;
 	uint32_t subtypes;
 	enum mutexgroup args [MXG_COUNT + 1];
 	//
