@@ -8,6 +8,9 @@
  */
 
 
+#include "whoami.h"
+
+#include <unistd.h>
 #include <time.h>
 
 #include <arpa/inet.h>
