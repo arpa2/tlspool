@@ -1,5 +1,5 @@
 
-TARGETS_OFFLINE = valexprun testvalexp
+TARGETS_OFFLINE = valexprun testvalexp pulleybacksimu
 TARGETS = $(TARGETS_OFFLINE) onlinecheck testonline
 
 OBJS = *.o
@@ -7,7 +7,7 @@ OBJS = *.o
 CFLAGS += -pthread -I ../include
 
 # Hey... this is testing code, so c'mon let's DEBUG
-CFLAGS += -DDEBUG
+CFLAGS += -DDEBUG -O0
 
 LDFLAGS =
 
@@ -54,6 +54,10 @@ onlinecheck: onlinecheck.c ../src/online.c ../src/pgp.c
 
 testonline: onlinecheck
 	./onlinecheck | tee | grep -v 'UNEXPECTED OUTPUT FAILURE'
+
+pulleybacksimu: pulleybacksimu.c
+	@# gcc $(CFLAGS) -o "$@" "$<" ../pulleyback/api.o ../pulleyback/parse.o ../pulleyback/connect.o ../pulleyback/update.o -lquickder -ldb
+	gcc $(CFLAGS) -o "$@" "$<" ../pulleyback/pulleyback_tlspool.so
 
 clean:
 	rm -f $(OBJS) $(TARGETS)

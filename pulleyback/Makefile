@@ -1,9 +1,10 @@
 ifdef WINVER
-TARGETS = tlspool.dll
+TARGETS = pulleyback_tlspool.dll
 else
-TARGETS = tlspool.so
+TARGETS = pulleyback_tlspool.so
 endif
 
+CFLAGS += -ggdb3 -O0
 CFLAGS += -fPIC -I . -I ../include -std=gnu11
 
 LDFLAGS += -std=gnu11
@@ -17,9 +18,9 @@ endif
 
 PREFIX ?= /usr/local
 
-tlspool_OBJS = api.o parse.o connect.o update.o
+pulleyback_tlspool_OBJS = api.o parse.o connect.o update.o
 
-OBJS = $(tlspool_OBJS)
+OBJS = $(pulleyback_tlspool_OBJS)
 
 PKG_CONFIG ?= pkg-config
 
@@ -28,17 +29,17 @@ QUICKDER_LIBS = $(shell $(PKG_CONFIG) --libs quick-der)
 
 ifdef WINVER
 CFLAGS += -D_WIN32_WINNT=0x0600 -I ../include/windows
-tlspool_OBJS += ../lib/windows/syslog.o
+pulleyback_tlspool_OBJS += ../lib/windows/syslog.o
 LIBS += -lkernel32 -ladvapi32 -lmsvcrt -lwsock32 -lws2_32
 endif
 
 all: $(TARGETS)
 
-tlspool.so: $(tlspool_OBJS)
-	$(CC) -shared $(LDFLAGS) -o "$@" $(tlspool_OBJS) $(BDB_LIBS) $(QUICKDER_LIBS)
+pulleyback_tlspool.so: $(pulleyback_tlspool_OBJS)
+	$(CC) -shared $(LDFLAGS) -o "$@" $(pulleyback_tlspool_OBJS) $(BDB_LIBS) $(QUICKDER_LIBS)
 
-tlspool.dll: $(tlspool_OBJS)
-	$(CC) -shared $(LDFLAGS) -o "$@" $(tlspool_OBJS) $(BDB_LIBS) $(QUICKDER_LIBS)
+pulleyback_tlspool.dll: $(pulleyback_tlspool_OBJS)
+	$(CC) -shared $(LDFLAGS) -o "$@" $(pulleyback_tlspool_OBJS) $(BDB_LIBS) $(QUICKDER_LIBS)
 
 .c.o:
 	$(CC) -c $(CFLAGS) $(BDB_CFLAGS) $(QUICKDER_CFLAGS) -o "$@" "$<"
@@ -51,10 +52,10 @@ anew: clean all
 install: all
 ifdef WINVER
 	mkdir -p "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback"
-	install tlspool.dll "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback"
+	install pulleyback_tlspool.dll "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback"
 else	
 	mkdir -p "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback"
-	install tlspool.so "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback"
+	install pulleyback_tlspool.so "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback"
 	@echo '#'
 	@echo '# Python libraries not yet installed'
 	@echo '#'
@@ -64,9 +65,9 @@ endif
 
 uninstall:
 ifdef WINVER
-	rm -f "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback/tlspool.dll"
+	rm -f "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback/pulleyback_tlspool.dll"
 else
-	rm -f "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback/tlspool.so"
+	rm -f "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback/pulleyback_tlspool.so"
 	@echo '#'
 	@echo '# Python libraries not yet removed'
 	@echo '#'

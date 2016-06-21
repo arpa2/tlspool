@@ -155,7 +155,7 @@ static int chase_keyword_descriptor (const struct keyword_descriptor *kd,
 	}
 	for (kdofs = 0; kd->keyword != NULL; kdofs++, kd++) {
 		int kwl = strlen (kd->keyword);
-		if ((memcmp (kd->keyword, text + *offset, kwl) == 0) && !isalnum (text [*offset + kwl])) {
+		if ((memcmp (kd->keyword, text + *offset, kwl) == 0) && (isalnum (text [*offset + kwl]) == 0)) {
 			// We found a match -- check for resource clashes
 			for (mtg = kd->resources; *mtg != MXG_NONE; mtg++) {
 				if (resources [*mtg] != NULL) {
@@ -168,7 +168,6 @@ static int chase_keyword_descriptor (const struct keyword_descriptor *kd,
 			*offset += kwl;
 			return kdofs;
 		}
-		kd++;
 	}
 	syslog (LOG_ERR, "Unrecognised keyword at offset %d in %s", offset, text);
 	return -1;
@@ -188,7 +187,7 @@ static int parse_wordlist (const struct keyword_descriptor *kd,
 					char *resources [MXG_COUNT],
 					const char *text, int *offset) {
 	int rv;
-	int kdidx_count;
+	int kdidx_count = 0;
 	char comma;
 	while (1) {
 		rv = chase_keyword_descriptor (kd, resources, text, offset);
@@ -204,7 +203,7 @@ static int parse_wordlist (const struct keyword_descriptor *kd,
 		if (comma != ',') {
 			break;
 		}
-		comma++;
+		(*offset)++;
 	}
 	if (comma != '\0') {
 		syslog (LOG_ERR, "Unexpected character '%c' at offset %d in %s", comma, *offset, text);
@@ -240,7 +239,7 @@ int parse_arguments (int argc, char *argv [], int varc,
 	self->type = NULL;
 	self->subtypes = 0;
 	self->valexp = NULL;
-	assert (sizeof (resources) == sizeof (list_subtypes));
+	assert (sizeof (self->args) == sizeof (list_subtypes));
 	for (argi=0; argi < MXG_COUNT + 1; argi++) {
 		self->args [argi] =
 		list_subtypes [argi] = MXG_NONE;
@@ -265,7 +264,7 @@ int parse_arguments (int argc, char *argv [], int varc,
 		switch (syntax_parameters [parsed].resources [0]) {
 		case MXG_CONFIG:
 			self->config = argv [argi] + argofs;
-			parsed = -1;
+			parsed = (*self->config) ? 0 : -1;;
 			break;
 		case MXG_TYPE:
 			parsed = chase_keyword_descriptor (

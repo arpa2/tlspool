@@ -339,7 +339,10 @@ int update_trust (struct pulleyback_tlspool *self, uint8_t **data, int rm) {
 	}
 	//
 	//TODO// Determine the key for this entry
-	dercursor key = crd;
+	uint8_t keybytes_TODO [] = { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff };
+	dercursor key;
+	key.derptr = keybytes_TODO;
+	key.derlen = sizeof (keybytes_TODO);
 	//
 	// Submit the information to the database
 	static const uint8_t flag4 [] = { 0x00, 0x00, 0x00, 0xff };
