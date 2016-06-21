@@ -27,9 +27,9 @@ install: all
 	@$(foreach d,$(DOCS),install '$d' '$(DESTDIR)$(PFEFIX)/share/doc/tlspool/' && ) echo Installed technical documentation
 	@$(foreach m,$(MAN8),install 'man/$m.man' '$(DESTDIR)$(PREFIX)/share/man/man8/$m.8' && ) echo Installed man page section 8
 	@$(foreach n,$(MAN3),install 'man/$n.man' '$(DESTDIR)$(PREFIX)/share/man/man3/$n.3' && ) echo Installed man page section 3
-	@echo #
-	@echo # You may need to run makewhatis or similar to update manual page caches
-	@echo #
+	@echo '#'
+	@echo '# You may need to run makewhatis or similar to update manual page caches'
+	@echo '#'
 
 uninstall:
 	@$(foreach m,$(MAN3),rm -f '$(DESTDIR)$(PREFIX)/share/man/man3/$m.3' && ) echo Uninstalled man page section 3

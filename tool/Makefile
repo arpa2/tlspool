@@ -44,9 +44,9 @@ testsrv: testsrv.c $(tlspool_LIB)
 
 testpeer: testpeer.c $(tlspool_LIB)
 	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS)
-	@echo #
-	@echo # You cannot use testpeer yet
-	@echo #
+	@echo '#'
+	@echo '# You cannot use testpeer yet'
+	@echo '#'
 
 tlstunnel: tlstunnel.c tlstunnel-chat.c $(tlspool_LIB)
 	gcc -std=gnu11 $(CFLAGS) -o "$@" tlstunnel.c tlstunnel-chat.c $(tlspool_LDFLAGS)
