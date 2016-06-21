@@ -55,11 +55,11 @@ ifdef WINVER
 else	
 	mkdir -p "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback"
 	install tlspool.so "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback"
-	@echo #
-	@echo # Python libraries not yet installed
-	@echo #
-	@echo # You may need to run ldconfig to update the ld.so cache
-	@echo #
+	@echo '#'
+	@echo '# Python libraries not yet installed'
+	@echo '#'
+	@echo '# You may need to run ldconfig to update the ld.so cache'
+	@echo '#'
 endif
 
 uninstall:
@@ -67,7 +67,7 @@ ifdef WINVER
 	rm -f "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback/tlspool.dll"
 else
 	rm -f "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback/tlspool.so"
-	@echo #
-	@echo # Python libraries not yet removed
-	@echo #
+	@echo '#'
+	@echo '# Python libraries not yet removed'
+	@echo '#'
 endif
