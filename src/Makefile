@@ -38,13 +38,9 @@ LIBS += -lkernel32 -ladvapi32 -lmsvcrt -lwsock32 -lws2_32
 EXE = .exe
 endif
 
-ifndef PKG_CONFIG
-PKG_CONFIG=pkg-config
-endif
+PKG_CONFIG ?= pkg-config
 
-ifndef SBIN
-SBIN=sbin
-endif
+SBIN ?= sbin
 
 BDB_CFLAGS = 
 ifdef WINVER

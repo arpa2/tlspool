@@ -64,11 +64,11 @@ ifdef WINVER
 	install ../include/tlspool/commands.h "$(DESTDIR)$(PREFIX)/include/tlspool"	
 else	
 	install libtlspool.so libtlspool.a "$(DESTDIR)$(PREFIX)/lib/"
-	@echo #
-	@echo # Python libraries not yet installed
-	@echo #
-	@echo # You may need to run ldconfig to update the ld.so cache
-	@echo #
+	@echo '#'
+	@echo '# Python libraries not yet installed'
+	@echo '#'
+	@echo '# You may need to run ldconfig to update the ld.so cache'
+	@echo '#'
 endif
 
 uninstall:
@@ -79,7 +79,7 @@ ifdef WINVER
 else
 	rm -f "$(DESTDIR)$(PREFIX)/lib/libtlspool.so"
 	rm -f "$(DESTDIR)$(PREFIX)/lib/libtlspool.a"
-	@echo #
-	@echo # Python libraries not yet removed
-	@echo #
+	@echo '#'
+	@echo '# Python libraries not yet removed'
+	@echo '#'
 endif
