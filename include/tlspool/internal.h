@@ -535,6 +535,9 @@ void snprint_valexp (char *buf, int buflen, struct valexp *ve);
 /********** online.c definitions **********/
 
 
+void setup_online (void);
+void cleanup_online (void);
+
 /* Error levels: Proven correct, uncertain due to missing online info, or
  * proven wrong.
  */

@@ -20,6 +20,9 @@ valexprun_LIBS =
 
 VALEXP_TESTS = $(shell cd data-valexp-in ; ls -1)
 
+GNUTLS_CFLAGS = $(shell $(PKG_CONFIG) --cflags gnutls)
+GNUTLS_LIBS   = $(shell $(PKG_CONFIG) --libs   gnutls)
+
 P11KIT_CFLAGS = $(shell pkg-config --cflags p11-kit-1)
 P11KIT_LIBS   = $(shell pkg-config --libs   p11-kit-1)
 
@@ -47,7 +50,7 @@ testvalexp: valexprun
 	@ echo All validation expression tests succeeded
 
 onlinecheck: onlinecheck.c ../src/online.c ../src/pgp.c
-	gcc $(CFLAGS) $(QUICKDER_CFLAGS) -o "$@" "$<" ../src/pgp.c -lunbound -lldns -lldap $(QUICKDER_LIBS)
+	gcc $(CFLAGS) $(GNUTLS_CFLAGS) $(QUICKDER_CFLAGS) -o "$@" "$<" ../src/pgp.c -lunbound -lldns -lldap $(GNUTLS_LIBS) $(QUICKDER_LIBS)
 
 testonline: onlinecheck
 	./onlinecheck | tee | grep -v 'UNEXPECTED OUTPUT FAILURE'
