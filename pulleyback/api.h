@@ -30,6 +30,18 @@
 // Though the storage directory for plugins may vary across distributions,
 // we suggest to use `/usr/share/steamworks/pulleyback/` as a default.
 // 
+// ## Passing data to the Pulley Backend
+// 
+// Data passed to the backend follows the `der_t` type:
+
+#include <stdint.h>
+typedef uint8_t *der_t;
+
+// There is no explicit length for the fields, because it only passes from
+// Pulley to backend, and the Pulley retrieves data from LDAP where it is
+// habitually verified to have proper DER encoding.  In other words, the
+// `der_t` represents a single DER type with its self-descriptive length.
+//   
 // 
 // ## Initialisation and Cleanup
 // 
@@ -87,6 +99,10 @@ int pulleyback_del (void *pbh, uint8_t **forkdata);
 // unless they have been added with `pulleyback_add()` and since not removed by
 // `pulleyback_del()`.  These statements do apply over a sequence of sessions,
 // each of which is marked by loading and unloading the backend plugin module.
+// 
+// The backend may assume that the `forkdata` contains as many non-NULL
+// `der_t` as the number of variables promised to be supplied in `varc`
+// during `pulleyback_open()`.
 // 
 // Finally, a call exists to clear out an entire database, so it can be
 // filled from scratch:

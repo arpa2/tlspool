@@ -83,13 +83,26 @@ static const syntax_keywordlist syntax_args = {
 /* The syntax for the "subtype" word list
  */
 static const syntax_keywordlist syntax_subtype = {
-	{ "x509",      "x509 subtype",      { MXG_CREDTYPE, MXG_NONE } },
-	{ "openpgp",   "openpgp subtype",   { MXG_CREDTYPE, MXG_NONE } },
-	{ "client",    "client subtype",    { MXG_ROLE, MXG_NONE } },
-	{ "server",    "server subtype",    { MXG_ROLE, MXG_NONE } },
-	{ "peer",      "peer subtype",      { MXG_ROLE, MXG_NONE } },
-	{ "chained",   "chained subtype",   { MXG_CHAINED, MXG_NONE } },
-	{ "authority", "authority subtype", { MXG_TRUSTKIND, MXG_NONE } },
+	{ "x509",      "x509 subtype",      { MXG_CREDTYPE,
+	                                      MXG_X509,
+	                                      MXG_NONE } },
+	{ "openpgp",   "openpgp subtype",   { MXG_CREDTYPE,
+	                                      MXG_PGP,
+	                                      MXG_NONE } },
+	{ "client",    "client subtype",    { MXG_ROLE,
+	                                      MXG_CLIENT,
+	                                      MXG_NONE } },
+	{ "server",    "server subtype",    { MXG_ROLE,
+	                                      MXG_SERVER,
+	                                      MXG_NONE } },
+	{ "peer",      "peer subtype",      { MXG_ROLE,
+	                                      MXG_CLIENT,
+	                                      MXG_SERVER,
+	                                      MXG_NONE } },
+	{ "chained",   "chained subtype",   { MXG_CHAINED,
+	                                      MXG_NONE } },
+	{ "authority", "authority subtype", { MXG_TRUSTKIND,
+	                                      MXG_NONE } },
 	KEYWORD_LISTEND
 };
 
@@ -318,6 +331,7 @@ int parse_arguments (int argc, char *argv [], int varc,
 	}
 	//
 	// Harvest the flags for the subtypes found
+	assert (8 * sizeof (self->subtypes) <= 1 << MXG_COUNT);
 	for (argi = 0; argi < num_subtypes; argi++) {
 		self->subtypes |= ( 1 << list_subtypes [argi] );
 		assert ((self->subtypes & (1 << list_subtypes [argi])) != 0);

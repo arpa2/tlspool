@@ -8,13 +8,23 @@ CFLAGS += -fPIC -I . -I ../include -std=gnu11
 
 LDFLAGS += -std=gnu11
 
-LIBS += -ldb
+BDB_CFLAGS = 
+ifdef WINVER
+BDB_LIBS   = -ldb-6.1
+else
+BDB_LIBS   = -ldb
+endif
 
 PREFIX ?= /usr/local
 
 tlspool_OBJS = api.o parse.o connect.o update.o
 
 OBJS = $(tlspool_OBJS)
+
+PKG_CONFIG ?= pkg-config
+
+QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags quick-der)
+QUICKDER_LIBS = $(shell $(PKG_CONFIG) --libs quick-der)
 
 ifdef WINVER
 CFLAGS += -D_WIN32_WINNT=0x0600 -I ../include/windows
@@ -25,13 +35,13 @@ endif
 all: $(TARGETS)
 
 tlspool.so: $(tlspool_OBJS)
-	$(CC) -shared $(LDFLAGS) -o "$@" $(tlspool_OBJS) $(LIBS)
+	$(CC) -shared $(LDFLAGS) -o "$@" $(tlspool_OBJS) $(BDB_LIBS) $(QUICKDER_LIBS)
 
 tlspool.dll: $(tlspool_OBJS)
-	$(CC) -shared $(LDFLAGS) -o "$@" $(tlspool_OBJS) $(LIBS)
+	$(CC) -shared $(LDFLAGS) -o "$@" $(tlspool_OBJS) $(BDB_LIBS) $(QUICKDER_LIBS)
 
 .c.o:
-	$(CC) -c $(CFLAGS) -o "$@" "$<"
+	$(CC) -c $(CFLAGS) $(BDB_CFLAGS) $(QUICKDER_CFLAGS) -o "$@" "$<"
 
 clean:
 	rm -f $(OBJS) *.lo *.la $(TARGETS)

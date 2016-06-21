@@ -53,6 +53,10 @@ enum mutexgroup {
 	MXG_TRUSTKIND,
 	// Specific keywords that must not occur more than once
 	// (and that may be banned by other words incompatible with them)
+	MXG_CLIENT,
+	MXG_SERVER,
+	MXG_X509,
+	MXG_PGP,
 	MXG_VALEXP,
 	MXG_LOCALID,
 	MXG_REMOTEID,
