@@ -2,6 +2,8 @@
 TARGETS_OFFLINE = valexprun testvalexp
 TARGETS = $(TARGETS_OFFLINE) onlinecheck testonline
 
+PKG_CONFIG ?= pkg-config
+
 OBJS = *.o
 
 CFLAGS += -pthread -I ../include
@@ -23,14 +25,14 @@ VALEXP_TESTS = $(shell cd data-valexp-in ; ls -1)
 GNUTLS_CFLAGS = $(shell $(PKG_CONFIG) --cflags gnutls)
 GNUTLS_LIBS   = $(shell $(PKG_CONFIG) --libs   gnutls)
 
-P11KIT_CFLAGS = $(shell pkg-config --cflags p11-kit-1)
-P11KIT_LIBS   = $(shell pkg-config --libs   p11-kit-1)
+P11KIT_CFLAGS = $(shell $(PKG_CONFIG) --cflags p11-kit-1)
+P11KIT_LIBS   = $(shell $(PKG_CONFIG) --libs   p11-kit-1)
 
 BDB_CFLAGS = 
 BDB_LDFLAGS = -ldb
 
-QUICKDER_CFLAGS = $(shell pkg-config --cflags quick-der) -ggdb3
-QUICKDER_LIBS   = $(shell pkg-config --libs   quick-der)
+QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags quick-der) -ggdb3
+QUICKDER_LIBS   = $(shell $(PKG_CONFIG) --libs   quick-der)
 
 all: $(TARGETS)
 
