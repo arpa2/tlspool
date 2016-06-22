@@ -141,6 +141,18 @@ attributetype ( 1.3.6.1.4.1.44469.666.11.443.1.3
 )
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+attributetype ( 1.3.6.1.4.1.44469.666.11.443.1.4
+    NAME 'tlsPoolTrustAnchor'
+    DESC 'DistinguishedName for a trusted public key object'
+    SUP distinguishedName
+)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
  
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -149,6 +161,7 @@ objectclass ( 1.3.6.1.4.1.44469.666.11.443.1.6
     DESC 'A credential that is considered trustworthy under the given validation expression'
     SUP distinguishedName
     MUST ( tlsPoolCredentialType $ tlsPoolSupportedRole $ tlsPoolValidationExpression )
+    MAY ( cn $ tlsPoolTrustAnchor )
 )
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
