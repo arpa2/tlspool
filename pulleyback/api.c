@@ -55,8 +55,10 @@ void pulleyback_close (void *pbh) {
 		return;
 	}
 	//
-	// Disconnect from the database
-	//TODO// Implicitly terminate a current transaction?
+	// Disconnect from the database after implicit rollback
+	if (self->txn_state != TXN_NONE) {
+		pulleyback_rollback (pbh);
+	}
 	close_database (self);
 	//
 	// Cleanup fields allocated with strdup()
@@ -77,13 +79,21 @@ void pulleyback_close (void *pbh) {
 /* Internal method to ensure having a transaction, return 0 on error
  */
 static int have_txn (struct pulleyback_tlspool *self) {
-	if (self->txn == NULL) {
+	switch (self->txn_state) {
+	case TXN_NONE:
 		if (0 != self->env->txn_begin (self->env, NULL, &self->txn, 0)) {
 			return 0;
 		}
 		self->txn_state = TXN_ACTIVE;
+		return 1;
+	case TXN_ACTIVE:
+		return 1;
+	case TXN_SUCCESS:
+	case TXN_ABORT:
+		// You cannot have_txn() after _prepare()
+		assert ((self->txn_state == TXN_NONE) || (self->txn_state == TXN_ACTIVE));
+		return 0;
 	}
-	return 1;
 }
 
 int pulleyback_add (void *pbh, uint8_t **forkdata) {
@@ -115,24 +125,52 @@ int pulleyback_reset (void *pbh) {
 	return ok;
 }
 
+
+/* Transactions are somewhat complex, also because they are implicitly
+ * started when changes are made using _add(), _del() or _reset().
+ * These operations may be conditional in the calling program, and we
+ * want to aliviete the burden of maintaining a state as to whether
+ * a transaction has been started implicitly, so we accept calls to
+ * _prepare(), _rollback() or _commit() when no transaction exists
+ * yet.  We will implement such occurrences equivalently to opening a
+ * new transaction and acting on it immediately (though the logs may
+ * not show it if we can optimise by not actually doing it -- it is
+ * much simpler to skip the _rollback() or _commit() on an empty
+ * transaction.
+ *
+ * We use txn_state to maintain state between _prepare() and its followup
+ * call; the followup may be _prepare(), which is idempotent and will
+ * return the same result; it may be _commit(), but only when the
+ * preceding _prepare() has reported success; or it may be _rollback(),
+ * regardless of the state reported by _prepare().
+ *
+ * Invalid sequences are reported through assert() -- which is not a
+ * bug but a facility!  It helps the plugin user to code transaction
+ * logic correctly.  The implicitness of transactions means that we
+ * cannot capture all logic failures though.
+ */
+
 int pulleyback_prepare (void *pbh) {
 	struct pulleyback_tlspool *self = (struct pulleyback_tlspool *) pbh;
 	int ok = 1;
-	ok = ok && have_txn (self);	//TODO// First look at txn_state?
-	if (ok) {
-		switch (self->txn_state) {
-		case TXN_NONE:
-		case TXN_ACTIVE:
-			ok = ok && (0 == self->txn->prepare (self->txn, self->txn_gid));
-			self->txn_state = ok? TXN_SUCCESS: TXN_ABORT;
-			break;
-		case TXN_SUCCESS:
-			ok = 1;
-			break;
-		case TXN_ABORT:
-			ok = 0;
-			break;
-		}
+	switch (self->txn_state) {
+	case TXN_NONE:
+		// We want to return success, so we'd better create an
+		// empty transaction to permit future _commit() or _rollback()
+		ok = ok && have_txn (self);
+		// ...continue into case TXN_ACTIVE...
+	case TXN_ACTIVE:
+		ok = ok && (0 == self->txn->prepare (self->txn, self->txn_gid));
+		self->txn_state = ok? TXN_SUCCESS: TXN_ABORT;
+		break;
+	case TXN_SUCCESS:
+		// The transaction has already been successfully prepared
+		ok = ok && 1;
+		break;
+	case TXN_ABORT:
+		// The transaction has already failed preparing for commit
+		ok = 0;
+		break;
 	}
 	return ok;
 }
@@ -140,21 +178,25 @@ int pulleyback_prepare (void *pbh) {
 int pulleyback_commit (void *pbh) {
 	struct pulleyback_tlspool *self = (struct pulleyback_tlspool *) pbh;
 	int ok = 1;
-	ok = ok && have_txn (self);	//TODO// First look at txn_state?
-	if (ok) {
-		switch (self->txn_state) {
-		case TXN_NONE:
-		case TXN_ACTIVE:
-			ok = ok && (0 == self->txn->commit (self->txn, 0));
-			self->txn_state = ok? TXN_SUCCESS: TXN_ABORT;
-			break;
-		case TXN_ABORT:
-			ok = 0;
-			break;
-		case TXN_SUCCESS:
-			ok = 1;
-			break;
-		}
+	switch (self->txn_state) {
+	case TXN_NONE:
+		// We can safely report success when there is no transaction
+		ok = 1;
+		break;
+	case TXN_ACTIVE:
+		// The transaction is in full progress; attempt to commit it
+		ok = ok && (0 == self->txn->commit (self->txn, 0));
+		self->txn = NULL;
+		self->txn_state = ok? TXN_SUCCESS: TXN_ABORT;
+		break;
+	case TXN_ABORT:
+		// Fake an implicitly started, empty transaction
+		ok = ok && 1;
+		break;
+	case TXN_SUCCESS:
+		// Fake an implicitly started, empty transaction
+		ok = ok && 1;
+		break;
 	}
 	return ok;
 }
@@ -162,21 +204,21 @@ int pulleyback_commit (void *pbh) {
 void pulleyback_rollback (void *pbh) {
 	struct pulleyback_tlspool *self = (struct pulleyback_tlspool *) pbh;
 	int ok = 1;
-	ok = ok && have_txn (self);	//TODO// First look at txn_state?
-	if (ok) {
-		switch (self->txn_state) {
-		case TXN_NONE:
-		case TXN_ACTIVE:
-			ok = ok && (0 == self->txn->abort (self->txn));
-			self->txn_state = ok? TXN_ABORT: TXN_NONE;
-			break;
-		case TXN_ABORT:
-			ok = 1;
-			break;
-		case TXN_SUCCESS:
-			ok = 0;
-			break;
-		}
+	switch (self->txn_state) {
+	case TXN_NONE:
+		// In lieu of a transaction, rollback is a trivial matter
+		ok = ok && 1;
+		break;
+	case TXN_ABORT:
+	case TXN_SUCCESS:
+		// Preparation of the transaction has been done,
+		// so process as we would an active transaction
+	case TXN_ACTIVE:
+		// When there actually is a transaction, roll it back
+		ok = ok && (0 == self->txn->abort (self->txn));
+		self->txn = NULL;
+		self->txn_state = TXN_NONE;
+		break;
 	}
 }
 

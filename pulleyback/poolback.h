@@ -97,10 +97,12 @@ typedef struct keyword_descriptor syntax_keywordlist [];
 
 
 
-/* Tracking state for transactions
+/* Tracking state for transactions.  These are used to administer what has
+ * already been done to a transaction, to achieve idempotency with things
+ * such as transaction failures.
  */
 enum txnstate {
-	TXN_NONE,	// No current transaction
+	TXN_NONE = 0,	// No current transaction (initial status)
 	TXN_ACTIVE,	// Transaction is processing data
 	TXN_ABORT,	// Transaction will not succeed
 	TXN_SUCCESS	// Transaction is ready for commit
