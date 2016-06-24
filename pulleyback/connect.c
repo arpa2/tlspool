@@ -107,11 +107,11 @@ static int parse_cfgfile (struct pulleyback_tlspool *self) {
 /* Close the database environment.
  */
 void close_database (struct pulleyback_tlspool *self) {
-	if (self->db) {
+	if (self->db != NULL) {
 		self->db->close (self->db, 0);
 		self->db = NULL;
 	}
-	if (self->env) {
+	if (self->env != NULL) {
 		self->env->close (self->env, 0);
 		self->env = NULL;
 	}
@@ -145,7 +145,7 @@ int open_database (struct pulleyback_tlspool *self) {
 	if (0 != self->db->set_flags (self->db, DB_DUP)) {
 		goto error;
 	}
-	if (0 != self->db->open (self->db, NULL /* TODO:transactions?!? */, self->db_filename, NULL, DB_HASH, DB_RDONLY | DB_THREAD | DB_AUTO_COMMIT, 0)) {
+	if (0 != self->db->open (self->db, NULL /* TODO:transactions?!? */, self->db_filename, NULL, DB_HASH, DB_THREAD | DB_AUTO_COMMIT, 0)) {
 		goto error;
 	}
 	//

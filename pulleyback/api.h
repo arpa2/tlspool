@@ -77,8 +77,8 @@ void pulleyback_close (void *pbh);
 // The primary function of a backend is to have forks added to and removed from
 // an instance.  This is done with the respective functions
 
-int pulleyback_add (void *pbh, uint8_t **forkdata);
-int pulleyback_del (void *pbh, uint8_t **forkdata);
+int pulleyback_add (void *pbh, der_t *forkdata);
+int pulleyback_del (void *pbh, der_t *forkdata);
 
 // These functions return 1 on success and 0 on failure; any failure status
 // is retained within an instance, and reported for future additions and

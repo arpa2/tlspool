@@ -16,6 +16,7 @@
 
 #include <quick-der/api.h>
 
+#include "api.h"
 #include "poolback.h"
 
 /* A simple (data*,size) construct named pool_datum_t
@@ -37,15 +38,18 @@ typedef int db_error;
  * Note that this not about resources, because they reach many more
  * mutex groups, namely all those that are invalidated by it.
  */
-static int check_flag (struct pulleyback_tlspool *self, enum mutexgroup mxg) {
-	enum mutexgroup *args;
+static int check_flag (struct pulleyback_tlspool *self, der_t *data, enum mutexgroup mxg, enum mutexgroup dyntype) {
+	enum mutexgroup rv;
+	int i;
 	if ((self->subtypes & (1 << mxg)) != 0) {
 		return 1;
 	}
-	//TODO// Why search through args for flag bits?  Better parse them!
-	for (args = self->args; *args != MXG_NONE; args++) {
-		if (*args == mxg) {
-			return 1;
+	if (dyntype != MXG_NONE) {
+		for (i = 0; self->args [i] != MXG_NONE; i++) {
+			if (self->args [i] == dyntype) {
+				rv = parse_dynamic_argument (data [i], dyntype);
+				return (rv == MXG_NONE) ? 0 : (rv == mxg);
+			}
 		}
 	}
 	return 0;
@@ -59,7 +63,7 @@ static int check_flag (struct pulleyback_tlspool *self, enum mutexgroup mxg) {
  *
  * This function is supplied with the raw data presented by Pulley.
  */
-static const uint8_t *fetch_value (struct pulleyback_tlspool *self, enum mutexgroup mxg, uint8_t **data) {
+static const uint8_t *fetch_value (struct pulleyback_tlspool *self, enum mutexgroup mxg, der_t *data) {
 	int mxi;
 	if ((mxg == MXG_VALEXP) && (self->valexp != NULL)) {
 		return self->valexp;
@@ -157,8 +161,8 @@ static int update_db (struct pulleyback_tlspool *self,
 				self->db, self->txn, &db_key, &db_val, 0));
 	}
 	dbt_free (&db_got);
-	dbt_free (&db_val);
-	dbt_free (&db_key);
+	// Static, so don't free // dbt_free (&db_val);
+	// Static, so don't free // dbt_free (&db_key);
 	return ok;
 }
 
@@ -184,7 +188,7 @@ int update_disclose (struct pulleyback_tlspool *self, uint8_t **data, int rm) {
 /* Update the localid database, adding when rm is zero, removing otherwise.
  * Documented in detail in poolback.h
  */
-int update_localid (struct pulleyback_tlspool *self, uint8_t **data, int rm) {
+int update_localid (struct pulleyback_tlspool *self, der_t *data, int rm) {
 	dercursor lid;
 	dercursor crd;
 	dercursor p11;
@@ -224,15 +228,18 @@ int update_localid (struct pulleyback_tlspool *self, uint8_t **data, int rm) {
 	if (p11.derptr == NULL) {
 		flags |= LID_NO_PKCS11;
 	}
-	if (check_flag (self, MXG_CLIENT)) {
+	if (check_flag (self, data, MXG_CLIENT, MXG_ROLE)) {
 		flags |= LID_ROLE_CLIENT;
 	}
-	if (check_flag (self, MXG_SERVER)) {
+	if (check_flag (self, data, MXG_SERVER, MXG_ROLE)) {
 		flags |= LID_ROLE_SERVER;
 	}
-	if (check_flag (self, MXG_X509)) {
+	if (check_flag (self, data, MXG_PEER, MXG_ROLE)) {
+		flags |= LID_ROLE_CLIENT | LID_ROLE_SERVER;
+	}
+	if (check_flag (self, data, MXG_X509, MXG_CREDTYPE)) {
 		flags |= LID_TYPE_X509;
-	} else if (check_flag (self, MXG_PGP)) {
+	} else if (check_flag (self, data, MXG_PGP, MXG_CREDTYPE)) {
 		flags |= LID_TYPE_PGP;
 	} else if (vex.derptr != NULL) {
 		// Valexp is a case in localid, as an entry LID_TYPE_VALEXP
@@ -244,7 +251,7 @@ int update_localid (struct pulleyback_tlspool *self, uint8_t **data, int rm) {
 	   else {
 		return 0;
 	}
-	if (check_flag (self, MXG_CHAINED)) {
+	if (check_flag (self, data, MXG_CHAINED, MXG_NONE)) {
 		flags |= LID_CHAINED;
 	}
 	//
@@ -281,7 +288,7 @@ int update_localid (struct pulleyback_tlspool *self, uint8_t **data, int rm) {
 /* Update the trust database, adding when rm is zero, removing otherwise.
  * Documented in detail in poolback.h
  */
-int update_trust (struct pulleyback_tlspool *self, uint8_t **data, int rm) {
+int update_trust (struct pulleyback_tlspool *self, der_t *data, int rm) {
 	dercursor crd;
 	dercursor vex;
 	uint32_t flags = 0;
@@ -306,15 +313,18 @@ int update_trust (struct pulleyback_tlspool *self, uint8_t **data, int rm) {
 	}
 	//
 	// Collect the flags
-	if (check_flag (self, MXG_CLIENT)) {
+	if (check_flag (self, data, MXG_CLIENT, MXG_ROLE)) {
 		flags |= TAD_ROLE_CLIENT;
 	}
-	if (check_flag (self, MXG_SERVER)) {
+	if (check_flag (self, data, MXG_SERVER, MXG_ROLE)) {
 		flags |= TAD_ROLE_SERVER;
 	}
-	if (check_flag (self, MXG_X509)) {
+	if (check_flag (self, data, MXG_PEER, MXG_ROLE)) {
+		flags |= TAD_ROLE_CLIENT | TAD_ROLE_SERVER;
+	}
+	if (check_flag (self, data, MXG_X509, MXG_CREDTYPE)) {
 		flags |= TAD_TYPE_X509;
-	} else if (check_flag (self, MXG_PGP)) {
+	} else if (check_flag (self, data, MXG_PGP, MXG_CREDTYPE)) {
 		flags |= TAD_TYPE_PGP;
 	}
 	//TODO// MXG_SRP  -> LID_TYPE_SRP
@@ -322,7 +332,7 @@ int update_trust (struct pulleyback_tlspool *self, uint8_t **data, int rm) {
 	   else {
 		return 0;
 	}
-	//TODO// if (check_flag (self, MXG_NOTROOT)) {
+	//TODO// if (check_flag (self, data, MXG_NOTROOT, MXG_NONE)) {
 	//TODO// 	flags |= TAD_NOTROOT;
 	//TODO// }
 	//

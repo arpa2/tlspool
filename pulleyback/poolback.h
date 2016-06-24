@@ -55,8 +55,10 @@ enum mutexgroup {
 	// (and that may be banned by other words incompatible with them)
 	MXG_CLIENT,
 	MXG_SERVER,
+	MXG_PEER,
 	MXG_X509,
 	MXG_PGP,
+	MXG_AUTHORITY,
 	MXG_VALEXP,
 	MXG_LOCALID,
 	MXG_REMOTEID,
@@ -167,6 +169,20 @@ struct pulleyback_tlspool {
  */
 int parse_arguments (int argc, char *argv [], int varc,
 				struct pulleyback_tlspool *self);
+
+
+/* Parse the dynamic instantiation value of a parameter, if its self->args [i]
+ * indicates that it is suitable for this.  This is currently only the case
+ * with MXG_ROLE and MXG_CREDTYPE.  Instantiations are taken from the
+ * syntax_subtype table, whose resources are ordered to accommodate that.
+ *
+ * On encountering an error, this function returns MXG_NONE; otherwise it
+ * returns the recognised word, which is of the indicated type.
+ *
+ * Resource management has all been taken care of at compile time, so
+ * that is trivially skipped during this run.
+ */
+enum mutexgroup parse_dynamic_argument (char *arg, enum mutexgroup dyntype);
 
 
 /* Open a database environment and a database file.  Returns 0 for succes,

@@ -51,6 +51,7 @@ static const syntax_keywordlist exclusion_type = {
 						MXG_TRUSTKIND,
 	                                        MXG_NONE } },
 	{ "trust",    "trust driver type",    { MXG_REMOTEID,
+						MXG_LOCALID,
 	                                        MXG_PKCS11,
 	                                        MXG_NONE } },
 	KEYWORD_LISTEND
@@ -66,7 +67,9 @@ static update_fun *update_type [] = {
 };
 
 
-/* The syntax for the "args" word list
+/* The syntax for the "args" word list.  The formatting is such that the
+ * first (and only) MXG_ entry indicates the type if it happens to be one of
+ * the words that can be instantiated -- namely, MXG_ROLE and MXG_CREDTYPE.
  */
 static const syntax_keywordlist syntax_args = {
 	{ "localid",  "localid argument",  { MXG_LOCALID, MXG_NONE } },
@@ -80,28 +83,34 @@ static const syntax_keywordlist syntax_args = {
 };
 
 
-/* The syntax for the "subtype" word list
+/* The syntax for the "subtype" word list.  This is also used to parse
+ * dynamically bound parameters for MXG_ROLE or MXG_CREDTYPE; there, it
+ * uses the specific property that the first listed MXG_ is the instance
+ * and the second listed MXG_ is the type of the entry.  The type must
+ * match with the self->args entry's indication of a type, of course.
  */
 static const syntax_keywordlist syntax_subtype = {
-	{ "x509",      "x509 subtype",      { MXG_CREDTYPE,
-	                                      MXG_X509,
+	{ "x509",      "x509 subtype",      { MXG_X509,
+	                                      MXG_CREDTYPE,
 	                                      MXG_NONE } },
-	{ "openpgp",   "openpgp subtype",   { MXG_CREDTYPE,
-	                                      MXG_PGP,
+	{ "openpgp",   "openpgp subtype",   { MXG_PGP,
+	                                      MXG_CREDTYPE,
 	                                      MXG_NONE } },
-	{ "client",    "client subtype",    { MXG_ROLE,
-	                                      MXG_CLIENT,
+	{ "client",    "client subtype",    { MXG_CLIENT,
+	                                      MXG_ROLE,
 	                                      MXG_NONE } },
-	{ "server",    "server subtype",    { MXG_ROLE,
-	                                      MXG_SERVER,
+	{ "server",    "server subtype",    { MXG_SERVER,
+	                                      MXG_ROLE,
 	                                      MXG_NONE } },
-	{ "peer",      "peer subtype",      { MXG_ROLE,
+	{ "peer",      "peer subtype",      { MXG_PEER,
+	                                      MXG_ROLE,
 	                                      MXG_CLIENT,
 	                                      MXG_SERVER,
 	                                      MXG_NONE } },
 	{ "chained",   "chained subtype",   { MXG_CHAINED,
 	                                      MXG_NONE } },
-	{ "authority", "authority subtype", { MXG_TRUSTKIND,
+	{ "authority", "authority subtype", { MXG_AUTHORITY,
+                                              MXG_TRUSTKIND,
 	                                      MXG_NONE } },
 	KEYWORD_LISTEND
 };
@@ -118,7 +127,7 @@ static const enum mutexgroup typereq_disclose [] = {
 	MXG_NONE
 };
 static const enum mutexgroup typereq_localid [] = {
-	MXG_TYPE, MXG_ARGS, MXG_LOCALID, MXG_CRED, MXG_CREDTYPE, MXG_ROLE,
+	MXG_TYPE, MXG_ARGS, MXG_LOCALID, MXG_PKCS11, MXG_CRED, MXG_CREDTYPE, MXG_ROLE,
 	MXG_NONE
 };
 static const enum mutexgroup typereq_trust [] = {
@@ -143,6 +152,12 @@ static const enum mutexgroup typereq_trust [] = {
  * This routine updates the resource claims in the provided resource
  * array, and reports on syslog() when it finds a conflict; in that
  * case, it also returns an error.
+ *
+ * It is permitted to pass NULL for resources; no check on conflicts
+ * will then be made; this is useful during dynamic parsing, after
+ * the static analysis has already taken care of resource conflicts
+ * and all that is required to live up to it is recognising keywords
+ * of the proper type.
  */
 static int chase_keyword_descriptor (const struct keyword_descriptor *kd,
 					char *resources [MXG_COUNT],
@@ -157,12 +172,14 @@ static int chase_keyword_descriptor (const struct keyword_descriptor *kd,
 		int kwl = strlen (kd->keyword);
 		if ((memcmp (kd->keyword, text + *offset, kwl) == 0) && (isalnum (text [*offset + kwl]) == 0)) {
 			// We found a match -- check for resource clashes
-			for (mtg = kd->resources; *mtg != MXG_NONE; mtg++) {
-				if (resources [*mtg] != NULL) {
-					syslog (LOG_ERR, "You cannot specify both %s and %s", resources [*mtg], kd [kdofs].claim);
-					return -1;
+			if (resources != NULL) {
+				for (mtg = kd->resources; *mtg != MXG_NONE; mtg++) {
+					if (resources [*mtg] != NULL) {
+						syslog (LOG_ERR, "You cannot specify both %s and %s", resources [*mtg], kd [kdofs].claim);
+						return -1;
+					}
+					resources [*mtg] = kd->claim;
 				}
-				resources [*mtg] = kd->claim;
 			}
 			// Return successfully
 			*offset += kwl;
@@ -198,7 +215,9 @@ static int parse_wordlist (const struct keyword_descriptor *kd,
 			syslog (LOG_ERR, "More than %d words in %s", kdidx_count, text);
 			return -1;
 		}
-		kdidx [kdidx_count++] = rv;
+		// rv is the number of the kd entry;
+		// Now place its first resource into kdidx
+		kdidx [kdidx_count++] = kd [rv].resources [0];
 		comma = text [*offset];
 		if (comma != ',') {
 			break;
@@ -239,15 +258,16 @@ int parse_arguments (int argc, char *argv [], int varc,
 	self->type = NULL;
 	self->subtypes = 0;
 	self->valexp = NULL;
-	assert (sizeof (self->args) == sizeof (list_subtypes));
+	assert (sizeof (self->args   ) == sizeof (int) * (MXG_COUNT + 1));
+	assert (sizeof (list_subtypes) == sizeof (int) * (MXG_COUNT + 1));
 	for (argi=0; argi < MXG_COUNT + 1; argi++) {
-		self->args [argi] =
+		self->args    [argi] =
 		list_subtypes [argi] = MXG_NONE;
 	}
 	memset (resources, 0, sizeof (resources));  // all NULL strings
 	//
 	// Pick up all the words and word lists, while scoring resources
-	for (argi = 0; argi < argc; argi++) {
+	for (argi = 1; argi < argc; argi++) {
 		argofs = 0;
 		parsed = chase_keyword_descriptor (
 					syntax_parameters,
@@ -336,5 +356,31 @@ int parse_arguments (int argc, char *argv [], int varc,
 		assert ((self->subtypes & (1 << list_subtypes [argi])) != 0);
 	}
 	return 0;
+}
+
+
+/* Parse the dynamic instantiation value of a parameter, if its self->args [i]
+ * indicates that it is suitable for this.  This is currently only the case
+ * with MXG_ROLE and MXG_CREDTYPE.  Instantiations are taken from the
+ * syntax_subtype table, whose resources are ordered to accommodate that.
+ *
+ * On encountering an error, this function returns MXG_NONE; otherwise it
+ * returns the recognised word, which is of the indicated type.
+ *
+ * Resource management has all been taken care of at compile time, so
+ * that is trivially skipped during this run.
+ */
+enum mutexgroup parse_dynamic_argument (char *arg, enum mutexgroup dyntype) {
+	int argofs = 0;
+	int ok = 1;
+	int rv;
+	assert ((dyntype == MXG_ROLE) || (dyntype == MXG_CREDTYPE));
+	rv = chase_keyword_descriptor (	syntax_subtype,
+					NULL  /* no resources */ ,
+					arg, &argofs);
+	ok = ok && (rv >= 0);
+	ok = ok && (arg [argofs] == '\0');
+	ok = ok && (syntax_subtype [rv].resources [1] == dyntype);
+	return  ok? syntax_subtype [rv].resources [0]: MXG_NONE;
 }
 

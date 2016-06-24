@@ -143,6 +143,7 @@ The `args` parameter defines how arguments to the output driver will
 be interpreted:
 
   * `cred` indicates the public credential being dealt with;
+  * `role` indicates dynamically whether the trust is for `client`, `server` or both (`peer`) credentials
   * `valexp` indicates a validation expression supplied dynamically,
     when there is no parameter `valexp` configuring the output driver
     to a fixed one.
@@ -152,7 +153,7 @@ The `subtype` consists of a number of information bits:
   * `x509` for X.509 certificate entries, or `openpgp` for OpenPGP entries;
     alternatively, `valexp` for validation expression entries; future
     extensions may also recognise `openssh`, `krb5`, `srp11`;
-  * `client` or `server` to indicate the role to which the setting
+  * `client` or `server` to indicate a static role to which the setting
     applies, or `peer` if it applies to both;
   * `authority` to indicate a trusted CA certificate (root or intermediate);
     more entry types will follow, for instance `revocation` and `pinning`
@@ -217,15 +218,30 @@ the trust database:
     #
     # From: Rick van Rein <rick@openfortress.nl>
     
-    # Generate <x509ca,cadn> as a potential root certificate
-    ObjectClass: "pkiUser" + UserCertificate: x509ca, @cadn, Ou="Trust Contestors" <- world
-
-    # Generate <anchordn,valexp,role> as a DN from a list of trusted CAs
-    ObjectClass: "tlsPoolTrustedIssuer" + TlsPoolCredentialType: "x509" + TlsPoolTrustAnchor: anchordn + TlsPoolValidationExpression: valexp + TlsPoolSupportedRole: role + , Cn=_, Ou="ou=In ARPA2 we Trust" <- world
+    ### X.509 trust ###
     
-    # Filter out those x509ca certificates that are trusted
-    (cadn == anchordn)
-
+    # Generate <x509ca,x509cadn> as a potential root certificate
+    ObjectClass: "pkiUser" + UserCertificate: x509ca, @cadn, Ou="Trust Contestors" <- world
+    
+    # Generate <x509anchordn,x509valexp,x509role> to describe a trusted CA
+    ObjectClass: "tlsPoolTrustedIssuer" + TlsPoolCredentialType: "x509" + TlsPoolTrustAnchor: x509anchordn + TlsPoolValidationExpression: x509valexp + TlsPoolSupportedRole: x509role, Cn=_, Ou="Our Foundation of Trust" <- world
+    
+    # Trim down to x509ca certificates that are trusted
+    (x509cadn == x509anchordn)
+    
     # Send the found results to the TLS Pool backend
-    x509ca,valexp,role -> tlspool (config="../etc/tlspool.conf", type="trust", args="cred,valexp,role")
-
+    x509ca,x509valexp,x509role -> tlspool (config="../etc/tlspool.conf", type="trust", args="cred,valexp,role", subtype="authority,x509")
+    
+    ### PGP trust ###
+    
+    # Generate <pgpkey,pgpkeydn> as a potential PGP direct signer key
+    ObjectClass: "pgpKeyInfo" + PgpKey: pgpkey, @pgpkeydn, Ou="Trust Contestors" <- world
+    
+    # Generate <pgpanchordn,pgpvalexp,pgprole> to describe a trusted signer
+    ObjectClass: "tlsPoolTrustedIssuer" + TlsPoolCredentialType: "pgp" + TlsPoolTrustAnchor: pgpanchordn + TlsPoolValidationExpression: pgpvalexp + TlsPoolSupportedRole: pgprole, Cn=_, Ou="Our Foundation of Trust" <- world
+    
+    # Trim down to pgpkeys that are trusted
+    (pgpkeydn == pgpanchordn)
+    
+    # Send the found results to the TLS Pool backend
+    pgpkey,pgpvalexp,pgprole -> tlspool (config="../etc/tlspool.conf", type="trust", args="cred,valexp,role", subtype="authority,pgp")
