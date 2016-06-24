@@ -213,5 +213,19 @@ The following is a maximally dynamic script that could be used to pull
 information from the LDAP scheme for the TLS Pool, and placing it in
 the trust database:
 
-    TODO
+    # SteamWorks Pulley Script: LDAP --> TLS Pool trust.db
+    #
+    # From: Rick van Rein <rick@openfortress.nl>
+    
+    # Generate <x509ca,cadn> as a potential root certificate
+    ObjectClass: "pkiUser" + UserCertificate: x509ca, @cadn, Ou="Trust Contestors" <- world
+
+    # Generate <anchordn,valexp,role> as a DN from a list of trusted CAs
+    ObjectClass: "tlsPoolTrustedIssuer" + TlsPoolCredentialType: "x509" + TlsPoolTrustAnchor: anchordn + TlsPoolValidationExpression: valexp + TlsPoolSupportedRole: role + , Cn=_, Ou="ou=In ARPA2 we Trust" <- world
+    
+    # Filter out those x509ca certificates that are trusted
+    (cadn == anchordn)
+
+    # Send the found results to the TLS Pool backend
+    x509ca,valexp,role -> tlspool (config="../etc/tlspool.conf", type="trust", args="cred,valexp,role")
 
