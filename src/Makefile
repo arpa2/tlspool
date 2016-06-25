@@ -27,9 +27,9 @@ P11KIT_LIBS   = $(shell $(PKG_CONFIG) --libs   p11-kit-1)
 TASN1_CFLAGS = $(shell $(PKG_CONFIG) --cflags libtasn1)
 TASN1_LIBS   = $(shell $(PKG_CONFIG) --libs   libtasn1)
 #HOWTOUSE# UNBOUND_FLAGS = $(shell $(PKG_CONFIG) --cflags libunbound)
-#HOWTOUSE# UNBOUBD_LIBS  = $(shell $(PKG_CONFIG) --libs   libunbound)
+#HOWTOUSE# UNBOUND_LIBS  = $(shell $(PKG_CONFIG) --libs   libunbound)
 QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags quick-der)
-QUICKDER_LIBS = $(shell $(PKG_CONFIG) --libs quick-der)
+QUICKDER_LIBS   = $(shell $(PKG_CONFIG) --libs   quick-der)
 
 ifdef WINVER
 CFLAGS += -D_WIN32_WINNT=0x0600 -DATTRIBUTE_UNUSED="" -I ../include/windows
@@ -46,7 +46,7 @@ BDB_CFLAGS =
 ifdef WINVER
 BDB_LIBS   = -ldb-6.1
 else
-BDB_LIBS   = -ldb
+BDB_LIBS   = -ldb # this is the default
 endif
 
 all: $(TARGETS)
@@ -57,14 +57,15 @@ tlspool$(EXE): $(OBJS)
 .c.o:
 	$(CC) -c $(CFLAGS) -o "$@" "$<"
 
+.PHONY: clean
 clean:
 	rm -f $(OBJS) $(TARGETS)
 
 anew: clean all
 
 install: all
-	install $(TARGETS) "$(DESTDIR)$(PREFIX)/$(SBIN)/"
+	install $(TARGETS) "$(DESTDIR)/$(PREFIX)/$(SBIN)/"
 
 uninstall:
-	@$(foreach t,$(TARGETS),rm -f '$(DESTDIR)$(PREFIX)/$(SBIN)/$t' && ) echo Removed TLS Pool daemon
+	@$(foreach t,$(TARGETS),rm -f '$(DESTDIR)/$(PREFIX)/$(SBIN)/$t' && ) echo Removed TLS Pool daemon
 
