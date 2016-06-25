@@ -1,6 +1,6 @@
 DESTDIR ?= 
 PREFIX ?= /usr/local/ 
-BUILDDIRS=src lib tool doc test
+BUILDDIRS=src lib tool pulleyback doc test
 
 .PHONEY: all install clean distclean
 

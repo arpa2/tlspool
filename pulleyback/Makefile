@@ -56,10 +56,12 @@ ifdef WINVER
 else	
 	mkdir -p "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback"
 	install pulleyback_tlspool.so "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback"
+endif
+ifneq ($PREFIX,/usr)
 	@echo '#'
-	@echo '# Python libraries not yet installed'
 	@echo '#'
-	@echo '# You may need to run ldconfig to update the ld.so cache'
+	@echo '# WARNING: PREFIX IS NOT /usr, SO THE LIBRARY MAY NOT BE DETECTED #'
+	@echo '#'
 	@echo '#'
 endif
 
@@ -68,7 +70,4 @@ ifdef WINVER
 	rm -f "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback/pulleyback_tlspool.dll"
 else
 	rm -f "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback/pulleyback_tlspool.so"
-	@echo '#'
-	@echo '# Python libraries not yet removed'
-	@echo '#'
 endif

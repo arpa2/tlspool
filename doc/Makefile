@@ -24,7 +24,7 @@ install: all
 	mkdir -p "$(DESTDIR)$(PREFIX)/share/man/man3/"
 	mkdir -p "$(DESTDIR)$(PREFIX)/share/man/man8/"
 	@$(foreach l,$(LICS),install '../$l' '$(DESTDIR)$(PREFIX)/share/doc/tlspool/' && ) echo Installed license documents
-	@$(foreach d,$(DOCS),install '$d' '$(DESTDIR)$(PFEFIX)/share/doc/tlspool/' && ) echo Installed technical documentation
+	@$(foreach d,$(DOCS),install '$d' '$(DESTDIR)$(PREFIX)/share/doc/tlspool/' && ) echo Installed technical documentation
 	@$(foreach m,$(MAN8),install 'man/$m.man' '$(DESTDIR)$(PREFIX)/share/man/man8/$m.8' && ) echo Installed man page section 8
 	@$(foreach n,$(MAN3),install 'man/$n.man' '$(DESTDIR)$(PREFIX)/share/man/man3/$n.3' && ) echo Installed man page section 3
 	@echo '#'
