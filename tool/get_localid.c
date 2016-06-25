@@ -228,7 +228,6 @@ printf ("Written %d bytes\n", e_binlen);
 		goto failure;
 	}
 	if (txn->commit (txn, 0) != 0) {
-		txn->abort (txn);
 		fprintf (stderr, "Failed to commit readonly transaction\n");
 		exit (1);
 	}

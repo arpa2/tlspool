@@ -14,6 +14,8 @@
 
 #include <arpa/inet.h>
 
+#include <db.h>
+
 #include <quick-der/api.h>
 
 #include "api.h"
@@ -129,9 +131,16 @@ static int update_db (struct pulleyback_tlspool *self,
 	}
 	gotcrs =
 	ok = ok && (0 == self->db->cursor (self->db, self->txn, &crs, 0));
-	dbt_init_fixbuf (&db_key, key  ->derptr, key  ->derlen);
-	dbt_init_fixbuf (&db_val, value->derptr, value->derlen);
-	dbt_init_empty  (&db_got);
+	memset (&db_key, 0, sizeof (db_key));
+	db_key.data = key->derptr;
+	db_key.size = key->derlen;
+	memset (&db_val, 0, sizeof (db_val));
+	db_val.data = value->derptr;
+	db_val.size = value->derlen;
+	memset (&db_got, 0, sizeof (db_got));
+	//OLD// dbt_init_fixbuf (&db_key, key  ->derptr, key  ->derlen);
+	//OLD// dbt_init_fixbuf (&db_val, value->derptr, value->derlen);
+	//OLD// dbt_init_empty  (&db_got);
 	nomore = crs->get (crs, &db_key, &db_got, DB_SET);
 	while (!nomore) {
 		int match = 1;
@@ -139,7 +148,11 @@ static int update_db (struct pulleyback_tlspool *self,
 		for (i = 0; match && (i < trimlen); i++) {
 			match = match && (i < db_val.size);
 			match = match && (i < db_got.size);
-			if (match) {
+			if (!match) {
+				// Final decision; only match for same sizes
+				match = (db_val.size == db_got.size);
+				break;
+			} else {
 				uint8_t m, a, b;
 				m = (i < 4)? mask4 [i]: 0xff;
 				a = m & ((uint8_t *) db_val.data) [i];
@@ -154,15 +167,17 @@ static int update_db (struct pulleyback_tlspool *self,
 	}
 	ok = ok && (nomore == DB_NOTFOUND);
 	if (gotcrs) {
-		crs->close (crs);
+		if (0 != crs->close (crs)) {
+			fprintf (stderr, "Failed to close cursor\n");
+		}
 	}
 	if (!rm) {
 		ok = ok && (0 == self->db->put (
-				self->db, self->txn, &db_key, &db_val, 0));
+		                 self->db, self->txn, &db_key, &db_val, 0));
 	}
-	dbt_free (&db_got);
-	// Static, so don't free // dbt_free (&db_val);
-	// Static, so don't free // dbt_free (&db_key);
+	//OLD// // Not ours, so don't free // dbt_free (&db_got);
+	//OLD// // Static,   so don't free // dbt_free (&db_val);
+	//OLD// // Static,   so don't free // dbt_free (&db_key);
 	return ok;
 }
 
@@ -182,6 +197,7 @@ int update_disclose (struct pulleyback_tlspool *self, uint8_t **data, int rm) {
 		// Perhaps length is too small, or DER formatting error
 		return 0;
 	}
+printf ("Updating disclose.db (%s): %.*s -> %.*s\n", rm?"DEL":"ADD", rid.derlen, rid.derptr, lid.derlen, lid.derptr);
 	return update_db (self, &rid, &lid, -1, NULL, rm);
 }
 

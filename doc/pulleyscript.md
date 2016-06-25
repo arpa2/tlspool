@@ -244,4 +244,4 @@ the trust database:
     (pgpkeydn == pgpanchordn)
     
     # Send the found results to the TLS Pool backend
-    pgpkey,pgpvalexp,pgprole -> tlspool (config="../etc/tlspool.conf", type="trust", args="cred,valexp,role", subtype="authority,pgp")
+    pgpkey,pgpvalexp,pgprole -> tlspool (config="../etc/tlspool.conf", type="trust", args="cred,valexp,role", subtype="authority,openpgp")

@@ -185,18 +185,16 @@ int pulleyback_commit (void *pbh) {
 		ok = 1;
 		break;
 	case TXN_ACTIVE:
+	case TXN_SUCCESS:
 		// The transaction is in full progress; attempt to commit it
 		ok = ok && (0 == self->txn->commit (self->txn, 0));
 		self->txn = NULL;
-		self->txn_state = ok? TXN_SUCCESS: TXN_ABORT;
+		self->txn_state = TXN_NONE;
 		break;
 	case TXN_ABORT:
-		// Fake an implicitly started, empty transaction
-		ok = ok && 1;
-		break;
-	case TXN_SUCCESS:
-		// Fake an implicitly started, empty transaction
-		ok = ok && 1;
+		// Preparation fails, then the call should havae been _rollback()
+		assert (self->txn_state != TXN_ABORT);
+		ok = ok && 0;
 		break;
 	}
 	return ok;

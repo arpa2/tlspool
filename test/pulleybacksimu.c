@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <time.h>
 #include <unistd.h>
 
 #include <libgen.h>
@@ -45,21 +46,21 @@ void inline testcmd (char *cmd) {
 void showstatus (char *title) {
 	printf ("\n\n\n# %s\n", title);
 	// testcmd ("db_stat -h ../testdata/tlspool.env -d ../disclose.db");
-	printf ("\n\n\n## Disclosure database\n\n\n");
-	testcmd ("../tool/get_disclose "CONFFILE" "REMOTEID" >/dev/null");
-	testcmd ("../tool/get_disclose "CONFFILE" "REMOTEID_PATN" >/dev/null");
-	testcmd ("../tool/get_disclose "CONFFILE" "LOCALID" >/dev/null");
-	printf ("\n\n\n## LocalID database\n\n\n");
-	testcmd ("../tool/get_localid "CONFFILE" "REMOTEID" X.509,client,server"" >/dev/null");
-	testcmd ("../tool/get_localid "CONFFILE" "LOCALID" X.509,client,server"" >/dev/null");
-	testcmd ("../tool/get_localid "CONFFILE" "REMOTEID" OpenPGP,client,server"" >/dev/null");
-	testcmd ("../tool/get_localid "CONFFILE" "LOCALID" OpenPGP,client,server"" >/dev/null");
-	printf ("\n\n\n## Trust database\n\n\n");
-	testcmd ("../tool/get_trust "CONFFILE" x509,client,server "ANCHOR_HEX" >/dev/null");
-	testcmd ("../tool/get_trust "CONFFILE" x509,client,server "ANCHOR_HEX" >/dev/null");
-	testcmd ("../tool/get_trust "CONFFILE" pgp,client,server "ANCHOR_HEX" >/dev/null");
-	testcmd ("../tool/get_trust "CONFFILE" pgp,client,server "ANCHOR_HEX" >/dev/null");
-	printf ("\nThat was our last test for %s\n\n\n", title);
+	// printf ("\n\n\n## Disclosure database\n\n\n");
+	// testcmd ("../tool/get_disclose "CONFFILE" "REMOTEID" >/dev/null");
+	// testcmd ("../tool/get_disclose "CONFFILE" "REMOTEID_PATN" >/dev/null");
+	// testcmd ("../tool/get_disclose "CONFFILE" "LOCALID" >/dev/null");
+	// printf ("\n\n\n## LocalID database\n\n\n");
+	// testcmd ("../tool/get_localid "CONFFILE" "REMOTEID" X.509,client,server"" >/dev/null");
+	// testcmd ("../tool/get_localid "CONFFILE" "LOCALID" X.509,client,server"" >/dev/null");
+	// testcmd ("../tool/get_localid "CONFFILE" "REMOTEID" OpenPGP,client,server"" >/dev/null");
+	// testcmd ("../tool/get_localid "CONFFILE" "LOCALID" OpenPGP,client,server"" >/dev/null");
+	// printf ("\n\n\n## Trust database\n\n\n");
+	// testcmd ("../tool/get_trust "CONFFILE" x509,client,server "ANCHOR_HEX" >/dev/null");
+	// testcmd ("../tool/get_trust "CONFFILE" x509,client,server "ANCHOR_HEX" >/dev/null");
+	// testcmd ("../tool/get_trust "CONFFILE" pgp,client,server "ANCHOR_HEX" >/dev/null");
+	// testcmd ("../tool/get_trust "CONFFILE" pgp,client,server "ANCHOR_HEX" >/dev/null");
+	// printf ("\nThat was our last test for %s\n\n\n", title);
 }
 
 
@@ -84,7 +85,10 @@ void *open_backend (char *argv []) {
 }
 
 void close_backend (void *backend) {
-	pulleyback_close (backend);
+	struct pulleyback_tlspool *self = backend;
+	if (backend != NULL) {
+		pulleyback_close (backend);
+	}
 }
 
 
@@ -92,9 +96,9 @@ char *test0 [] = { "pulleyback_tlspool", "config=../etc/tlspool.conf", "type=dis
 char *test1 [] = { "pulleyback_tlspool", "config=../etc/tlspool.conf", "type=disclose", "args=remoteid,localid", NULL };
 char *test2 [] = { "pulleyback_tlspool", "config=../etc/tlspool.conf", "type=localid", "args=localid,pkcs11,cred", "subtype=x509,client", NULL };
 
-uint8_t *args0 [2] = { "\x0c\x1alocal@pulleyback.arpa2.lab", "\x0c\x1bremote@pulleyback.arpa2.lab" };
-uint8_t *args1 [2] = { "\x0c\x1bremote@pulleyback.arpa2.lab", "\x0c\x1alocal@pulleyback.arpa2.lab" };
-uint8_t *args2 [3] = { "\x0c\x1alocal@pulleyback.arpa2.lab", "\x0c\x24pkcs11:manuf=OpenFortress;serial=123", "\x0c\x1a-----LIKE A PGP KEY-----\r\n" };
+uint8_t *args0 [2] = { "\x0c\x1clocalid@pulleyback.arpa2.lab", "\x0c\x1dremoteid@pulleyback.arpa2.lab" };
+uint8_t *args1 [2] = { "\x0c\x1dremoteid@pulleyback.arpa2.lab", "\x0c\x1clocalid@pulleyback.arpa2.lab" };
+uint8_t *args2 [3] = { "\x0c\x1clocalid@pulleyback.arpa2.lab", "\x0c\x24pkcs11:manuf=OpenFortress;serial=123", "\x0c\x1a-----LIKE A PGP KEY-----\r\n" };
 
 char **tests [] = { test0, test1, test2, NULL };
 uint8_t **argss [] = { args0, args1, args2, NULL };
@@ -110,19 +114,32 @@ int main (int argc, char *argv []) {
 	close (2);
 	dup2 (1, 2);
 	openlog (basename (argv [0]), LOG_PERROR, LOG_LOCAL0);
-	showstatus ("Initial status");
+	// showstatus ("Initial status");
 	for (testp = tests, argsp = argss; *testp != NULL; testp++, argsp++) {
 		backend = open_backend (*testp);
 		if (backend == NULL) {
 			continue;
 		}
-		snprintf (testtitle, 100, "Test number %d\n", testnr++);
+		snprintf (testtitle, 100, "Test number %d\n", testnr);
 		showstatus (testtitle);
-		// pulleyback_add (backend, *argsp);
-		// pulleyback_del (backend, *argsp);
+		pulleyback_add (backend, *argsp);
+		if (pulleyback_commit (backend)) {
+			printf ("Go have a look...\n");
+		} else {
+			printf ("Failed, so you probably won't find it...\n");
+		}
+		sleep (10);
+		snprintf (testtitle, 100, "Added in test number %d\n", testnr++);
+		showstatus (testtitle);
+		pulleyback_del (backend, *argsp);
+		if (pulleyback_commit (backend)) {
+			printf ("It should be gone...\n");
+		} else {
+			printf ("Failed, so it is probably still there...\n");
+		}
 		close_backend (backend);
 	}
-	showstatus ("Final status");
+	// showstatus ("Final status");
 	closelog ();
 	exit (0);
 }

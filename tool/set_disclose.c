@@ -207,7 +207,6 @@ int main (int argc, char *argv []) {
 	//
 	// Finally, commit the transaction
 	if (txn->commit (txn, 0) != 0) {
-		txn->abort (txn);
 		fprintf (stderr, "Failed to commit transaction\n");
 		exit (1);
 	} else {

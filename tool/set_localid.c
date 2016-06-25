@@ -258,7 +258,6 @@ int main (int argc, char *argv []) {
 		argi += 2;
 	}
 	if (txn->commit (txn, 0) != 0) {
-		txn->abort (txn);
 		fprintf (stderr, "Failed to commit transaction\n");
 		exit (1);
 	} else {

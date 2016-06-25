@@ -108,11 +108,15 @@ static int parse_cfgfile (struct pulleyback_tlspool *self) {
  */
 void close_database (struct pulleyback_tlspool *self) {
 	if (self->db != NULL) {
-		self->db->close (self->db, 0);
+		if (0 != self->db->close (self->db, 0)) {
+			fprintf (stderr, "Failed to close database\n");
+		}
 		self->db = NULL;
 	}
 	if (self->env != NULL) {
-		self->env->close (self->env, 0);
+		if (0 != self->env->close (self->env, 0)) {
+			fprintf (stderr, "Failed to close database environment\n");
+		}
 		self->env = NULL;
 	}
 }
