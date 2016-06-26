@@ -1487,8 +1487,7 @@ void setup_online (void) {
 		exit (1);
 	}
 	// Perhaps add trust anchors with ub_ctx_add_ta()
-	if (ub_ctx_add_ta_autr (ubctx,
-			"/usr/local/etc/unbound/root.key" /* TODO:FIXED */)) {
+	if (ub_ctx_add_ta_autr (ubctx, cfg_dnssec_rootkey ())) {
 		tlog (TLOG_DAEMON, LOG_ERR, "Failed to configure DNS root trust anchor in resolver context");
 		exit (1);
 	}

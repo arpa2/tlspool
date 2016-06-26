@@ -144,6 +144,7 @@ unsigned int cfg_tls_maxpreauth (void);
 uint32_t cfg_facilities (void);
 char *cfg_tls_onthefly_signcert (void);
 char *cfg_tls_onthefly_signkey (void);
+char *cfg_dnssec_rootkey (void);
 
 
 

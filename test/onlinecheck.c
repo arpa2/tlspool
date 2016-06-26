@@ -99,6 +99,16 @@ void printoutput (int expected, char *tdesc, int tres) {
 int main (int argc, char *argv []) {
 	int exitval = 1;
 	int output;
+
+	// First load the configuration to get a reference to the DNSSEC root key
+	if (argc != 2) {
+		printf ("Please supply just a configuration file");
+		exit (1);
+	} else {
+		parse_cfgfile (argv [1], 0);
+	}
+
+	// Now proceed with initialisation
 	setup_online ();
 	readcert ();
 	readpgpkey ();

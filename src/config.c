@@ -83,6 +83,7 @@ enum VARS {
 	CFGVAR_TLS_ONTHEFLY_SIGNKEY,
 	CFGVAR_FACILITIES_DENY,
 	CFGVAR_FACILITIES_ALLOW,
+	CFGVAR_DNSSEC_ROOTKEY,
 	//
 	CFGVAR_LENGTH,
 	CFGVAR_NONE = -1
@@ -132,6 +133,7 @@ struct cfgopt config_options [] = {
 	"tls_onthefly_signkey",	cfg_setvar,	CFGVAR_TLS_ONTHEFLY_SIGNKEY,
 	"deny_facilities",	cfg_setvar,	CFGVAR_FACILITIES_DENY,
 	"allow_facilities",	cfg_setvar,	CFGVAR_FACILITIES_ALLOW,
+	"dnssec_rootkey",	cfg_setvar,	CFGVAR_DNSSEC_ROOTKEY,
 	//
 	NULL,			NULL,		CFGVAR_NONE
 };
@@ -669,5 +671,14 @@ uint32_t cfg_facilities (void) {
 			v2v_facility_flag,
 			PIOF_FACILITY_ALL_CURRENT);
 	return PIOF_FACILITY_ALL_CURRENT & allow & ~deny;
+}
+
+char *cfg_dnssec_rootkey (void) {
+	// Require the root key filename for use with DNSSEC
+	if (configvars [CFGVAR_DNSSEC_ROOTKEY]) {
+		return configvars [CFGVAR_DNSSEC_ROOTKEY];
+	} else {
+		return "/etc/unbound/root.key";
+	}
 }
 

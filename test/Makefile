@@ -20,6 +20,8 @@ PREFIX = /usr/local
 valexprun_CFLAGS = -ggdb3
 valexprun_LIBS =
 
+config_CFLAGS = -DCONFIG_PARSE_ONLY
+
 VALEXP_TESTS = $(shell cd data-valexp-in ; ls -1)
 
 GNUTLS_CFLAGS = $(shell $(PKG_CONFIG) --cflags gnutls)
@@ -51,11 +53,11 @@ testvalexp: valexprun
 	@ git ls-files --error-unmatch data-valexp-out/* >/dev/null
 	@ echo All validation expression tests succeeded
 
-onlinecheck: onlinecheck.c ../src/online.c ../src/pgp.c
-	gcc $(CFLAGS) $(GNUTLS_CFLAGS) $(QUICKDER_CFLAGS) -o "$@" "$<" ../src/pgp.c -lunbound -lldns -lldap $(GNUTLS_LIBS) $(QUICKDER_LIBS)
+onlinecheck: onlinecheck.c ../src/online.c ../src/config.c ../src/pgp.c
+	gcc $(CFLAGS) $(GNUTLS_CFLAGS) $(QUICKDER_CFLAGS) $(config_CFLAGS) -o "$@" "$<" ../src/pgp.c ../src/config.c -lunbound -lldns -lldap $(GNUTLS_LIBS) $(QUICKDER_LIBS)
 
 testonline: onlinecheck
-	./onlinecheck | tee | grep -v 'UNEXPECTED OUTPUT FAILURE'
+	./onlinecheck ../etc/tlspool.conf | tee | grep -v 'UNEXPECTED OUTPUT FAILURE'
 
 pulleybacksimu: pulleybacksimu.c
 	@# gcc $(CFLAGS) -o "$@" "$<" ../pulleyback/api.o ../pulleyback/parse.o ../pulleyback/connect.o ../pulleyback/update.o -lquickder -ldb
