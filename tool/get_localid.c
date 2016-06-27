@@ -44,6 +44,8 @@ struct typemap_t {
 struct typemap_t typemap [] = {
 	{ "X.509",	1 },
 	{ "OpenPGP",	2 },
+	{ "Kerberos",	4 },
+	{ "krb5",	4 },
 	{ "valexp",	5 },
 	{ "client",	256 },
 	{ "server",	512 },

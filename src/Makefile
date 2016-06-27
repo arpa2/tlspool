@@ -5,12 +5,11 @@ OBJS = daemon.o config.o manage.o service.o cache.o pinentry.o lidentry.o \
 	validate.o online.o pgp.o trust.o
 
 CFLAGS += -pthread -I ../include -std=gnu11
-CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS) $(UNBOUND_CFLAGS) $(QUICKDER_CFLAGS)
-CFLAGS += -O0 -ggdb3
+CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS) $(UNBOUND_CFLAGS) $(KERBEROS_CFLAGS) $(QUICKDER_CFLAGS)
 
 LDFLAGS += -std=gnu11
 
-LIBS = $(GNUTLS_LIBS) $(P11KIT_LIBS) $(BDB_LIBS) $(TASN1_LIBS) $(UNBOUND_LIBS) $(QUICKDER_LIBS)
+LIBS = $(GNUTLS_LIBS) $(P11KIT_LIBS) $(BDB_LIBS) $(TASN1_LIBS) $(UNBOUND_LIBS) $(KERBEROS_LIBS) $(QUICKDER_LIBS)
 LIBS += -lldap -lldns -lpthread
 
 ifdef WITH_SYSTEMD
@@ -48,6 +47,15 @@ BDB_LIBS   = -ldb-6.1
 else
 BDB_LIBS   = -ldb # this is the default
 endif
+TASN1_CFLAGS = $(shell pkg-config --cflags libtasn1)
+TASN1_LIBS   = $(shell pkg-config --libs   libtasn1)
+#HOWTOUSE# UNBOUND_FLAGS = $(shell pkg-config --cflags libunbound)
+#HOWTOUSE# UNBOUBD_LIBS  = $(shell pkg-config --libs   libunbound)
+QUICKDER_CFLAGS = $(shell pkg-config --cflags quick-der)
+QUICKDER_LIBS = $(shell pkg-config --libs quick-der)
+KERBEROS_CFLAGS = $(shell krb5-config --cflags)
+KERBEROS_LIBS = $(shell krb5-config --libs)
+# CFLAGS += -DHAVE_TLS_KDH
 
 all: $(TARGETS)
 
