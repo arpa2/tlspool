@@ -9,11 +9,14 @@
 #include <string.h>
 
 #include <tlspool/commands.h>
+#include <tlspool/starttls.h>
 
 #include <db.h>
 
 
-#define EXPECTED_LID_TYPE_COUNT 4
+#define EXPECTED_LID_TYPE_COUNT 5
+
+#define CERTS_MAX_DEPTH 10
 
 
 /* A simple (data*,size) construct named pool_datum_t
@@ -28,7 +31,7 @@ typedef struct pool_datum {
  * information for local administrative purposes.
  */
 struct command {
-	int clientfd;
+	pool_handle_t clientfd;
 	int passfd;
 	int claimed;
 	pthread_t handler;
@@ -41,9 +44,16 @@ struct command {
 	int session_errno;
 	intptr_t session_certificate;
 	intptr_t session_privatekey;
+	char *trust_valexp;
+	int valexp_result;
 	int anonpre;
 	char valflags [32];
 	unsigned int vfystatus;
+	int remote_auth_type;
+	void *remote_cert_raw;
+	int remote_cert_type;
+	void *remote_cert [CERTS_MAX_DEPTH];
+	uint8_t remote_cert_count;
 };
 
 
@@ -72,7 +82,7 @@ struct soxinfo {
  */
 struct callback {
 	struct callback *next;		/* Lists, e.g. free list or cbq list */
-	int fd;
+	pool_handle_t fd;           /* client socket receiving callback */
 	pthread_cond_t semaphore;	/* Dependent is waiting for signal */
 	struct command *followup;	/* Link to the callback returned cmd */
 	int timedout;			/* Callback will be ignored, timeout */
@@ -103,7 +113,7 @@ void send_error (struct command *cmd, int tlserrno, char *msg);
 void send_success (struct command *cmd);
 int send_command (struct command *cmd, int passfd);
 struct command *send_callback_and_await_response (struct command *cmdresp, time_t opt_timeout);
-void register_server_socket (int srvsox);
+void register_server_socket (pool_handle_t srvsox);
 
 /* pinentry.c */
 void setup_pinentry (void);
@@ -111,7 +121,7 @@ void cleanup_pinentry (void);
 void register_pinentry_command (struct command *cmd);
 success_t token_callback (const char *const label, unsigned retry);
 success_t pin_callback (int attempt, const char *token_url, const char *token_label, char *pin, size_t pin_max);
-void pinentry_forget_clientfd (int fd);
+void pinentry_forget_clientfd (pool_handle_t fd);
 
 /* starttls.c */
 void setup_starttls (void);
@@ -128,11 +138,13 @@ unsigned int cfg_log_filter (void);
 char *cfg_dbenv_dir (void);
 char *cfg_db_localid (void);
 char *cfg_db_disclose (void);
+char *cfg_db_trust (void);
 char *cfg_tls_dhparamfile (void);
 unsigned int cfg_tls_maxpreauth (void);
 uint32_t cfg_facilities (void);
 char *cfg_tls_onthefly_signcert (void);
 char *cfg_tls_onthefly_signkey (void);
+char *cfg_dnssec_rootkey (void);
 
 
 
@@ -241,7 +253,7 @@ enum security_layer {
 struct ctlkeynode {
 	uint8_t ctlkey [TLSPOOL_CTLKEYLEN];
 	struct ctlkeynode *lessnode, *morenode;
-	int ctlfd;
+	pool_handle_t ctlfd;
 	int forked;
 	enum security_layer security;
 };
@@ -262,7 +274,7 @@ struct ctlkeynode {
  * be -1 to signal it is detached.  The forked flag should be non-zero
  * to indicate that this is a forked connection.
  */
-int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, enum security_layer sec, int ctlfd, int forked);
+int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, enum security_layer sec, pool_handle_t ctlfd, int forked);
 
 /* Remove a registered cltkey value from th registry.  This is the most
  * complex operation, as it needs to merge the subtrees.
@@ -290,7 +302,7 @@ int ctlkey_unregister (uint8_t *ctlkey);
  * be cleaned up.  Note that detaching is not done before the TLS handshake
  * is complete.
  */
-void ctlkey_close_ctlfd (int clisox);
+void ctlkey_close_ctlfd (pool_handle_t clisox);
 
 /* Find a ctlkeynode based on a ctlkey.  Returns NULL if not found.
  * 
@@ -301,7 +313,7 @@ void ctlkey_close_ctlfd (int clisox);
  * which means that a non-NULL return value must later be passed to a function
  * that unlocks the resource, ctlkey_unfind().
  */
-struct ctlkeynode *ctlkey_find (uint8_t *ctlkey, enum security_layer sec, int ctlfd);
+struct ctlkeynode *ctlkey_find (uint8_t *ctlkey, enum security_layer sec, pool_handle_t ctlfd);
 
 /* Free a ctlkeynode that was returned by ctlkey_find().  This function also
  * accepts a NULL argument, though those need not be passed through this
@@ -342,7 +354,7 @@ void register_lidentry_command (struct command *cmd);
  * being closed.  The LIDENTRY facility is freed up immediately for the next
  * requestor.
  */
-void lidentry_forget_clientfd (int fd);
+void lidentry_forget_clientfd (pool_handle_t fd);
 
 /* Check if the localid registration permits skipping of the given database
  * entry.  Such skips mean that the database entry on its own may fulfill the
@@ -473,7 +485,7 @@ struct valexp_handling {
  * code simplicity.
  */
 struct valexp *valexp_register (char **and_expressions,
-				struct valexp_handling *handler_functions,
+				const struct valexp_handling *handler_functions,
 				void *handler_data);
 
 
@@ -523,6 +535,9 @@ void snprint_valexp (char *buf, int buflen, struct valexp *ve);
 
 /********** online.c definitions **********/
 
+
+void setup_online (void);
+void cleanup_online (void);
 
 /* Error levels: Proven correct, uncertain due to missing online info, or
  * proven wrong.

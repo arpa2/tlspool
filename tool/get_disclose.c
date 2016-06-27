@@ -143,7 +143,7 @@ int main (int argc, char *argv []) {
 	if (selector_iterate_init (&selector_iter, &selector_donai)) do {
 		int gotit = 0;
 		printable_len = donai_iterate_memput (printable, &selector_iter);
-		bzero (&k_selector, sizeof (k_selector));
+		memset (&k_selector, 0, sizeof (k_selector));
 		k_selector.data = printable;
 		k_selector.size = printable_len;
 		gotit = (crs->get (crs, &k_selector, &k_localid, DB_SET) == 0);
@@ -183,7 +183,6 @@ int main (int argc, char *argv []) {
 	//
 	// Finally, commit the transaction
 	if (txn->commit (txn, 0) != 0) {
-		txn->abort (txn);
 		fprintf (stderr, "Failed to commit readonly transaction\n");
 		exit (1);
 	}

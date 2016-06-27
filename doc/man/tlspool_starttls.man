@@ -108,7 +108,7 @@ may hold locally defined bits (none at the present time)
 .I ipproto
 .RB "one of the values " IPPROTO_TCP ", " IPPROTO_UDP " and " IPPROTO_SCTP
 .TP
-.I sreamid
+.I streamid
 when
 .I ipproto
 is set to
@@ -174,7 +174,7 @@ may hold locally defined bits (none at the present time)
 .I ipproto
 would not have changed.
 .TP
-.I sreamid
+.I streamid
 would not have changed.
 .TP
 .I localid

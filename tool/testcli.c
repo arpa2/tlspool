@@ -124,7 +124,7 @@ reconnect:
 		perror ("Failed to create socket on testcli");
 		exit (1);
 	}
-	bzero (&sin6, sizeof (sin6));
+	memset (&sin6, 0, sizeof (sin6));
 	sin6.sin6_family = AF_INET6;
 	sin6.sin6_port = htons (12345);
 	memcpy (&sin6.sin6_addr, &in6addr_loopback, 16);
@@ -137,10 +137,6 @@ reconnect:
 		}
 		exit (1);
 	}
-#ifdef __CYGWIN__
-	printf("Connected, sleep(1) and then starting TLS\n");
-	sleep(1);
-#endif
 	plainfd = -1;
 	if (-1 == tlspool_starttls (sox, &tlsdata_cli, &plainfd, NULL)) {
 		perror ("Failed to STARTTLS on testcli");

@@ -99,6 +99,16 @@ void printoutput (int expected, char *tdesc, int tres) {
 int main (int argc, char *argv []) {
 	int exitval = 1;
 	int output;
+
+	// First load the configuration to get a reference to the DNSSEC root key
+	if (argc != 2) {
+		printf ("Please supply just a configuration file");
+		exit (1);
+	} else {
+		parse_cfgfile (argv [1], 0);
+	}
+
+	// Now proceed with initialisation
 	setup_online ();
 	readcert ();
 	readpgpkey ();
@@ -128,17 +138,17 @@ int main (int argc, char *argv []) {
 
 	printf ("\n#\n# TEST PGP-BASED IDENTITIES\n#\n\n");
 
-	output = online_globaldir_pgp ("tester1@test.arpa2.org", testcert, testcert_size);
+	output = online_globaldir_pgp ("tester1@test.arpa2.org", testpgpkey, testpgpkey_size);
 	printoutput (ONLINE_SUCCESS, "tester1 under DNSSEC domain", output);
-	output = online_globaldir_pgp ("tester2@test.arpa2.org", testcert, testcert_size);
+	output = online_globaldir_pgp ("tester2@test.arpa2.org", testpgpkey, testpgpkey_size);
 	printoutput (ONLINE_SUCCESS, "tester2 under DNSSEC domain", output);
-	output = online_globaldir_pgp ("tester3@test.arpa2.org", testcert, testcert_size);
+	output = online_globaldir_pgp ("tester3@test.arpa2.org", testpgpkey, testpgpkey_size);
 	printoutput (ONLINE_NOTFOUND, "tester3 under DNSSEC domain", output);
-	output = online_globaldir_pgp ("tester1@insecure.test.arpa2.org", testcert, testcert_size);
+	output = online_globaldir_pgp ("tester1@insecure.test.arpa2.org", testpgpkey, testpgpkey_size);
 	printoutput (ONLINE_NOTFOUND, "tester1 under insecure domain", output);
-	output = online_globaldir_pgp ("tester2@insecure.test.arpa2.org", testcert, testcert_size);
+	output = online_globaldir_pgp ("tester2@insecure.test.arpa2.org", testpgpkey, testpgpkey_size);
 	printoutput (ONLINE_NOTFOUND, "tester2 under insecure domain", output);
-	output = online_globaldir_pgp ("tester3@insecure.test.arpa2.org", testcert, testcert_size);
+	output = online_globaldir_pgp ("tester3@insecure.test.arpa2.org", testpgpkey, testpgpkey_size);
 	printoutput (ONLINE_NOTFOUND, "tester3 under insecure domain", output);
 
 	printf ("\n#\n# TESTS COMPLETED\n#\n\n");

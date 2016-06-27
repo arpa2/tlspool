@@ -1,5 +1,6 @@
 /* tlspool/starttls.c -- Setup and validation handler for TLS session */
 
+#include "whoami.h"
 
 #include <stdlib.h>
 #include <stdint.h>
@@ -14,7 +15,6 @@
 #include <unistd.h>
 #include <syslog.h>
 #include <errno.h>
-#include <poll.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -27,15 +27,39 @@
 #include <gnutls/abstract.h>
 #include <gnutls/dane.h>
 
+#include <tlspool/commands.h>
+#include <tlspool/internal.h>
+
 #include <libtasn1.h>
 
 #include <krb5.h>
 
 #include <tlspool/internal.h>
 
+#ifdef WINDOWS_PORT
+#include <winsock2.h>
+#else
+#include <poll.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+
+#ifndef __MINGW64__
+#include <arpa/inet.h>
+#endif
+#endif
+
+#ifdef WINDOWS_PORT
+#include <windows.h>
+#define RECV_FLAGS 0
+#define SHUT_RD SD_RECEIVE
+#define SHUT_WR SD_SEND
+#else /* WINDOWS_PORT */
+#define RECV_FLAGS MSG_DONTWAIT | MSG_NOSIGNAL
+#endif /* WINDOWS_PORT */
 
 #include "manage.h"
 #include "donai.h"
+#include "trust.h"
 
 
 #if EXPECTED_LID_TYPE_COUNT != LID_TYPE_CNT
@@ -520,7 +544,7 @@ static gtls_error load_dh_params (void) {
 	gnutls_datum_t pkcs3;
 	char *filename = cfg_tls_dhparamfile ();
 	int gtls_errno = GNUTLS_E_SUCCESS;
-	bzero (&pkcs3, sizeof (pkcs3));
+	memset (&pkcs3, 0, sizeof (pkcs3));
 	if (filename) {
 		E_g2e ("No PKCS #3 PEM file with DH params",
 			gnutls_load_file (
@@ -655,11 +679,13 @@ void starttls_pkcs11_provider (char *p11path) {
 	//TODO:WHY?// free_p11pin ();
 }
 
+static void cleanup_starttls_credentials (void);/* Defined below */
+static void cleanup_starttls_validation (void);	/* Defined below */
+static int setup_starttls_credentials (void);	/* Defined below */
 
 /* The global and static setup function for the starttls functions.
  */
 void setup_starttls (void) {
-	int setup_starttls_credentials (void);	/* Defined below */
 	const char *curver;
 	int gtls_errno = GNUTLS_E_SUCCESS;
 	char *otfsigcrt, *otfsigkey;
@@ -800,7 +826,6 @@ fprintf (stderr, "DEBUG: When it matters, gtls_errno = %d, onthefly_issuercrt %s
 /* Cleanup the structures and resources that were setup for handling TLS.
  */
 void cleanup_starttls (void) {
-	void cleanup_starttls_credentials (void);	/* Defined below */
 	//MOVED// cleanup_management ();
 	if (onthefly_subjectkey != NULL) {
 		gnutls_x509_privkey_deinit (onthefly_subjectkey);
@@ -865,7 +890,7 @@ void cleanup_starttls (void) {
  * GNUTLS_E_REHANDSHAKE which client or server side may receive when an
  * attempt is made to renegotiate the security of the connection.
  */
-static int copycat (int local, int remote, gnutls_session_t wrapped, int client) {
+static int copycat (int local, int remote, gnutls_session_t wrapped, pool_handle_t client) {
 	char buf [1024];
 	struct pollfd inout [3];
 	ssize_t sz;
@@ -873,10 +898,15 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 	int have_client;
 	int retval = GNUTLS_E_SUCCESS;
 
+client = INVALID_POOL_HANDLE;
 	inout [0].fd = local;
 	inout [1].fd = remote;
+#ifdef WINDOWS_PORT
+	have_client = 0;
+#else
 	inout [2].fd = client;
-	have_client = inout [2].fd >= 0;
+	have_client = inout [2].fd != INVALID_POOL_HANDLE;
+#endif
 	if (!have_client) {
 		inout [2].revents = 0;	// Will not be written by poll
 		//FORK!=DETACH// inout [2].fd = ctlkey_signalling_fd;
@@ -897,7 +927,7 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 		}
 		if (inout [0].revents & POLLIN) {
 			// Read local and encrypt to remote
-			sz = recv (local, buf, sizeof (buf), MSG_DONTWAIT | MSG_NOSIGNAL);
+			sz = recv (local, buf, sizeof (buf), RECV_FLAGS);
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat received %d local bytes (or error<0) from %d", (int) sz, local);
 			if (sz == -1) {
 				tlog (TLOG_COPYCAT, LOG_ERR, "Error while receiving: %s", strerror (errno));
@@ -905,7 +935,11 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 			} else if (sz == 0) {
 				inout [0].events &= ~POLLIN;
 				shutdown (local, SHUT_RD);
+#ifdef WINDOWS_PORT
+				setsockopt (remote, SOL_SOCKET, SO_LINGER, (const char *) &linger, sizeof (linger));
+#else /* WINDOWS_PORT */
 				setsockopt (remote, SOL_SOCKET, SO_LINGER, &linger, sizeof (linger));
+#endif /* WINDOWS_PORT */
 				gnutls_bye (wrapped, GNUTLS_SHUT_WR);
 			} else if (gnutls_record_send (wrapped, buf, sz) != sz) {
 				tlog (TLOG_COPYCAT, LOG_ERR, "gnutls_record_send() failed to pass on the requested bytes");
@@ -933,9 +967,13 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 			} else if (sz == 0) {
 				inout [1].events &= ~POLLIN;
 				shutdown (remote, SHUT_RD);
+#ifdef WINDOWS_PORT
+				setsockopt (local, SOL_SOCKET, SO_LINGER, (const char *) &linger, sizeof (linger));
+#else /* WINDOWS_PORT */
 				setsockopt (local, SOL_SOCKET, SO_LINGER, &linger, sizeof (linger));
+#endif /* WINDOWS_PORT */
 				shutdown (local, SHUT_WR);
-			} else if (send (local, buf, sz, MSG_DONTWAIT | MSG_NOSIGNAL) != sz) {
+			} else if (send (local, buf, sz, RECV_FLAGS) != sz) {
 				break;	// communication error
 			} else {
 				tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat sent %d bytes to local %d", (int) sz, local);
@@ -947,6 +985,7 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat data connection polling returned a special condition");
 			break;	// Apparently, one of POLLERR, POLLHUP, POLLNVAL
 		}
+#ifndef WINDOWS_PORT
 		if (inout [2].revents & ~POLLIN) {
 			if (have_client) {
 				// This case is currently not ever triggered
@@ -963,6 +1002,7 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 				continue;
 			}
 		}
+#endif /* !WINDOWS_PORT */
 	}
 	tlog (TLOG_COPYCAT, LOG_DEBUG, "Ending copycat cycle for local=%d, remote=%d", local, remote);
 	return retval;
@@ -1315,7 +1355,7 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 	//
 	// Return the overral error code, hopefully GNUTLS_E_SUCCESS
 	tlog (TLOG_TLS, LOG_DEBUG, "Returning %d / %s from clisrv_cert_retrieve()", gtls_errno, gnutls_strerror (gtls_errno));
-printf ("DEBUG: clisrv_cert_retrieve() sets *pcert to 0x%xl (length %d)... {pubkey = 0x%lx, cert= {data = 0x%lx, size=%ld}, type=%ld}\n", (long) *pcert, *pcert_length, (long) (*pcert)->pubkey, (long) (*pcert)->cert.data, (long) (*pcert)->cert.size, (long) (*pcert)->type);
+fprintf (stderr, "DEBUG: clisrv_cert_retrieve() sets *pcert to 0x%xl (length %d)... {pubkey = 0x%lx, cert= {data = 0x%lx, size=%ld}, type=%ld}\n", (long) *pcert, *pcert_length, (long) (*pcert)->pubkey, (long) (*pcert)->cert.data, (long) (*pcert)->cert.size, (long) (*pcert)->type);
 	return gtls_errno;
 }
 
@@ -1371,7 +1411,9 @@ gnutls_pcert_st *load_certificate_chain (uint32_t flags, unsigned int *chainlen,
 		(*chainlen)++;
 		chain = (gnutls_pcert_st *) calloc (*chainlen, sizeof (gnutls_pcert_st));
 		if (chain != NULL) {
-			bzero (chain, (*chainlen) * sizeof (gnutls_pcert_st));
+			memset (chain,
+				0,
+				(*chainlen) * sizeof (gnutls_pcert_st));
 		} else {
 			gtls_errno = GNUTLS_E_MEMORY_ERROR;
 		}
@@ -1527,6 +1569,27 @@ static krb5_error_code have_credcache (krb5_principal sought, krb5_ccache *found
 #endif
 
 
+/********** VALIDATION EXPRESSION LINKUP TO GNUTLS **********/
+
+
+/*
+ * The following functions implement the various validation expression
+ * components in terms of the GnuTLS sessions of this code file.
+ * Some work is repeated in various expression variables, notably the
+ * lookup of a session's peer credentials, and possibly importing them
+ * into X.509 structures.  We may at some point decide to instead do
+ * this ahead of time, ath the expense of some compleity and possibly
+ * slow-down of the start of the computations.
+ */
+
+
+
+/* valexp_store_final -- store the valexp outcome in cmd->valexp_result.
+ */
+static void valexp_store_final (void *vcmd, struct valexp *ve, bool result) {
+	((struct command *) vcmd)->valexp_result = result;
+}
+
 /* valexp_valflag_set -- set a validation flag bit for an uppercase predicate.
  */
 static void valexp_valflag_set (struct command *cmd, char pred) {
@@ -1567,11 +1630,18 @@ static void valexp_1_start (void *vcmd, struct valexp *ve, char pred) {
  */
 static void valexp_I_start (void *vcmd, struct valexp *ve, char pred) {
 	struct command *cmd = (struct command *) vcmd;
-	unsigned int num_certs = 0;
+	int ok = 1;
+	ok = ok && (cmd->remote_auth_type == GNUTLS_CRD_CERTIFICATE);
+	ok = ok && (cmd->remote_cert_count > 0);
+	// Accept most certificates, but not for example GNUTLS_CRT_RAW
+	ok = ok && (
+#ifdef GNUTLS_CRT_KRB
+		(cmd->remote_cert_type == GNUTLS_CRT_KRB) ||
+#endif
+		(cmd->remote_cert_type == GNUTLS_CRT_X509) ||
+		(cmd->remote_cert_type == GNUTLS_CRT_OPENPGP) );
 	// peer-returned "certs" points into GnuTLS' internal data structures
-	valexp_setpredicate (ve, pred,
-		(gnutls_certificate_get_peers (cmd->session, &num_certs) != NULL)
-		&& (num_certs > 0));
+	valexp_setpredicate (ve, pred, ok);
 }
 
 /* valexp_i_start -- is opportunistic and will always succeed
@@ -1628,29 +1698,87 @@ static void valexp_Ff_start (void *vcmd, struct valexp *ve, char pred) {
 static void valexp_Tt_start (void *vcmd, struct valexp *ve, char pred) {
 	struct command *cmd = (struct command *) vcmd;
 	int flagval = 0;
-	gnutls_credentials_type_t authtp;
-	const gnutls_datum_t *certs;
-	unsigned int num_certs;
-	if (cmd->vfystatus == 0) {
+	unsigned int vfyresult;
+	int bad;
+	int i;
+	if (cmd->vfystatus != 0) {
 		goto setflagval;
 	}
-	authtp = gnutls_auth_get_type (cmd->session);
-	if (authtp != GNUTLS_CRD_CERTIFICATE) {
+	if (cmd->remote_auth_type != GNUTLS_CRD_CERTIFICATE) {
 		goto setflagval;
 	}
-	certs = gnutls_certificate_get_peers (cmd->session, &num_certs);
-	// "certs" points into GnuTLS' internal data structures
-	if (num_certs < 1) {
-		goto setflagval;
+	//
+	// Handle self-signed peer certificates in a special way
+	if (cmd->remote_cert_count == 1) {
+		int bad = 0;
+		bad = bad || (pred == 'T');	// Reject self-signed
+		if (cmd->remote_cert_type == GNUTLS_CRT_X509) {
+			vfyresult = 0;
+			bad = bad || gnutls_x509_crt_verify (
+				(gnutls_x509_crt_t   ) cmd->remote_cert [0],
+				(gnutls_x509_crt_t *) &cmd->remote_cert [0], 1,
+				GNUTLS_VERIFY_DISABLE_CA_SIGN,
+				&vfyresult);
+			// Apply the most stringent test.  This includes all of
+			// GNUTLS_CERT_INVALID (always set, often with others)
+			// GNUTLS_CERT_NOT_ACTIVATED
+			// GNUTLS_CERT_EXPIRED
+			// GNUTLS_CERT_SIGNER_CONSTRAINTS_FAILURE
+			// GNUTLS_CERT_SIGNER_NOT_FOUND
+			// GNUTLS_CERT_SIGNER_NOT_CA => oops...
+			//	stopped with GNUTLS_VERIFY_DISABLE_CA_SIGN
+			// GNUTLS_CERT_SIGNATURE_FAILURE
+			// GNUTLS_CERT_INSECURE_ALGORITHM
+			bad = bad || (vfyresult != 0);
+			if (!bad) {
+				flagval = 1;
+				goto setflagval;
+			}
+		} else if (cmd->remote_cert_type == GNUTLS_CRT_OPENPGP) {
+			//TODO// Prefer to actually check PGP self-signature
+			//TODO// But only value is check private-key ownership
+			flagval = 0;
+			goto setflagval;
+#ifdef GNUTLS_CRT_KRB
+		} else if (cmd->remote_cert_type == GNUTLS_CRT_KRB) {
+			// Kerberos has authenticated the ticket for us
+			//TODO// Should we try reading from the ticket/auth?
+			flagval = 1;
+			goto setflagval;
+#endif
+		}
+		if (bad) {
+			goto setflagval;
+		}
 	}
-	if ((num_certs == 1) && (pred == 't')) {
-		//TODO// if (self-signature-correct) {
-		//TODO// 	flagval = 1;
-		//TODO// 	goto setflagval;
-		//TODO// }
+	if (cmd->remote_cert_type == GNUTLS_CRT_X509) {
+		// Now check the certificate chain, taking CA bits into account
+		for (i=1; i<cmd->remote_cert_count; i++) {
+			vfyresult = 0;
+			bad = bad || gnutls_x509_crt_verify (
+				(gnutls_x509_crt_t  )  cmd->remote_cert [i-1],
+				(gnutls_x509_crt_t *) &cmd->remote_cert [i], 1,
+				0,
+				&vfyresult);
+			// Apply the most stringent test.  This includes all of
+			// GNUTLS_CERT_INVALID (always set, often with others)
+			// GNUTLS_CERT_NOT_ACTIVATED
+			// GNUTLS_CERT_EXPIRED
+			// GNUTLS_CERT_SIGNER_CONSTRAINTS_FAILURE
+			// GNUTLS_CERT_SIGNER_NOT_FOUND
+			// GNUTLS_CERT_SIGNER_NOT_CA => oops...
+			//	stopped with GNUTLS_VERIFY_DISABLE_CA_SIGN
+			// GNUTLS_CERT_SIGNATURE_FAILURE
+			// GNUTLS_CERT_INSECURE_ALGORITHM
+			bad = bad || (vfyresult != 0);
+		}
+	} else if (cmd->remote_cert_type == GNUTLS_CRT_OPENPGP) {
+		; //TODO// Check PGP direct signature (and also use in self-sig)
+#ifdef GNUTLS_CRT_KRB
+	} else if (cmd->remote_cert_type == GNUTLS_CRT_KRB) {
+		; // Trust has already been validated through Kerberos
+#endif
 	}
-	//TODO// Look in trust.db for H(cert[num_certs-1])
-	//TODO// flagval = 1;
 setflagval:
 	valexp_setpredicate (ve, pred, flagval);
 }
@@ -1703,6 +1831,7 @@ static void valexp_Dd_start (void *vcmd, struct valexp *ve, char pred) {
 		port = ntohs (((struct sockaddr_in6 *) &peername)->sin6_port);
 		goto setflagval;
 	}
+	//TODO// We might use online.c code instead?
 	if (dane_state_init (&stat, /*TODO:*/ 0) != GNUTLS_E_SUCCESS) {
 		goto setflagval;
 	}
@@ -1747,23 +1876,17 @@ static void valexp_Ee_start (void *vcmd, struct valexp *ve, char pred) {
 /* valexp_Oo_start -- validation function for the GnuTLS backend.
  * This function validates with online/live information.
  * While _O_ required positive confirmation, _o_ also accepts unknown.
- *  -> For X.509,    look in OCSP
+ *  -> For X.509,    look in OCSP or CRL or Global Directory
  *  -> For OpenPGP,  redirect O->G, o->g
  *  -> For Kerberos, accept anything as sufficiently live / online
  */
 static void valexp_Oo_start (void *vcmd, struct valexp *ve, char pred) {
 	struct command *cmd = (struct command *) vcmd;
 	int valflag = 0;
-	char *atnam = NULL;
-	char *atoid = NULL;
-	gnutls_credentials_type_t authtp;
-	gnutls_certificate_type_t certtp;
 	online2success_t o2vf;
 	char *rid;
-	const gnutls_datum_t *crt;
-	unsigned int crtcount;
-	authtp = gnutls_auth_get_type (cmd->session);
-	if (authtp != GNUTLS_CRD_CERTIFICATE) {
+	gnutls_datum_t *raw;
+	if (cmd->remote_auth_type != GNUTLS_CRD_CERTIFICATE) {
 		// No authentication types other than certificates yet
 		goto setvalflag;
 	} else {
@@ -1772,18 +1895,19 @@ static void valexp_Oo_start (void *vcmd, struct valexp *ve, char pred) {
 		} else {
 			o2vf = online2success_enforced;
 		}
-		certtp = gnutls_certificate_type_get (cmd->session);
-		crt = gnutls_certificate_get_peers (cmd->session, &crtcount);
 		rid = cmd->cmd.pio_data.pioc_starttls.remoteid;
-		if (certtp == GNUTLS_CRT_OPENPGP) {
+		raw = (gnutls_datum_t *) cmd->remote_cert_raw;
+		if (cmd->remote_cert_type == GNUTLS_CRT_OPENPGP) {
 			valflag = o2vf (online_globaldir_pgp (
-					rid, crt->data, crt->size));
-		} else if (certtp == GNUTLS_CRT_X509) {
-			//TODO// OCSP inquiry or globaldir
+					rid,
+					raw->data, raw->size));
+		} else if (cmd->remote_cert_type == GNUTLS_CRT_X509) {
+			// OCSP inquiry or globaldir
 			valflag = o2vf (online_globaldir_x509 (
-					rid, crt->data, crt->size));
+					rid,
+					raw->data, raw->size));
 #ifdef HAVE_TLS_KDH
-		} else if (certtp == GNUTLS_CRT_KRB) {
+		} else if (cmd->remote_cert_type == GNUTLS_CRT_KRB) {
 			// Kerberos is sufficiently "live" to be pass O
 			valflag = 1;
 			goto setvalflag;
@@ -1809,16 +1933,10 @@ setvalflag:
 static void valexp_Gg_start (void *vcmd, struct valexp *ve, char pred) {
 	struct command *cmd = (struct command *) vcmd;
 	int valflag = 0;
-	char *atnam = NULL;
-	char *atoid = NULL;
-	gnutls_credentials_type_t authtp;
-	gnutls_certificate_type_t certtp;
 	online2success_t o2vf;
 	char *rid;
-	const gnutls_datum_t *crt;
-	unsigned int crtcount;
-	authtp = gnutls_auth_get_type (cmd->session);
-	if (authtp != GNUTLS_CRD_CERTIFICATE) {
+	gnutls_datum_t *raw;
+	if (cmd->remote_auth_type != GNUTLS_CRD_CERTIFICATE) {
 		// No authentication types other than certificates yet
 		goto setvalflag;
 	} else {
@@ -1827,21 +1945,23 @@ static void valexp_Gg_start (void *vcmd, struct valexp *ve, char pred) {
 		} else {
 			o2vf = online2success_enforced;
 		}
-		certtp = gnutls_certificate_type_get (cmd->session);
-		crt = gnutls_certificate_get_peers (cmd->session, &crtcount);
 		rid = cmd->cmd.pio_data.pioc_starttls.remoteid;
-		if (certtp == GNUTLS_CRT_OPENPGP) {
+		raw = (gnutls_datum_t *) cmd->remote_cert_raw;
+		if (cmd->remote_cert_type == GNUTLS_CRT_OPENPGP) {
 			valflag = o2vf (online_globaldir_pgp (
-					rid, crt->data, crt->size));
-		} else if (certtp == GNUTLS_CRT_X509) {
+					rid,
+					raw->data, raw->size));
+		} else if (cmd->remote_cert_type == GNUTLS_CRT_X509) {
 			//TODO// OCSP inquiry or globaldir
 			valflag = o2vf (online_globaldir_x509 (
-					rid, crt->data, crt->size));
-#ifdef HAVE_TLS_KDH
-		} else if (certtp == GNUTLS_CRT_KRB) {
+					rid,
+					raw->data, raw->size));
+#ifdef GNUTLS_CRT_KRB
+		} else if (cmd->remote_cert_type == GNUTLS_CRT_KRB) {
 			valflag = 0;
 			//TODO// valflag = o2vf (online_globaldir_kerberos (
-			//TODO// 		rid, crt->data, crt->size));
+			//TODO// 		rid,
+			//TODO//		raw->data, raw->size));
 #endif
 		} else {
 			// GNUTLS_CRT_RAW, GNUTLS_CRT_UNKNOWN, or other
@@ -1899,6 +2019,347 @@ static void valexp_Cc_start (void *vcmd, struct valexp *ve, char pred) {
 	valexp_setpredicate (ve, pred, flagval);
 }
 
+
+static void valexp_error_start (void *handler_data, struct valexp *ve, char pred) {
+	assert (0);
+}
+static void valexp_ignore_stop (void *handler_data, struct valexp *ve, char pred) {
+	; // Nothing to do
+}
+static void valexp_ignore_final (void *handler_data, struct valexp *ve, bool value) {
+	; // Nothing to do
+}
+
+
+/* Given a predicate, invoke its start routine.
+ */
+static void valexp_switch_start (void *handler_data, struct valexp *ve, char pred) {
+	switch (pred) {
+	case 'I':
+		valexp_I_start (handler_data, ve, pred);
+		break;
+	case 'i':
+		valexp_i_start (handler_data, ve, pred);
+		break;
+	case 'F':
+	case 'f':
+		valexp_Ff_start (handler_data, ve, pred);
+		break;
+	case 'A':
+		valexp_A_start (handler_data, ve, pred);
+		break;
+	case 'a':
+		valexp_a_start (handler_data, ve, pred);
+		break;
+	case 'T':
+	case 't':
+		valexp_Tt_start (handler_data, ve, pred);
+		break;
+	case 'D':
+	case 'd':
+		valexp_Dd_start (handler_data, ve, pred);
+		break;
+	case 'R':
+	case 'r':
+		valexp_Rr_start (handler_data, ve, pred);
+		break;
+	case 'E':
+	case 'e':
+		valexp_Ee_start (handler_data, ve, pred);
+		break;
+	case 'O':
+	case 'o':
+		valexp_Oo_start (handler_data, ve, pred);
+		break;
+	case 'G':
+	case 'g':
+		valexp_Gg_start (handler_data, ve, pred);
+		break;
+	case 'P':
+	case 'p':
+		valexp_Pp_start (handler_data, ve, pred);
+		break;
+	case 'U':
+		valexp_U_start (handler_data, ve, pred);
+		break;
+	case 'S':
+	case 's':
+		valexp_Ss_start (handler_data, ve, pred);
+		break;
+	case 'C':
+	case 'c':
+		valexp_Cc_start (handler_data, ve, pred);
+		break;
+	default:
+		// Called on an unregistered symbol, that spells failure
+		valexp_setpredicate (ve, pred, 0);
+		break;
+	}
+}
+
+/* Return a shared constant structure for valexp_handling with GnuTLS.
+ * This function does not fail; it always returns a non-NULL value.
+ */
+static const struct valexp_handling *have_starttls_validation (void) {
+	static const struct valexp_handling starttls_valexp_handling = {
+		.handler_start = valexp_switch_start,
+		.handler_stop  = valexp_ignore_stop,
+		.handler_final = valexp_store_final,
+	};
+	return &starttls_valexp_handling;
+}
+
+
+
+/* If any remote credentials are noted, cleanup on them.  This removes
+ * any remote_cert[...] entries, counting up to remote_cert_count which
+ * is naturally set to 0 initially, as well as after this has run.
+ */
+static void cleanup_any_remote_credentials (struct command *cmd) {
+	while (cmd->remote_cert_count > 0) {
+		gnutls_x509_crt_deinit (
+			cmd->remote_cert [--cmd->remote_cert_count]);
+	}
+	memset (cmd->remote_cert, 0, sizeof (cmd->remote_cert));
+}
+
+/* Fetch remote credentials.  This can be done after TLS handshaking has
+ * completed, to find the certificates or other credentials provided by
+ * the peer to establish its identity.  The validation expression routines
+ * can then refer to this resource, and won't have to request the same
+ * information over and over again.  To this end, the information is stored
+ * in the session object.  The arrays in which this information is stored
+ * are size-constrained, but that is also a good security precaution.
+ *
+ * The information ends up in the following variables:
+ *  - remote_auth_type
+ *  - remote_cert_type (if remote_auth_type == GNUTLS_CRD_CERTIFICATE)
+ *  - remote_cert[...] (if remote_cert_type == GNUTLS_CRD_CERTIFICATE)
+ *  - remote_cert_count is the number of entries in remote_cert (up to root)
+ *
+ * When certificates are used, the root certificate is looked up, for
+ * X.509 and PGP.
+ *
+ * After running successfully, a call to cleanup_any_remote_credentials()
+ * must be called to clean up any data in the cmd structure.  This may be
+ * done on cmd at any time after initialisation, even multiple times and
+ * even when this call fails.  This call actually cleans up anything it
+ * setup in the past, before setting up the data anew.
+ */
+static gtls_error fetch_remote_credentials (struct command *cmd) {
+	gtls_error gtls_errno = GNUTLS_E_SUCCESS;
+	const gnutls_datum_t *certs;
+	unsigned int num_certs;
+	gnutls_x509_crt_t x509peers [11]; // Peers + Root for GNUTLS_CRT_X509
+	int i;
+	bool got_chain = 0;
+	int peer_tad = -1;
+
+	// Did we run this before?  Then cleanup.
+	cleanup_any_remote_credentials (cmd);
+	//INVOLVES// memset (cmd->remote_cert, 0, sizeof (cmd->remote_cert));
+	//INVOLVES// cmd->remote_cert_count = 0;
+	// Prepare as-yet-unset default return values
+	cmd->remote_auth_type = -1;
+	cmd->remote_cert_raw = NULL;
+	//
+	// Obtain the authentication type for the peer
+	cmd->remote_auth_type = gnutls_auth_get_type (cmd->session);
+	switch (cmd->remote_auth_type) {
+	case GNUTLS_CRD_CERTIFICATE:
+		// Continue loading certificates in the GnuTLS format
+		break;
+	case GNUTLS_CRD_ANON:
+		// No basis for any identity claim
+		cmd->cmd.pio_data.pioc_starttls.remoteid [0] = '\0';
+		return GNUTLS_E_SUCCESS;
+	case GNUTLS_CRD_SRP:
+		return GNUTLS_E_SUCCESS;
+	case GNUTLS_CRD_PSK:
+		return GNUTLS_E_SUCCESS;
+	default:
+		return GNUTLS_E_AUTH_ERROR;
+	}
+	//
+	// Continue loading the certificate information: X.509, PGP, ...
+	cmd->remote_cert_type = gnutls_certificate_type_get (cmd->session);
+	certs = gnutls_certificate_get_peers (cmd->session, &num_certs);
+	if (certs == NULL) {
+		num_certs = 0;
+	}
+	// "certs" points into GnuTLS' internal data structures
+	if ((num_certs < 1) || (num_certs > CERTS_MAX_DEPTH)) {
+		return GNUTLS_E_AUTH_ERROR;
+	}
+	cmd->remote_cert_raw = (void *) &certs [0];
+	//
+	// Turn certificate data into GnuTLS' data structures (to be cleaned)
+	if (cmd->remote_cert_type == GNUTLS_CRT_X509) {
+		peer_tad = TAD_TYPE_X509;
+		for (i=0; i < num_certs; i++) {
+			E_g2e ("Failed to initialise peer X.509 certificate",
+				gnutls_x509_crt_init (
+					(gnutls_x509_crt_t *) &cmd->remote_cert [i]));
+			if (gtls_errno == GNUTLS_E_SUCCESS) {
+				cmd->remote_cert_count++;
+			}
+			E_g2e ("Failed to import peer X.509 certificate",
+				gnutls_x509_crt_import (
+					cmd->remote_cert [i],
+					&certs [i], GNUTLS_X509_FMT_DER));
+		}
+		if (gtls_errno != GNUTLS_E_SUCCESS) {
+			goto cleanup;
+		}
+	} else if (cmd->remote_cert_type == GNUTLS_CRT_OPENPGP) {
+		peer_tad = TAD_TYPE_PGP;
+		E_g2e ("Failed to initialise peer PGP key",
+				gnutls_x509_crt_init (
+					(gnutls_x509_crt_t *) &cmd->remote_cert [0]));
+		if (gtls_errno == GNUTLS_E_SUCCESS) {
+			cmd->remote_cert_count = 1;
+		}
+		E_g2e ("Failed to import peer PGP key",
+				gnutls_openpgp_crt_import (
+					cmd->remote_cert [0],
+					&certs [0], GNUTLS_OPENPGP_FMT_RAW));
+		if (gtls_errno != GNUTLS_E_SUCCESS) {
+			goto cleanup;
+		}
+	}
+
+	//
+	// Lookup the trusted party that the peers certificates is promoting.
+	// Note that even if the peer ends in a CA cert (which it may not
+	// always send along) then we can still add it ourselves again :-)
+	// Only worry might be that CA certs require no AuthorityKeyIdentifier.
+	if (cmd->remote_cert_type == GNUTLS_CRT_X509) {
+		// Retrieve the AuthorityKeyIdentifier from last (or semi-last)
+		uint8_t id [100];
+		size_t idsz;
+		DBT rootca;
+		DBT anchor;
+		DBC *crs_trust = NULL;
+		int db_errno;
+		gnutls_datum_t anchor_gnutls;
+		gnutls_x509_crt_t dbroot;
+		dbt_init_empty (&rootca);
+		dbt_init_empty (&anchor);
+		idsz = sizeof (id);
+		gtls_errno = gnutls_x509_crt_get_authority_key_id (
+			cmd->remote_cert [cmd->remote_cert_count-1],
+			id, &idsz,
+			NULL);
+		if (gtls_errno == GNUTLS_E_REQUESTED_DATA_NOT_AVAILABLE) {
+			// Only retry if the last is a signer, possibly CA
+			if (cmd->remote_cert_count == 1) {
+				// Permit self-signed certificate evaluation
+				gtls_errno = GNUTLS_E_SUCCESS;
+			} else if (cmd->remote_cert_count > 1) {
+				// Assume the last is a root cert, as it lacks authid
+				gnutls_x509_crt_deinit (
+					cmd->remote_cert [--cmd->remote_cert_count]);
+				cmd->remote_cert [cmd->remote_cert_count] = NULL;
+				idsz = sizeof (id);
+				gtls_errno = gnutls_x509_crt_get_authority_key_id (
+					cmd->remote_cert [cmd->remote_cert_count-1],
+					id, &idsz,
+					NULL);
+			}
+		}
+		if (gtls_errno != GNUTLS_E_SUCCESS) {
+			goto cleanup;
+		}
+		// Get root cert from trustdb into remote_cert [_count++]
+		dbt_init_fixbuf (&rootca, id, idsz);
+		dbt_init_malloc (&anchor);
+		E_d2e ("Failed to create db_disclose cursor",
+			dbh_trust->cursor (
+				dbh_trust,
+				cmd->txn,
+				&crs_trust,
+				0));
+		E_d2e ("X.509 authority key identifier not found in trust database",
+			dba_trust_iterate (
+				crs_trust, &rootca, &anchor));
+		while (db_errno == 0) {
+			// Process "anchor" entry (inasfar as meaningful)
+			uint32_t anchorflags;
+			uint8_t *trustdata;
+			int trustdatalen;
+			char *valexp;	//TODO// Initiate this before cleanup
+			int tstatus = trust_interpret (&anchor, &anchorflags, &valexp, &trustdata, &trustdatalen);
+			dbt_free (&anchor);
+			if (tstatus != TAD_STATUS_SUCCESS) {
+				// Signal any DB error to bail out of this loop
+				db_errno = DB_KEYEMPTY;
+			} else if ((anchorflags & TAD_TYPE_MASK) != peer_tad) {
+				;	// Skip unsought trust database entry
+			} else if ((anchorflags & TAD_TYPE_MASK) == TAD_TYPE_X509) {
+				E_g2e ("Certificate chain too long",
+					(cmd->remote_cert_count >= CERTS_MAX_DEPTH)
+					? GNUTLS_E_AUTH_ERROR
+					: GNUTLS_E_SUCCESS);
+				// Turn the anchor into an X.509 certificate
+				E_g2e ("Failet to initialise X.509 peer trust anchor",
+					gnutls_x509_crt_init ((gnutls_x509_crt_t *) &cmd->remote_cert [cmd->remote_cert_count]));
+				if (gtls_errno == GNUTLS_E_SUCCESS) {
+					cmd->remote_cert_count++;
+					anchor_gnutls.data = anchor.data;
+					anchor_gnutls.size = anchor.size;
+					E_g2e ("Failed to import X.509 peer trust anchor",
+						gnutls_x509_crt_import (cmd->remote_cert [cmd->remote_cert_count-1], &anchor_gnutls, GNUTLS_X509_FMT_DER));
+				}
+				if (gtls_errno == GNUTLS_E_SUCCESS) {
+					// Everything worked, we have a chain
+					got_chain = 1;
+					if (cmd->trust_valexp) {
+						free (cmd->trust_valexp);
+					}
+					cmd->trust_valexp = strdup (valexp);
+				} else {
+					// Signal arbitrary DB error
+					db_errno = DB_KEYEMPTY;
+				}
+			} else if ((anchorflags & TAD_TYPE_MASK) == TAD_TYPE_REVOKE_X509) {
+				//TODO// Possibly verify end cert revocation
+			} else {
+				/* Ignore entry, continue with the next */;
+			}
+			db_errno = dba_trust_iterate (crs_trust, &rootca, &anchor);
+		}
+		if (crs_trust != NULL) {
+			crs_trust->close (crs_trust);
+			crs_trust = NULL;
+		}
+		dbt_free (&anchor);
+		// No dbt_free (&rootca) because it is set to a fixed buffer
+		if (db_errno != DB_NOTFOUND) {
+			goto cleanup;
+		}
+	} else if (cmd->remote_cert_type == GNUTLS_CRT_OPENPGP) {
+		; //TODO// Attempt to load PGP direct signer(s)
+		; //OPTION// May use the _count for alternative signers!
+		; //OPTION// May setup/reload a keyring based on trust.db
+#ifdef GNUTLS_CRT_KRB
+	} else if (cmd->remote_cert_type == GNUTLS_CRT_KRB) {
+		; //TODO// Process as appropriate for Kerberos (store Ticket?)
+#endif
+	}
+	//
+	// Cleanup (when returning an error code) and return
+cleanup:
+	if (gtls_errno != GNUTLS_E_SUCCESS) {
+		cleanup_any_remote_credentials (cmd);
+	}
+	while ((!got_chain) && (cmd->remote_cert_count > 1)) {
+		--cmd->remote_cert_count;
+		gnutls_x509_crt_deinit (
+			cmd->remote_cert [cmd->remote_cert_count]);
+		cmd->remote_cert [cmd->remote_cert_count] = NULL;
+	}
+	return gtls_errno;
+}
 
 
 /* Fetch local credentials.  This can be done before TLS is started, to find
@@ -2293,7 +2754,7 @@ int cli_srpcreds_retrieve (gnutls_session_t session,
  * Credentials are generally implemented through callback functions.
  * This should be called after setting up DH parameters.
  */
-int setup_starttls_credentials (void) {
+static int setup_starttls_credentials (void) {
 	gnutls_anon_server_credentials_t srv_anoncred = NULL;
 	gnutls_anon_client_credentials_t cli_anoncred = NULL;
 	gnutls_certificate_credentials_t clisrv_certcred = NULL;
@@ -2490,7 +2951,7 @@ int setup_starttls_credentials (void) {
 
 /* Cleanup all credentials created, just before exiting the daemon.
  */
-void cleanup_starttls_credentials (void) {
+static void cleanup_starttls_credentials (void) {
 	while (srv_credcount-- > 0) {
 		struct credinfo *crd = &srv_creds [srv_credcount];
 		switch (crd->credtp) {
@@ -2673,6 +3134,13 @@ fprintf (stderr, "DEBUG: pthread_cancel returned %d\n", errno);
 			errno = pthread_join (ckn->owner, &retval);
 fprintf (stderr, "DEBUG: pthread_join returned %d\n", errno);
 		}
+		if (errno == 0) {
+			// We have now synchronised with the cancelled thread
+			// Cleanup any _remote data in ckn->session->cmd
+			cleanup_any_remote_credentials (
+				(struct command *) gnutls_session_get_ptr (
+					ckn->session));
+		}
 		if (errno != 0) {
 			tlog (TLOG_UNIXSOCK, LOG_ERR, "Failed to interrupt TLS connection for renegotiation");
 			send_error (replycmd, errno, "Cannot interrupt TLS connection for renegotiation");
@@ -2700,18 +3168,18 @@ fprintf (stderr, "DEBUG: pthread_join returned %d\n", errno);
 	// that TLS has in this respect.  Maybe we'll capture it one giant loop
 	// at some point, but for now that does not seem to add any relief.
 	renegotiate:
-printf ("DEBUG: Renegotiating = %d, anonpost = %d, plainfd = %d, cryptfd = %d, flags = 0x%x, session = 0x%x, got_session = %d, lid = \"%s\", rid = \"%s\"\n", renegotiating, anonpost, plainfd, cryptfd, cmd->cmd.pio_data.pioc_starttls.flags, session, got_session, cmd->cmd.pio_data.pioc_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid);
+fprintf (stderr, "DEBUG: Renegotiating = %d, anonpost = %d, plainfd = %d, cryptfd = %d, flags = 0x%x, session = 0x%x, got_session = %d, lid = \"%s\", rid = \"%s\"\n", renegotiating, anonpost, plainfd, cryptfd, cmd->cmd.pio_data.pioc_starttls.flags, session, got_session, cmd->cmd.pio_data.pioc_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid);
 
 	//
 	// If this is server renegotiating, send a request to that end
 	//TODO// Only invoke gnutls_rehandshake() on the server
 	if (renegotiating && (taking_over || anonpost) && (gtls_errno == GNUTLS_E_SUCCESS)) {
-printf ("DEBUG: Invoking gnutls_rehandshake in renegotiation loop\n");
+fprintf (stderr, "DEBUG: Invoking gnutls_rehandshake in renegotiation loop\n");
 		gtls_errno = gnutls_rehandshake (session);
 		if (gtls_errno == GNUTLS_E_INVALID_REQUEST) {
 			// Clients should not do this; be forgiving
 			gtls_errno = GNUTLS_E_SUCCESS;
-printf ("DEBUG: Client-side invocation flagged as wrong; compensated error\n");
+fprintf (stderr, "DEBUG: Client-side invocation flagged as wrong; compensated error\n");
 		}
 	}
 
@@ -2747,13 +3215,13 @@ printf ("DEBUG: Client-side invocation flagged as wrong; compensated error\n");
 	//
 	// Setup BDB transactions and reset credential datum fields
 	if (!anonpost) {
-		bzero (&cmd->lids, sizeof (cmd->lids));
+		memset (&cmd->lids, 0, sizeof (cmd->lids));
 		manage_txn_begin (&cmd->txn);
 	}
 
 	//
 	// Permit cancellation of this thread -- TODO: Cleanup?
-//TODO:TEST// Defer setcancelstate untill copycat() activity
+//TODO:TEST// Defer setcancelstate until copycat() activity
 /*
 	errno = pthread_setcancelstate (PTHREAD_CANCEL_ENABLE, NULL);
 	if (errno != 0) {
@@ -2817,7 +3285,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 			cmp = strncasecmp (anonpre_registry [anonpre_regidx].service,
 				cmd->cmd.pio_data.pioc_starttls.service,
 				TLSPOOL_SERVICELEN);
-printf ("DEBUG: anonpre_determination, comparing [%d] %s to %s, found cmp==%d\n", anonpre_regidx, anonpre_registry [anonpre_regidx].service, cmd->cmd.pio_data.pioc_starttls.service, cmp);
+fprintf (stderr, "DEBUG: anonpre_determination, comparing [%d] %s to %s, found cmp==%d\n", anonpre_regidx, anonpre_registry [anonpre_regidx].service, cmd->cmd.pio_data.pioc_starttls.service, cmp);
 			if (cmp == 0) {
 				// anonpre_regent matches
 				cmd->anonpre = anonpre_registry [anonpre_regidx].flags;
@@ -2936,7 +3404,7 @@ if (!renegotiating) {	//TODO:TEST//
 		// Setup for client credential installation in this session
 		//
 		// Setup client-specific credentials and priority string
-printf ("DEBUG: Configuring client credentials\n");
+fprintf (stderr, "DEBUG: Configuring client credentials\n");
 		E_g2e ("Failed to configure GnuTLS as a client",
 			configure_session (cmd,
 				session,
@@ -2947,7 +3415,7 @@ printf ("DEBUG: Configuring client credentials\n");
 	//
 	// Setup callback to server-specific behaviour if needed
 	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_SERVER) {
-printf ("DEBUG: Configuring for server credentials callback if %d==0\n", gtls_errno);
+fprintf (stderr, "DEBUG: Configuring for server credentials callback if %d==0\n", gtls_errno);
 if (!renegotiating) {	//TODO:TEST//
 		if (gtls_errno == GNUTLS_E_SUCCESS) {
 			gnutls_handshake_set_post_client_hello_function (
@@ -2962,7 +3430,7 @@ if (!renegotiating) {	//TODO:TEST//
 		// Setup server-specific credentials and priority string
 #if 0
 		if (! (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_CLIENT)) {
-printf ("DEBUG: Configuring server credentials (because it is not a client)\n");
+fprintf (stderr, "DEBUG: Configuring server credentials (because it is not a client)\n");
 			E_g2e ("Failed to configure GnuTLS as a server",
 				configure_session (cmd,
 					session,
@@ -3099,21 +3567,26 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 		//DROPPED// (gtls_errno != GNUTLS_E_GOT_APPLICATION_DATA) &&
 		//DROPPED// (gtls_errno != GNUTLS_E_WARNING_ALERT_RECEIVED) &&
 		(gnutls_error_is_fatal (gtls_errno) == 0));
+	//
+	// Handshake done -- initialise remote_xxx, vfystatus, got_remoteid
+	E_g2e ("Failed to retrieve peer credentials",
+			fetch_remote_credentials (cmd));
 	if (gtls_errno == 0) {
 		const gnutls_datum_t *certs;
 		unsigned int num_certs;
 		got_remoteid = 0;
-		switch (gnutls_auth_get_type (session)) { // Peer's cred type
+		switch (cmd->remote_auth_type) { // Peer's cred type
 		case GNUTLS_CRD_CERTIFICATE:
-			certs = gnutls_certificate_get_peers (session, &num_certs);
-			if ((certs != NULL) && (num_certs >= 1)) {
+			if (cmd->remote_cert_count >= 1) {
 				got_remoteid = 1;
 			}
-			// "certs" points into GnuTLS' internal data structures
+#ifdef PHASED_OUT_DIRECT_VALIDATION
 			E_g2e ("Failed to validate peer",
 				gnutls_certificate_verify_peers2 (
 					session,
 					&cmd->vfystatus));
+#endif
+			cmd->vfystatus = 0;
 			break;
 		case GNUTLS_CRD_PSK:
 			// Difficult... what did the history say about this?
@@ -3187,13 +3660,81 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 	taking_over = 0;
 
 	//
+	// Run the validation expression logic, using expressions we ran into
+fprintf (stderr, "DEBUG: Prior to valexp, gtls_errno = %d\n", gtls_errno);
+	if (gtls_errno == GNUTLS_E_SUCCESS) {
+		struct valexp *verun = NULL;
+		char *valexp_conj [3];
+		int valexp_conj_count = 0;
+		// Setup for validation expression runthrough
+		cmd->valexp_result = -1;
+		if ((cmd->trust_valexp != NULL) && (0 != strcmp (cmd->trust_valexp, "1"))) {
+fprintf (stderr, "DEBUG: Trust valexp \"%s\" @ 0x%016x\n", cmd->trust_valexp, (uint64_t) cmd->trust_valexp);
+			valexp_conj [valexp_conj_count++] = cmd->trust_valexp;
+		}
+		if (cmd->lids [LID_TYPE_VALEXP - LID_TYPE_MIN].data != NULL) {
+			// Interpret the entry, abuse p11uri as valexp
+			int ok;
+			uint32_t flags;
+			char *lid_valexp;
+			gnutls_datum_t ignored;
+			ok = dbcred_interpret (
+				&cmd->lids [LID_TYPE_VALEXP - LID_TYPE_MIN],
+				&flags,
+				&lid_valexp,
+				&ignored.data,
+				&ignored.size);
+fprintf (stderr, "DEBUG: LocalID valexp \"%s\" @ 0x%016x (ok=%d)\n", lid_valexp, (uint64_t) lid_valexp, ok);
+			if (ok && (lid_valexp != NULL)) {
+				valexp_conj [valexp_conj_count++] = lid_valexp;
+			} else {
+				gtls_errno = GNUTLS_E_AUTH_ERROR;
+			}
+		}
+fprintf (stderr, "DEBUG: Number of valexp is %d, gtls_errno=%d\n", valexp_conj_count, gtls_errno);
+		// Optionally start computing the validation expression
+		if ((gtls_errno == GNUTLS_E_SUCCESS) && (valexp_conj_count > 0)) {
+			valexp_conj [valexp_conj_count] = NULL;
+			verun = valexp_register (
+				valexp_conj,
+				have_starttls_validation (),
+				(void *) cmd);
+fprintf (stderr, "DEBUG: Registered to verun = 0x%016x\n", (uint64_t) verun);
+			if (verun == NULL) {
+				gtls_errno = GNUTLS_E_AUTH_ERROR;
+			}
+		}
+		// When setup, run the validation expressions to completion
+		if (verun != NULL) {
+			while (cmd->valexp_result == -1) {
+				; //TODO: Tickle async predicate run completion
+			}
+fprintf (stderr, "DEBUG: Finishing tickling \"async\" predicates for valexp\n");
+			if (cmd->valexp_result != 1) {
+				tlog (TLOG_TLS, LOG_INFO, "TLS validation expression result is %d", cmd->valexp_result);
+				gtls_errno = GNUTLS_E_AUTH_ERROR;
+fprintf (stderr, "DEBUG: valexp returns NEGATIVE result\n");
+			}
+else fprintf (stderr, "DEBUG: valexp returns POSITIVE result\n");
+			valexp_unregister (verun);
+fprintf (stderr, "DEBUG: Unregistered verun 0x%016x\n", (uint64_t) verun);
+		}
+	}
+
+	//
 	// Cleanup any prefetched identities
 	for (i=LID_TYPE_MIN; i<=LID_TYPE_MAX; i++) {
 		if (cmd->lids [i - LID_TYPE_MIN].data != NULL) {
 			free (cmd->lids [i - LID_TYPE_MIN].data);
 		}
 	}
-	bzero (cmd->lids, sizeof (cmd->lids));
+	memset (cmd->lids, 0, sizeof (cmd->lids));
+	//
+	// Cleanup any trust_valexp duplicate string
+	if (cmd->trust_valexp != NULL) {
+		free (cmd->trust_valexp);
+		cmd->trust_valexp = NULL;
+	}
 
 #if 0
 /* This is not proper.  gnutls_certificate_set_key() suggests that these are
@@ -3221,7 +3762,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 	//TODO// Or backup the (struct pioc_starttls) before handshaking
 	cmd->cmd.pio_cmd = orig_cmdcode;
 	cmd->cmd.pio_data.pioc_starttls.localid  [0] =
-	cmd->cmd.pio_data.pioc_starttls.remoteid [0] = 0;
+	cmd->cmd.pio_data.pioc_starttls.remoteid [0] = '\0';
 
 	//
 	// Respond to positive or negative outcome of the handshake
@@ -3343,7 +3884,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 		ckn->cryptfd = cryptfd;
 		ckn->plainfd = plainfd;
 //DEBUG// fprintf (stderr, "Registering control key\n");
-		if (renegotiating || (ctlkey_register (orig_starttls.ctlkey, &ckn->regent, security_tls, detach? -1: cmd->clientfd, forked) == 0)) {
+		if (renegotiating || (ctlkey_register (orig_starttls.ctlkey, &ckn->regent, security_tls, detach ? INVALID_POOL_HANDLE : cmd->clientfd, forked) == 0)) {
 			int copied = GNUTLS_E_SUCCESS;
 			send_command (replycmd, -1);		// app sent plainfd to us
 			if (preauth) {
@@ -3367,12 +3908,12 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 					tlog (TLOG_COPYCAT, LOG_DEBUG, "Passed on %d remote bytes from anonymous precursor to %d\n", preauthlen, plainfd);
 					free (preauth);
 					preauth = NULL;
-					copied = copycat (plainfd, cryptfd, session, detach? -1: cmd->clientfd);
+					copied = copycat (plainfd, cryptfd, session, detach ? INVALID_POOL_HANDLE : cmd->clientfd);
 				} else {
 					tlog (TLOG_COPYCAT, LOG_DEBUG, "Failed to pass on %d remote bytes from anonymous precursor to %d\n", preauthlen, plainfd);
 				}
 			} else {
-				copied = copycat (plainfd, cryptfd, session, detach? -1: cmd->clientfd);
+				copied = copycat (plainfd, cryptfd, session, detach ? INVALID_POOL_HANDLE : cmd->clientfd);
 			}
 			// Renegotiate if copycat asked us to
 			if (copied == GNUTLS_E_REHANDSHAKE) {
@@ -3394,7 +3935,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 				// Disabling the flag causing LOCALID_CHECK
 				// ...and plainfd >= 0 so no PLAINTEXT_CONNECT
 				// ...so there will be no callbacks to cmd
-printf ("DEBUG: Goto renegotiate with cmd.lid = \"%s\" and orig_cmd.lid = \"%s\" and cmd.rid = \"%s\" and orig_cmd.rid = \"%s\" and cmd.flags = 0x%x and orig_cmd.flags = 0x%x\n", cmd->cmd.pio_data.pioc_starttls.localid, orig_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid, orig_starttls.remoteid, cmd->cmd.pio_data.pioc_starttls.flags, orig_starttls.flags);
+fprintf (stderr, "DEBUG: Goto renegotiate with cmd.lid = \"%s\" and orig_cmd.lid = \"%s\" and cmd.rid = \"%s\" and orig_cmd.rid = \"%s\" and cmd.flags = 0x%x and orig_cmd.flags = 0x%x\n", cmd->cmd.pio_data.pioc_starttls.localid, orig_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid, orig_starttls.remoteid, cmd->cmd.pio_data.pioc_starttls.flags, orig_starttls.flags);
 				goto renegotiate;
 			}
 //DEBUG// fprintf (stderr, "Unregistering control key\n");
@@ -3421,6 +3962,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 	}
 	close (plainfd);
 	close (cryptfd);
+	cleanup_any_remote_credentials (cmd);
 	if (got_session) {
 fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
 		gnutls_deinit (session);

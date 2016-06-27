@@ -47,6 +47,8 @@
 #include <tlspool/commands.h>
 #include <tlspool/internal.h>
 
+#include "pgp.h"
+
 
 /* Data structures for internal state/cursor storage.
  */
@@ -341,6 +343,101 @@ int strncatesc (char *dst, int dstlen, char *src, char srcend, char *escme) {
 }
 
 
+/* Test for absense of the key revocation signature.  Since we are trusting
+ * the source of the data to be authentic, we are silently assuming that
+ * they are providing proper information -- that is, we don't check the
+ * signature that does the revocation.  The function returns 1 on success,
+ * that is, on absense of a revocation.
+ */
+static bool pgp_lacks_revocation (pgpcursor_t seq) {
+	pgpcursor_st sig;
+	uint8_t tag;
+	while (pgp_enter (seq, &tag, &sig)) {
+		if (tag != 2) {
+			// Not a signature packet, so skip
+			continue;
+		}
+		if (!pgp_getbyte (&sig, &tag)) {
+			// Unexpected end within signature packet
+			// Let's be conservative on such mistakes
+			return 0;
+		}
+		if (tag != 4) {
+			// Not a version 4 signature packet, be conservative
+			return 0;
+		}
+		if (!pgp_getbyte (&sig, &tag)) {
+			// Unexpected, be conservative
+			return 0;
+		}
+		if (tag == 0x20) {
+			// Key revocation signature, eeeeekkkss!!!
+			return 0;
+		}
+		if (tag == 0x30) {
+			// Certification revocation signature, eeeeekkkss!!!
+			// Really though... is this of any importance?
+			return 0;
+		}
+		// Ignore 0x28, subkey revocation signature (we want auth)
+		// Continue with next packet
+	}
+	return 1;
+}
+
+/* Locate a PGP public key (and make sure that it has no revocations)
+ * from an LDAP attribute.
+ * Note that LDAP attributes "pgpKey" are stored in an IA5String in
+ * the ASCII armoured format.  Not sure why, it appears that a binary
+ * form would be more in line with LDAP, which is quite willing to
+ * present anything in radix64 after all.  (In fact, it tends to do that
+ * for pgpKey fields, which are than radix64-encypted _and_ armoured?!?)
+ *
+ * This routine returns 1 on success, 0 on failure.
+ */
+static bool pgp_publickey (pgpcursor_t pubkey, pgpcursor_t keydata) {
+	uint8_t tag;
+	if (!pgp_enter (pubkey, &tag, keydata)) {
+		// No PGP data found
+		return 0;
+	}
+	if (tag != 6) {
+		// Not a PGP key packet
+		return 0;
+	}
+	// We have found a public-key packet, initiating pubkey
+	// The key packet contents can be found in &key
+	if (!pgp_lacks_revocation (pubkey)) {
+		// Public-key packet followed by key/cert revocation signature
+		return 0;
+	}
+	// We can now trust that the key is uable, and compare it
+	return 1;
+}
+
+/* Compare two PGP transportable public key blocks based on their initial
+ * public key and absense of revocation.  Returns 1 for equal and 0 for
+ * unequal or failure.
+ * The function is more complex than one might expect, on account of the
+ * possibility that either key may be in radix64 notation.
+ */
+static bool pgp_keycmp (pgpcursor_t key1, pgpcursor_t key2) {
+	pgpcursor_st key1pk, key2pk;
+	int i;
+	bool ok = 1;
+	ok = ok && pgp_publickey (key1, &key1pk);
+	ok = ok && pgp_publickey (key2, &key2pk);
+	ok = ok && ((key1pk.end - key1pk.ofs) == (key2pk.end - key2pk.ofs));
+	for (i=key1pk.ofs; ok && (i < key1pk.end); i++) {
+		uint8_t byte1, byte2;
+		ok = ok && pgp_getbyte (&key1pk, &byte1);
+		ok = ok && pgp_getbyte (&key2pk, &byte2);
+		ok = ok && (byte1 == byte2);
+	}
+	return ok;
+}
+
+
 /********** PROFILE-SPECIFIC ROUTINES **********/
 
 
@@ -361,7 +458,7 @@ int strncatesc (char *dst, int dstlen, char *src, char srcend, char *escme) {
 
 
 //TODO: Look into OCSP (for X.509 certificate data, parsed out with Quick DER)
-//TODO: Look into LDAP (for redirection of root)
+//TODO: Look into LDAP (for redirection of baseDN)
 
 
 /* Look into DNS or DNSSEC for AAAA and A records:
@@ -988,6 +1085,42 @@ printf ("LDAP attribute comparison match is %d\n", match);
 }
 
 
+/* Test the value of the retrieved PGP key attribute against data/len.
+ * The method used is simply an exact match with at least one of the entries
+ * for the iterated attribute.
+ */
+static int ldap_pgpkeycmp_eval (online_data_t dta, val_t hdl, char *param) {
+	assert (dta->ldap != NULL);
+	assert (dta->ldap_attr != NULL);
+	void *cursor;
+	char *atnm;
+	struct berval **atvs;
+	int i;
+	int match = 0;
+	// Fetch the each type into a cursor, then iterate over its values
+	//TODO// This follows RFC 1823, yet there is a type error on cursor?!?
+	for (atnm = ldap_first_attribute (dta->ldap, dta->ldap_attr, &cursor);
+		atnm != NULL;
+		atnm = ldap_next_attribute (dta->ldap, dta->ldap_attr, cursor)) {
+		if (strcmp (atnm, "pgpKey") != 0) {
+			continue;
+		}
+		atvs = ldap_get_values_len (dta->ldap, dta->ldap_attr, atnm);
+		for (i=0; atvs [i] != NULL; i++) {
+			pgpcursor_st suspect, attr;
+			bool ok = 1;
+			ok = ok && pgp_initcursor_binary (&suspect, dta->data, dta->len);
+			ok = ok && pgp_initcursor_radix64 (&attr, atvs [i]->bv_val, atvs [i]->bv_len);
+			ok = ok && pgp_keycmp (&suspect, &attr);
+			match = match || ok;	// Let's hope we found a match!
+		}
+		ldap_value_free_len (atvs);
+	}
+printf ("LDAP pgpKey comparison match is %d\n", match);
+	return match ? ONLINE_SUCCESS : ONLINE_INVALID;
+}
+
+
 /* Test the value of a retrieved DANE record against data/len, which is
  * considered to be a concatenation of X.509 certificates in DER form.
  * Note that the concatenation is not an ASN.1 SEQUENCE but quite simply
@@ -1168,7 +1301,7 @@ static struct online_profile _gdir_x509_compare = {
 };
 
 static struct online_profile _gdir_x509_attrs = {
-	// NOT SO: .eval  = dane_attrcmp_eval,
+	// NOT SO: .eval  = dane_tlscmp_eval,
 	// TODO -- Compare DANE against X.509 information picked up
 	.first = ldap_getattr_first,
 	.next  = ldap_getattr_next,
@@ -1219,12 +1352,11 @@ static struct online_profile online_globaldir_x509_profile = {
  */
 
 static struct online_profile _gdir_pgp_compare = {
-	.eval = ldap_attrcmp_eval,	//TODO// Insufficient, isolate pubkeys
-					//TODO// Ensure key was not withdrawn?
+	.eval = ldap_pgpkeycmp_eval,
 };
 
 static struct online_profile _gdir_pgp_attrs = {
-	// NOT SO: .eval  = dane_attrcmp_eval,
+	// NOT SO: .eval  = dane_tlscmp_eval,
 	// TODO -- Compare DANE against X.509 information picked up
 	.first = ldap_getattr_first,
 	.next  = ldap_getattr_next,
@@ -1355,8 +1487,7 @@ void setup_online (void) {
 		exit (1);
 	}
 	// Perhaps add trust anchors with ub_ctx_add_ta()
-	if (ub_ctx_add_ta_autr (ubctx,
-			"/usr/local/etc/unbound/root.key" /* TODO:FIXED */)) {
+	if (ub_ctx_add_ta_autr (ubctx, cfg_dnssec_rootkey ())) {
 		tlog (TLOG_DAEMON, LOG_ERR, "Failed to configure DNS root trust anchor in resolver context");
 		exit (1);
 	}

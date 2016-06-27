@@ -29,14 +29,14 @@ void pincb (pinentry_t *entry, void *null_data) {
 		entry->token_label,
 		entry->attempt);
 	pwd = getpass (entry->prompt);
-	bzero (entry->pin, sizeof (entry->pin));
+	memset (entry->pin, 0, sizeof (entry->pin));
 	if (pwd) {
 		if (strlen (pwd) + 1 > sizeof (entry->pin)) {
 			fprintf (stderr, "No support for PIN lenghts over 128\n");
 		} else {
 			strcpy (entry->pin, pwd);
 		}
-		bzero (pwd, strlen (pwd));
+		memset (pwd, 0, strlen (pwd));
 	}
 }
 

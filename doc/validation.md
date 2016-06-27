@@ -85,8 +85,18 @@ These *2 or 3 sources of constraints* for remote ID validation can all be looked
 up in databases. They are combined to one expression, in such a way that they
 all apply.
 
+**NOTE:** Mention of validation expressions in multiple sources is currently
+not supported; setup either in `localid.db` or `trust.db` to avoid landing
+the TLS Pool in undefined territory.  See
+[reported issue](https://github.com/arpa2/tlspool/issues/27).
+
 Constraint Language
 -------------------
+
+**Note:** Not all the predicates defined below have been (completely)
+implemented.  Checkout
+[the issue](https://github.com/arpa2/tlspool/issues/29)
+for up-to-date information.
 
 The following constructs are supported; consider them as stack manipulation
 operations:
@@ -100,13 +110,15 @@ operations:
     distinction between these three levels, even their ordering, is a local
     policy setting.
 
--   `I` ensures that the remote peer provides an identity. The variation `i`
-    requests an identity from the remote, but will not enforce it. This will
-    often be used by a local ID that desires to know the remote ID of its
-    counterpart. Note that this request may also be made by the TLS Pool client,
-    so flagging it in a validation expression is only useful to establish
-    authentication for all interactions regardless of their usefulness for end
-    points.
+-   `I` and `i` ensure that the remote peer provides an identity, and that it
+    does not contradict the remote identity requested by an application.
+    This will often be used by a local ID that desires to know the remote ID
+    if its counterpart.  The remote identity reported back to the application
+    may be enhanced with identity information from the remote certification.
+    The form `I` requires that the domain and username match (where absense
+    of username in both is acceptable) whereas the `i` form permits a
+    remote domain identity to speak on behalf of users underneath that
+    domain without certifying for the username part.
 
 -   `F` ensures that forward secrecy is employed to protect the connection. This
     property is only ensured by `TLS_DHE_`, `TLS_ECDHE_`, `TLS_SRP_` and our own

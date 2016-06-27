@@ -32,7 +32,7 @@ const char const *usage =
 "Usage: %s tlspool.conf [user@]fqdn type [p11priv pubdata...]\n"
 " - tlspool.conf      is the configuration file for the TLS Pool\n"
 " - user@fqdn or fqdn is a network access identifier\n"
-" - type              comma-sep: X.509,OpenPGP,Kerberos,client,server,nop11,chained\n"
+" - type              X.509,OpenPGP,Kerberos,valexp,client,server,nop11,chained\n"
 " - p11priv           is a PKCS #11 URI string for the private key\n"
 " - pubdata           is a file name    string for the public key package\n"
 "The pairs of p11priv and pubdata replace the old content.  An empty list of\n"
@@ -50,6 +50,7 @@ struct typemap_t typemap [] = {
 	{ "OpenPGP",	2 },
 	{ "Kerberos",	4 },
 	{ "krb5",	4 },
+	{ "valexp",     5 },
 	{ "cli",	256 },
 	{ "srv",	512 },
 	{ "client",	256 },
@@ -150,19 +151,21 @@ int main (int argc, char *argv []) {
 			}
 			walker++;
 		}
-		if (flags == 0) {
+		if (walker->name == NULL) {
 			fprintf (stderr, "Flag name %s not recognised\n", partstr);
 			exit (1);
 		}
 		partstr = strtok_r (NULL, ",", &saveptr);
 	}
-	argi = 4;
-	while (argi < argc) {
-		if (strncmp (argv [argi], "pkcs11:", 7) != 0) {
-			fprintf (stderr, "PKCS #11 URIs must start with \"pkcs11:\"\n");
-			exit (1);
+	if ((flags & 0x000000ff) != 5) {
+		argi = 4;
+		while (argi < argc) {
+			if (strncmp (argv [argi], "pkcs11:", 7) != 0) {
+				fprintf (stderr, "PKCS #11 URIs must start with \"pkcs11:\"\n");
+				exit (1);
+			}
+			argi += 2;
 		}
-		argi += 2;
 	}
 	//
 	// Now modify the matching entries
@@ -173,7 +176,7 @@ int main (int argc, char *argv []) {
 		fprintf (stderr, "Failed to open cursor on localid.db\n");
 		goto failure;
 	}
-	bzero (&k_localid, sizeof (k_localid));
+	memset (&k_localid, 0, sizeof (k_localid));
 	k_localid.data = localid;
 	k_localid.size = strlen (localid);
 	nomore = crs->get (crs, &k_localid, &e_value, DB_SET);
@@ -192,9 +195,7 @@ int main (int argc, char *argv []) {
 		e_bindata = e_p11uri + strnlen (e_p11uri, e_value.size - 4) + 1;
 		e_binlen = e_value.size - 4 - strnlen (e_p11uri, e_value.size - 4) - 1;
 		if (e_binlen <= 0) {
-			fprintf (stderr, "Error retrieving binary data\n");
-			crs->close (crs);
-			goto failure;
+			fprintf (stderr, "Error retrieving binary data;\n");
 		}
 		printf ("Object flags are 0x%x\n", e_flags);
 		if ((e_flags & 0xff) == (flags & 0xff)) {
@@ -259,7 +260,6 @@ int main (int argc, char *argv []) {
 		argi += 2;
 	}
 	if (txn->commit (txn, 0) != 0) {
-		txn->abort (txn);
 		fprintf (stderr, "Failed to commit transaction\n");
 		exit (1);
 	} else {

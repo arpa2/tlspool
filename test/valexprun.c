@@ -254,7 +254,7 @@ int main (int argc, char *argv []) {
 		ok = ok && (*signals == '\0');
 	}
 	if (!ok) {
-		fprintf (stderr, "Usage: %s valexp [signals...]\nwhere the optional signals follow the pattern\n[%s]*(~[%s]*)?\n", argv [0], valexpvarchars, valexpvarchars);
+		fprintf (stderr, "Usage: %s valexp [signals...]\nwhere the optional signals follow the pattern\n[%s]*(~[%s]*)?\n", argv [0], valexp_varchars, valexp_varchars);
 		exit (1);
 	}
 	//

@@ -30,9 +30,11 @@
 /* Databases managed by the manage.c routines:
  *  - dbh_localid  is the local identity database
  *  - dbh_disclose is the disclosure database
+ *  - dbh_trsut    is the trust database
  */
 extern DB *dbh_localid;
 extern DB *dbh_disclose;
+extern DB *dbh_trust;
 
 
 /* Setup the management databases.  Returns 0 on success, errno otherwise. */

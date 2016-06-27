@@ -1,5 +1,6 @@
 /* tlspool/libfun.c -- Library function for starttls go-get-it */
 
+#include "whoami.h"
 
 #include <stdlib.h>
 #include <errno.h>
@@ -78,7 +79,7 @@ int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout,
 	}
 
 	/* Prepare command structure */
-	bzero (&cmd, sizeof (cmd));	/* Do not leak old stack info */
+	memset (&cmd, 0, sizeof (cmd));	/* Do not leak old stack info */
 	cmd.pio_cbid = 0;
 	cmd.pio_cmd = PIOC_LIDENTRY_REGISTER_V2;
 	cmd.pio_data.pioc_lidentry.flags = regflags;

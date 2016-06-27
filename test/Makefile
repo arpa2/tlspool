@@ -1,13 +1,15 @@
 
-TARGETS_OFFLINE = valexprun testvalexp
-TARGETS = $(TARGETS_OFFLINE) onlinecheck
+TARGETS_OFFLINE = valexprun testvalexp pulleybacksimu
+TARGETS = $(TARGETS_OFFLINE) onlinecheck testonline
+
+PKG_CONFIG ?= pkg-config
 
 OBJS = *.o
 
 CFLAGS += -pthread -I ../include
 
 # Hey... this is testing code, so c'mon let's DEBUG
-CFLAGS += -DDEBUG
+CFLAGS += -DDEBUG -O0
 
 LDFLAGS =
 
@@ -18,16 +20,21 @@ PREFIX = /usr/local
 valexprun_CFLAGS = -ggdb3
 valexprun_LIBS =
 
+config_CFLAGS = -DCONFIG_PARSE_ONLY
+
 VALEXP_TESTS = $(shell cd data-valexp-in ; ls -1)
 
-P11KIT_CFLAGS = $(shell pkg-config --cflags p11-kit-1)
-P11KIT_LIBS   = $(shell pkg-config --libs   p11-kit-1)
+GNUTLS_CFLAGS = $(shell $(PKG_CONFIG) --cflags gnutls)
+GNUTLS_LIBS   = $(shell $(PKG_CONFIG) --libs   gnutls)
+
+P11KIT_CFLAGS = $(shell $(PKG_CONFIG) --cflags p11-kit-1)
+P11KIT_LIBS   = $(shell $(PKG_CONFIG) --libs   p11-kit-1)
 
 BDB_CFLAGS = 
 BDB_LDFLAGS = -ldb
 
-QUICKDER_CFLAGS = $(shell pkg-config --cflags quick-der) -ggdb3
-QUICKDER_LIBS   = $(shell pkg-config --libs   quick-der)
+QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags quick-der) -ggdb3
+QUICKDER_LIBS   = $(shell $(PKG_CONFIG) --libs   quick-der)
 
 all: $(TARGETS)
 
@@ -46,8 +53,15 @@ testvalexp: valexprun
 	@ git ls-files --error-unmatch data-valexp-out/* >/dev/null
 	@ echo All validation expression tests succeeded
 
-onlinecheck: onlinecheck.c ../src/online.c
-	gcc $(CFLAGS) $(QUICKDER_CFLAGS) -o "$@" "$<" -lunbound -lldns -lldap $(QUICKDER_LIBS)
+onlinecheck: onlinecheck.c ../src/online.c ../src/config.c ../src/pgp.c
+	gcc $(CFLAGS) $(GNUTLS_CFLAGS) $(QUICKDER_CFLAGS) $(config_CFLAGS) -o "$@" "$<" ../src/pgp.c ../src/config.c -lunbound -lldns -lldap $(GNUTLS_LIBS) $(QUICKDER_LIBS)
+
+testonline: onlinecheck
+	./onlinecheck ../etc/tlspool.conf | tee | grep -v 'UNEXPECTED OUTPUT FAILURE'
+
+pulleybacksimu: pulleybacksimu.c
+	@# gcc $(CFLAGS) -o "$@" "$<" ../pulleyback/api.o ../pulleyback/parse.o ../pulleyback/connect.o ../pulleyback/update.o -lquickder -ldb
+	gcc $(CFLAGS) -o "$@" "$<" ../pulleyback/pulleyback_tlspool.so
 
 clean:
 	rm -f $(OBJS) $(TARGETS)
