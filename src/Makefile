@@ -4,11 +4,11 @@ OBJS = daemon.o config.o manage.o service.o cache.o pinentry.o lidentry.o \
 	starttls.o donai.o remote.o error.o ctlkey.o validate.o online.o
 
 CFLAGS += -pthread -I ../include
-CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS) $(UNBOUND_CFLAGS) $(QUICKDER_CFLAGS)
+CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS) $(UNBOUND_CFLAGS) $(KERBEROS_CFLAGS) $(QUICKDER_CFLAGS)
 
 LDFLAGS =
 
-LIBS = $(GNUTLS_LIBS) $(P11KIT_LIBS) $(BDB_LIBS) $(TASN1_LIBS) $(UNBOUND_LIBS) $(QUICKDER_LIBS)
+LIBS = $(GNUTLS_LIBS) $(P11KIT_LIBS) $(BDB_LIBS) $(TASN1_LIBS) $(UNBOUND_LIBS) $(KERBEROS_LIBS) $(QUICKDER_LIBS)
 LIBS += -lldap -lldns -lpthread
 
 ifdef WITH_SYSTEMD
@@ -30,6 +30,9 @@ TASN1_LIBS   = $(shell pkg-config --libs   libtasn1)
 #HOWTOUSE# UNBOUBD_LIBS  = $(shell pkg-config --libs   libunbound)
 QUICKDER_CFLAGS = $(shell pkg-config --cflags quick-der)
 QUICKDER_LIBS = $(shell pkg-config --libs quick-der)
+KERBEROS_CFLAGS = $(shell krb5-config --cflags)
+KERBEROS_LIBS = $(shell krb5-config --libs)
+# CFLAGS += -DHAVE_TLS_KDH
 
 all: $(TARGETS)
 

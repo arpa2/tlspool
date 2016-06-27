@@ -101,8 +101,20 @@ been defined at this time:
      - Possibly added signatures binding this User ID to the public key
      - One encryption subkey
      - A self-signature binding the encryption subkey to the public key
+  * for ``LID_TYPE_KRB5``, an empty public value is currently the only
+    form being processed; it indicates that the local identity should be read
+    as a Kerberos identifier, after mapping the domain name to all uppercase,
+    and that the PKCS #11 URI directly references the Kerberos password (which
+    means that PKCS #11 is only used to carry an exportable password, though
+    usually with PIN-based encryption on the stored password).
+    Future versions of ``LID_TYPE_KRB5`` will skip such empty entries and
+    instead parse more elaborate public values.  What will be in there depends
+    on such choices as whether some form of
+    [pseudonymity](https://datatracker.ietf.org/doc/draft-vanrein-kitten-krb-pseudonymity/)
+    is available for Kerberos, and whether or not PKCS #11 can be used
+    [underneath Kerberos](https://github.com/arpa2/kerberos-pkcs11)
+    instead of next to it.
   * no form has been settled for ``LID_TYPE_SRP`` yet.  We will probably be able to use our own flavour, [SRP #11](http://github.com/arpa2/srp-pkcs11), going through PKCS #11 on the client side.  The identity will then probably be the username, salt (including pinning information), DH public key and a PKCS #11 URI of a DH private key (consisting of exponent, base, modulus).
-  * no form has been settled for ``LID_TYPE_KRB5`` yet.  We will probably try to use PKCS #11 for Kerberos as well, by [implementing AES in CTS mode](http://github.com/arpa2/kerberos-pkcs11) on top of the widely supported AES in CBC mode.  There may be additional provisioning for differentiation between a login identity and a pseudonym.
 
 There are a few more flags in the initial word of an entry:
 
