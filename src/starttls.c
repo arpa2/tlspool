@@ -1640,9 +1640,11 @@ static int setup_starttls_kerberos (void) {
 	if (krb_kt_srv == NULL) {
 		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "No kerberos_server_keytab configured, so Kerberos cannot work at all");
 		retval = GNUTLS_E_UNWANTED_ALGORITHM;
+/* TODO: Only for MIT krb5 1.11 and up
 	} else if (0 == krb5_kt_have_content (krb_ctx, krb_kt_cli)) {
 		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "Keytab in kerberos_client_keytab is absent or empty");
 		retval = GNUTLS_E_UNWANTED_ALGORITHM;
+ */
 	}
 
 	if (krb_cc_cli == NULL) {
