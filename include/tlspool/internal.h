@@ -241,6 +241,7 @@ void tlog (unsigned int logmask, int priority, char *format, ...);
 #define TLOG_COPYCAT	0x00002000
 #define TLOG_UNIXSOCK	0x00004000
 #define TLOG_DAEMON	0x00008000
+#define TLOG_KERBEROS	0x00010000
 
 
 /* The security_layer defines a value for each of the possible secure protocols.

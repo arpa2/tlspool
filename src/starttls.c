@@ -1630,20 +1630,30 @@ static int setup_starttls_kerberos (void) {
 	//
 	// Check for consistency and log helpful messages for the sysop
 	if (k5err != 0) {
-		tlog (TLOG_DAEMON, LOG_ERR, "Error during STARTTLS setup: %s (acting on %s)",
+		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "Error during STARTTLS setup: %s (acting on %s)",
 				krb5_get_error_message (krb_ctx, k5err),
 				cfg);
 		retval = GNUTLS_E_UNWANTED_ALGORITHM;
 	}
 	if (krb_kt_cli != NULL) {
-		tlog (TLOG_DAEMON, LOG_WARNING, "Ignoring the configured kerberos_client_keytab -- it is not implemented yet");
+		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_WARNING, "Ignoring the configured kerberos_client_keytab -- it is not implemented yet");
 	}
 	if (krb_cc_cli == NULL) {
-		tlog (TLOG_DAEMON, LOG_ERR, "No kerberos_client_credcache configured, so Kerberos cannot work at all");
+		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "No kerberos_client_credcache configured, so Kerberos cannot work at all");
+		retval = GNUTLS_E_UNWANTED_ALGORITHM;
+	} else if (!krb5_cc_support_switch (
+			krb_ctx, krb5_cc_get_type (
+				krb_ctx, krb_cc_cli))) {
+		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "Your kerberos_client_credcache does not support multilpe identities");
 		retval = GNUTLS_E_UNWANTED_ALGORITHM;
 	}
 	if (krb_cc_srv == NULL) {
-		tlog (TLOG_DAEMON, LOG_WARNING, "No kerberos_server_credcache configured, so user-to-user Kerberos will not work");
+		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_WARNING, "No kerberos_server_credcache configured, so user-to-user Kerberos will not work");
+	} else if (!krb5_cc_support_switch (
+			krb_ctx, krb5_cc_get_type (
+				krb_ctx, krb_cc_srv))) {
+		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "Your kerberos_server_credcache does not support multilpe identities");
+		retval = GNUTLS_E_UNWANTED_ALGORITHM;
 	}
 	if (retval != GNUTLS_E_SUCCESS) {
 		cleanup_starttls_kerberos ();
@@ -1652,7 +1662,7 @@ static int setup_starttls_kerberos (void) {
 }
 #endif
 
-/* Cleanup Kerberks resources.  This must be an idempotent function, because
+/* Cleanup Kerberos resources.  This must be an idempotent function, because
  * it is called when Kerberos panics as well as when 
  */
 #ifdef HAVE_TLS_KDH
