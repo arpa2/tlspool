@@ -4,6 +4,7 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <memory.h>
 #include <string.h>
@@ -134,6 +135,7 @@ static pthread_mutex_t onthefly_signer_lock = PTHREAD_MUTEX_INITIALIZER;
 #ifdef HAVE_TLS_KDH
 static krb5_context krbctx_cli, krbctx_srv;
 static krb5_keytab  krb_kt_cli, krb_kt_srv;
+static bool         got_cc_cli, got_cc_srv;
 static krb5_error_code have_credcache (krb5_principal sought, krb5_ccache *found);
 #endif
 
@@ -1603,6 +1605,7 @@ static int setup_starttls_kerberos (void) {
 	// Initialise
 	krbctx_cli = krbctx_srv = NULL;
 	krb_kt_cli = krb_kt_srv = NULL;
+	got_cc_cli = got_cc_srv = 0;
 	//
 	// Construct credentials caching for Kerberos
 	if (k5err == 0) {
@@ -1628,6 +1631,7 @@ static int setup_starttls_kerberos (void) {
 			k5err = krb5_cc_default (krbctx_cli, &krb_cc_tmp);
 		}
 		if (k5err == 0) {
+			got_cc_cli = 1;
 			cctype_cli = krb5_cc_get_type (krbctx_cli, krb_cc_tmp);
 			krb5_cc_close (krbctx_cli, krb_cc_tmp);
 		}
@@ -1639,6 +1643,7 @@ static int setup_starttls_kerberos (void) {
 			k5err = krb5_cc_default (krbctx_srv, &krb_cc_tmp);
 		}
 		if (k5err == 0) {
+			got_cc_srv = 1;
 			cctype_srv = krb5_cc_get_type (krbctx_cli, krb_cc_tmp);
 			krb5_cc_close (krbctx_srv, krb_cc_tmp);
 		}
@@ -1769,7 +1774,7 @@ static krb5_error_code have_credcache (krb5_principal sought, krb5_ccache *found
 #endif
 
 
-/* Find a Kerberos ticket and keyblock to use for the localid.  Do not look
+/* Find a Kerberos keyblock and ticket to use for the localid.  Do not look
  * into services yet in this function.  This function implements a simple
  * procedure, based on optional arguments p11uri, keytab, credcache.  It
  * produces <key,tgt> or <key,NULL> or (for errors) <NULL,NULL>.
@@ -1795,74 +1800,225 @@ static krb5_error_code have_credcache (krb5_principal sought, krb5_ccache *found
 #ifdef HAVE_TLS_KDH
 static void have_key_tgt (struct command *cmd,	     // in, session context
 				krb5_context ctx,    // in, kerberos context
+				bool setup_cc,       // in, whether cc was setup
 				char *p11uri,	     // in/opt, PKCS #11 pwd URI
 				krb5_keytab kt,	     // in/opt, keytab
-				krb5_ccache cc,	     // in/opt, credcache
 				krb5_keyblock *key,  // opt/opt session key
 				krb5_creds *tgt) {   // out/opt, tkt granting tkt
 	int k5err = 0;
 	krb5_ccache cc = NULL;
 	krb5_principal sought  = NULL;
 	krb5_principal tgtname = NULL;
+	krb5_keytab_entry ktentry;
+	const char *svc = cmd->cmd.pio_data.pioc_starttls.service;
+	const char *lid = cmd->cmd.pio_data.pioc_starttls.localid;
+	const char *liddom;
+	int lid1len;
+	char **realms;
+	char realm [128];
+	uint32_t nametype, nametype_alt;
+	time_t now = 0;
 	//
 	// Assertions, and initialise variables
 	assert (cmd != NULL);
 	assert (ctx != NULL);
 	assert (key != NULL);
 	assert (tgt != NULL);
-	* (void **) tgt = NULL;
-	* (void **) key = NULL;
+	krb5_free_keyblock_contents (ctx, key);
+	krb5_free_cred_contents (ctx, tgt);
 	//
-	//TODO// Map cmd to a krb5_principal for cmd->localid / service / flags
+	// Construct the realm name
+	liddom = strrchr (lid, '@');
+	if (liddom != NULL) {
+		lid1len = ((intptr_t) liddom) - ((intptr_t) lid);
+		liddom++;  // Skip '@'
+	} else {
+		liddom = lid;  // localid is a host
+		lid1len = strnlen (lid, 128);
+	}
+	k5err = krb5_get_host_realm (ctx, liddom, &realms);
+	if ((k5err == 0) && (realms [0] != NULL) && (**realms != '\0')) {
+		strncpy (realm, realms [0], sizeof (realm));
+		realm [sizeof (realm)-1] = '\0';
+	} else {
+		int i = 0;
+		do {
+			realm [i] = toupper (liddom [i]);
+			i++;
+		} while (liddom [i-1] != '\0');
+	}
+	if (k5err == 0) {
+		krb5_free_host_realm (ctx, realms);
+	} else {
+		k5err = 0;
+	}
 	//
-	// First try to locate information in an existing cache
-#if 0
-	krb5_cache try = NULL;
-	krb5_cccol_cursor crs = NULL;
-	krb5_principal found   = NULL;
-	k5err = krb5_cccol_cursor_new (ctx, &crs);
-	while ((k5err == 0) && (cc = NULL)) {
-		k5err = krb5_cccol_cursor_next (ctx, crs, &try);
-		if (k5err == 0) {
-			k5err = krb5_cc_get_principal (ctx, try, &found);
-		}
-		if ((k5err == 0) && (krb5_principal_compare
-					(ctx, sought, found)) {
-			// Found the ccache for sought principal!
-			// Prepare for graceful loop exit, with cleanup
-			cc = try;
-			try = NULL;
-		}
-		if (princ != NULL) {
-			krb5_free_principal (ctx, found);
-			found = NULL;
-		}
-		if (try != NULL) {
-			krb5_cc_close (ctx, try);
-			try = NULL;
-		}
+	// Construct a sought principal name in a given naming style,
+	// and try to locate it in the existing cache.
+	// With @, try liduser@liddom@REALM or else liduser@REALM
+	// Without @, try svc/liddom@REALM
+	nametype = (lid == liddom) ? KRB5_NT_SRV_HST : KRB5_NT_ENTERPRISE_PRINCIPAL;
+retry:
+	nametype_alt = nametype;
+	switch (nametype) {
+	case KRB5_NT_ENTERPRISE_PRINCIPAL:
+		nametype_alt = KRB5_NT_PRINCIPAL;
+		k5err = krb5_build_principal_ext (ctx, &sought,
+					strlen (realm), realm,
+					strnlen (lid, 128), lid,
+					0);
+	case KRB5_NT_SRV_HST:
+		k5err = krb5_build_principal_ext (ctx, &sought,
+					strlen (realm), realm,
+					strlen (svc), svc,
+					lid1len, lid,
+					0);
+		break;
+	case KRB5_NT_PRINCIPAL:
+		k5err = krb5_build_principal_ext (ctx, &sought,
+					strlen (realm), realm,
+					lid1len, lid,
+					0);
+		break;
 	}
-	if (crs != NULL) {
-		krb5_cccol_cursor_free (ctx, crs);
-		crs = NULL;
+	if (k5err == 0) {
+		sought->type = nametype;
+	} else {
+		sought = NULL;
 	}
-#else
 	k5err = krb5_cc_cache_match (ctx, sought, &cc);
-	if (k5err != 0) {
-		cc = NULL;
+	if (sought != NULL) {
+		krb5_free_principal (ctx, sought);
+		sought = NULL;
 	}
-#endif
-	k5err = 0;	// The only result of interest is in cc
+	if (k5err != 0) {
+		if (nametype_alt != nametype) {
+			nametype = nametype_alt;
+			goto retry;
+		}
+		// We utterly failed
+		goto cleanup;
+	}
 	//
-	// Setup the TGT name
-	"TODO:TGT:NAME";
+	// Construct the TGT name
+	k5err = krb5_build_principal (ctx, &tgtname,
+				strlen (realm), realm,
+				6, "krbtgt",
+				strlen (realm), realm,
+				0);
+	if (k5err != 0) {
+		tgtname = NULL;
+		k5err = 0;
+	}
+	tgtname->type = KRB5_NT_SRV_INST;
 	//
-	// Get the service ticket for the TGT name from the cache
+	// Try to get the service ticket for the TGT name from the cache
+	krb5_creds credreq;
+	k5err = krb5_get_credentials (ctx,
+				/* KRB5_GC_USER_USER ?|? */
+					( setup_cc ? 0 : KRB5_GC_CACHED ),
+				cc,
+				&credreq, &tgt);
+	time (&now);
+	if ((k5err == 0)
+				&& (now + 300 > tgt->times.endtime)
+				&& (now + 300 < tgt->times.renew_till)) {
+		krb5_free_creds (ctx, tgt);
+		// Try to renew the ticket
+		k5err = krb5_get_renewed_creds (ctx,
+				tgt,
+				sought,
+				cc,
+				NULL);   /* krbtgt/REALM@REALM */
+	}
+	if ((k5err == 0)
+				&& (now + 300 > tgt->times.endtime)) {
+		// Thanks, but no thanks!
+		krb5_free_creds (ctx, tgt);
+		k5err = 666;
+	}
+	if (k5err == 0) {
+		// First case worked -- return <key,tgt> from credout
+		k5err = krb5_copy_keyblock_contents (ctx,
+				&tgt->keyblock,
+				key);
+		// On failure, key shows failure
+		goto cleanup;
+	}
+	//
+	// First attempt failed.  Instead, look for keytab presence.
+	if (kt != NULL) {
+		k5err = krb5_kt_get_entry (ctx, kt, sought, 0, 0, &ktentry);
+		if (k5err == 0) {
+			k5err = krb5_copy_keyblock_contents (ctx,
+				&ktentry.key,
+				key);
+			krb5_free_keytab_entry_contents (ctx, &ktentry);
+			// On failure, key shows failure.
+			// Continue to setup a new context entry.
+		}
+	}
+	if ((key->contents == NULL) || (p11uri == NULL)) {
+		// We cannot obtain a new krbtgt
+		// We simply return what we've got (which may be nothing)
+		goto cleanup;
+	}
+	if (!setup_cc) {
+		// We have nowhere to store a new krbtgt if we got it
+		// We simply return what we've got (which is at least a key)
+		goto cleanup;
+	}
+	//
+	// Either we have a keytab key, or we have a p11uri,
+	// so we can have a new credcache with a new krbtgt
+	if (setup_cc) {
+		if (cc == NULL) {
+			k5err = krb5_cc_default (ctx, &cc);
+			if (k5err != 0) {
+				// Utter failure to do even the simplest thing
+				goto cleanup;
+			}
+		}
+		if (p11uri == NULL) {
+			k5err = krb5_get_init_creds_keytab (
+					ctx,
+					tgt,
+					sought, //TODO:KEEP
+					kt,
+					0,    /* start now please */
+					NULL, /* get a TGT please */
+					NULL);  //TODO// opts needed?
+		} else {
+			k5err = krb5_get_init_creds_password (
+					ctx,
+					tgt,
+					sought, //TODO:KEEP
+					"sekreet",  //TODO:FIXED:GETPKCS11
+					NULL, /* TODO: no callback */
+					cmd,  /* callback data pointer */
+					0,    /* start now please */
+					NULL, /* get a TGT please */
+					NULL);  //TODO// opts needed?
+		}
+		if (k5err != 0) {
+			// Failed to initiate new credentials
+			goto cleanup;
+		}
+		//
+		// We succeeded in setting up a new Ticket Granting Ticket!
+		goto cleanup;
+	}
+	//
+	// Nothing more to try, so we continue into cleanup
+cleanup:
 	//
 	// Cleanup and return the <key,tgt> values as they were delivered
-cleanup:
+	if (tgtname != NULL) {
+		krb5_free_principal (ctx, tgtname);
+		tgtname = NULL;
+	}
 	if (cc != NULL) {
-		krb5_cc_close (cc);
+		krb5_cc_close (ctx, cc);
 	}
 }
 #endif
