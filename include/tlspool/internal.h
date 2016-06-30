@@ -145,8 +145,10 @@ uint32_t cfg_facilities (void);
 char *cfg_tls_onthefly_signcert (void);
 char *cfg_tls_onthefly_signkey (void);
 char *cfg_dnssec_rootkey (void);
-
-
+char *cfg_krb_client_keytab (void);
+char *cfg_krb_server_keytab (void);
+char *cfg_krb_client_credcache (void);
+char *cfg_krb_server_credcache (void);
 
 
 /* error.c -- Mapping various error code systems to others.

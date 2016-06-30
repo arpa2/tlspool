@@ -120,7 +120,6 @@ void setup_validate (void) {
 		assert (i < 32);
 		valexp_char_bitnum [valexp_varchars [i]] = i++;
 	}
-for (i=32; i<128; i++) { fprintf (stderr, "DEBUG: valexp_varchars [%c] = %d\n", (char) i, valexp_char_bitnum [i]); }
 }
 
 /* Cleanup the validation processing module.

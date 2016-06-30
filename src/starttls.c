@@ -32,6 +32,15 @@
 
 #include <libtasn1.h>
 
+#include <krb5.h>
+
+#include <quick-der/api.h>
+#include <quick-der/rfc4120.h>
+typedef DER_OVLY_rfc4120_Ticket ticket_t;
+typedef DER_OVLY_rfc4120_Authenticator authenticator_t;
+
+#include <tlspool/internal.h>
+
 #ifdef WINDOWS_PORT
 #include <winsock2.h>
 #else
@@ -124,8 +133,13 @@ static gnutls_privkey_t onthefly_issuerkey = NULL;
 static gnutls_x509_privkey_t onthefly_subjectkey = NULL;
 static pthread_mutex_t onthefly_signer_lock = PTHREAD_MUTEX_INITIALIZER;
 
-static krb5_context kerberos_context;
+#ifdef HAVE_TLS_KDH
+static krb5_context krb_ctx;
+static krb5_keytab krb_kt_cli, krb_kt_srv;
+static krb5_ccache krb_cc_cli, krb_cc_srv;
 static krb5_error_code have_credcache (krb5_principal sought, krb5_ccache *found);
+#endif
+
 
 /* The local variation on the ctlkeynode structure, with TLS-specific fields
  */
@@ -679,6 +693,10 @@ void starttls_pkcs11_provider (char *p11path) {
 
 static void cleanup_starttls_credentials (void);/* Defined below */
 static void cleanup_starttls_validation (void);	/* Defined below */
+#ifdef HAVE_TLS_KDH
+static void cleanup_starttls_kerberos (void);	/* Defined below */
+static int setup_starttls_kerberos (void);	/* Defined below */
+#endif
 static int setup_starttls_credentials (void);	/* Defined below */
 
 /* The global and static setup function for the starttls functions.
@@ -708,6 +726,12 @@ void setup_starttls (void) {
 		gnutls_global_set_log_level (9);
 	}
 	//
+	// Setup Kerberos
+#ifdef HAVE_TLS_KDH
+	E_g2e ("Kerberos initialisation failed",
+		setup_starttls_kerberos ());
+#endif
+	//
 	// Setup callbacks for user communication
 	gnutls_pkcs11_set_token_function (gnutls_token_callback, NULL);
 	gnutls_pkcs11_set_pin_function (gnutls_pin_callback, NULL);
@@ -724,7 +748,7 @@ void setup_starttls (void) {
 	E_g2e ("Failed to setup NORMAL priority cache",
 		gnutls_priority_init (&priority_normal, "NONE:+VERS-TLS-ALL:+VERS-DTLS-ALL:+COMP-NULL:"
 #ifdef HAVE_TLS_KDH
-		"%GNUTLS_ASYM_CERT_TYPES:"
+		"%%ASYM_CERT_TYPES:"
 #endif
 		"+CIPHER-ALL:+CURVE-ALL:+SIGN-ALL:+MAC-ALL:+ANON-ECDH:+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:+CTYPE-X.509:+CTYPE-OPENPGP:+SRP:+SRP-RSA:+SRP-DSS", NULL));
 		// gnutls_priority_init (&priority_normal, "NORMAL:-RSA:+ANON-ECDH:+RSA:+CTYPE-X.509:+CTYPE-OPENPGP:+SRP:+SRP-RSA:+SRP-DSS", NULL));
@@ -837,11 +861,11 @@ void cleanup_starttls (void) {
 		gnutls_privkey_deinit (onthefly_issuerkey);
 		onthefly_issuerkey = NULL;
 	}
-	if (kerberos_context != NULL) {
-		krb5_free_context (kerberos_context);
-		kerberos_context = NULL;
-	}
+
 	cleanup_starttls_credentials ();
+#ifdef HAVE_TLS_KDH
+	cleanup_starttls_kerberos ();
+#endif
 	remove_dh_params ();
 	gnutls_pkcs11_set_pin_function (NULL, NULL);
 	gnutls_pkcs11_set_token_function (NULL, NULL);
@@ -1007,6 +1031,46 @@ client = INVALID_POOL_HANDLE;
 }
 
 
+/* The callback function that retrieves a TLS-KDH "signature", which is kept
+ * outside of GnuTLS.  The callback computes an authenticator encrypted to
+ * the session's Kerberos key.
+ */
+#ifdef HAVE_TLS_KDH
+gtls_error cli_kdhsig_encode (gnutls_session_t session,
+			gnutls_datum_t *enc_authenticator,
+			gnutls_datum_t *dec_authenticator,
+			const gnutls_datum_t *hash,
+			int32_t checksum_type) {
+	gnutls_certificate_type_t peercert;
+	"...SETUP SECURE HASH IN AUTHENTICATOR...";
+	peercert = gnutls_certificate_type_get_peers (session);
+	if (peercert == GNUTLS_CRT_KRB) {
+		// This is KDH-Only, and so we MUST create a new key
+		"...GENERATE RANDOM...AND SETUP AS SUBKEY...";
+	}
+	"...SETUP MICROSECOND TIMER...";
+	"...SETUP KRB VERSION NUMBER...";
+	"...SETUP CLIENT REALM AND PRINCIPALNAME...";
+	return GNUTLS_E_UNSUPPORTED_SIGNATURE_ALGORITHM;
+}
+#endif
+
+
+/* The callback function that verifies a TLS-KDH "signature", which is kept
+ * outside of GnuTLS.  The callback verifies the authenticator against the
+ * provided session hash and returns the decrypted authenticator.
+ */
+#ifdef HAVE_TLS_KDH
+int srv_kdhsig_decode (gnutls_session_t session,
+			const gnutls_datum_t *enc_authenticator,
+			gnutls_datum_t *dec_authenticator,
+			gnutls_datum_t *hash,
+			int32_t *checksum_type) {
+	return GNUTLS_E_UNSUPPORTED_SIGNATURE_ALGORITHM;
+}
+#endif
+
+
 /* The callback function that retrieves certification information from either
  * the client or the server in the course of the handshake procedure.
  */
@@ -1094,7 +1158,11 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 
 	//
 	// Setup the lidtype parameter for responding
-	certtp = gnutls_certificate_type_get_peers (session);
+#ifdef HAVE_TLS_KDH
+	certtp = gnutls_certificate_type_get_ours (session);
+#else
+	certtp = gnutls_certificate_type_get (session);
+#endif
 	if (certtp == GNUTLS_CRT_OPENPGP) {
 		tlog (TLOG_TLS, LOG_INFO, "Serving OpenPGP certificate request as a %s", rolestr);
 		lidtype = LID_TYPE_PGP;
@@ -1103,7 +1171,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 		lidtype = LID_TYPE_X509;
 #ifdef HAVE_TLS_KDH
 	} else if (certtp == GNUTLS_CRT_KRB) {
-		tlog (TLOG_TLS, LOG_INFO, "Serving X.509 certificate request as a %s", rolestr);
+		tlog (TLOG_TLS, LOG_INFO, "Serving Kerberos Ticket request as a %s", rolestr);
 		lidtype = LID_TYPE_KRB5;
 #endif
 	} else {
@@ -1225,7 +1293,7 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 				0));
 		break;
 	case LID_TYPE_PGP:
-		E_g2e ("MOVED: Failed to import OpenPGP key",
+		E_g2e ("MOVED: Failed to import OpenPGP public key",
 			gnutls_pcert_import_openpgp_raw (
 				*pcert,
 				&certdatum,
@@ -1266,36 +1334,44 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			char *realmtmp;
 			// Fill the credentials request
 			memset (&prep_creds, 0, sizeof (prep_creds));
+			prep_creds.magic = KV5M_CREDS;
 			memcpy (klid, cmd->cmd.pio_data.pioc_starttls.localid,  128);
 			memcpy (krid, cmd->cmd.pio_data.pioc_starttls.remoteid, 128);
 			klid [128] = krid [128] = '\0';
 			realmtmp = strrchr (klid, '@');
 			if (realmtmp != NULL) {
 				*realmtmp++ = '\0';
+				prep_creds.client->realm.magic = KV5M_DATA;
 				prep_creds.client->realm.data = realmtmp;
 				prep_creds.client->realm.length = strlen (realmtmp);
 				while (*realmtmp) {
 					*realmtmp++ = toupper (*realmtmp);
 				}
 			}
+			klidprincipal [0].magic = KV5M_DATA;
 			klidprincipal [0].data = klid;
 			klidprincipal [0].length = strlen (klid);
+			prep_creds.client->magic = KV5M_PRINCIPAL;
 			prep_creds.client->data = klidprincipal;
 			prep_creds.client->length = 1;
 			prep_creds.client->type = KRB5_NT_PRINCIPAL;
 			realmtmp = strrchr (krid, '@');
 			if (realmtmp != NULL) {
 				*realmtmp++ = '\0';
+				prep_creds.server->realm.magic = KV5M_DATA;
 				prep_creds.server->realm.data = realmtmp;
 				prep_creds.server->realm.length = strlen (realmtmp);
 				while (*realmtmp) {
 					*realmtmp++ = toupper (*realmtmp);
 				}
 			}
+			kridprincipal [0].magic = KV5M_DATA;
 			kridprincipal [0].data = svc;
 			kridprincipal [0].length = strnlen (svc, TLSPOOL_SERVICELEN);
+			kridprincipal [1].magic = KV5M_DATA;
 			kridprincipal [1].data = krid;
 			kridprincipal [1].length = strlen (krid);
+			prep_creds.client->magic = KV5M_PRINCIPAL;
 			prep_creds.server->data = kridprincipal;
 			prep_creds.server->length = 1;
 			prep_creds.server->type = KRB5_NT_SRV_HST;
@@ -1305,7 +1381,7 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			ok = ok && (0 == have_credcache (prep_creds.client, &mycache));
 			ok = ok && (mycache != NULL);
 			ok = ok && (0 == krb5_get_credentials (
-					kerberos_context,
+					krb_ctx,
 					0,
 					mycache,
 					&prep_creds,
@@ -1323,7 +1399,7 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 					&certdatum,
 					0));
 			if (gotten_creds != NULL) {
-				krb5_free_creds (kerberos_context, gotten_creds);
+				krb5_free_creds (krb_ctx, gotten_creds);
 				gotten_creds = NULL;
 			}
 		} else {
@@ -1513,6 +1589,155 @@ gnutls_pcert_st *load_certificate_chain (uint32_t flags, unsigned int *chainlen,
 	*chainlen = 0;
 	return NULL;
 }
+
+
+/* Prepare the Kerberos resources for use by clients and/or servers.
+ */
+#ifdef HAVE_TLS_KDH
+static int setup_starttls_kerberos (void) {
+	int k5err = 0;
+	char *cfg;
+	int retval = GNUTLS_E_SUCCESS;
+	//
+	// Initialise
+	krb_ctx = NULL;
+	krb_kt_cli = krb_kt_srv = NULL;
+	krb_cc_cli = krb_cc_srv = NULL;
+	//
+	// Construct credentials caching for Kerberos
+	krb_ctx = NULL;
+	if (k5err == 0) {
+		k5err = krb5_init_context (&krb_ctx);
+	}
+	//
+	// Load the various configuration variables
+	cfg = cfg_krb_client_keytab ();
+	if ((k5err == 0) && (cfg != NULL)) {
+		k5err = krb5_kt_resolve (krb_ctx, cfg, &krb_kt_cli);
+	}
+	cfg = cfg_krb_server_keytab ();
+	if ((k5err == 0) && (cfg != NULL)) {
+		k5err = krb5_kt_resolve (krb_ctx, cfg, &krb_kt_srv);
+	}
+	cfg = cfg_krb_client_credcache ();
+	if ((k5err == 0) && (cfg != NULL)) {
+		k5err = krb5_cc_resolve (krb_ctx, cfg, &krb_cc_cli);
+	}
+	cfg = cfg_krb_server_credcache ();
+	if ((k5err == 0) && (cfg != NULL)) {
+		k5err = krb5_cc_resolve (krb_ctx, cfg, &krb_cc_srv);
+	}
+	//
+	// Check for consistency and log helpful messages for the sysop
+	if (k5err != 0) {
+		tlog (TLOG_DAEMON, LOG_ERR, "Error during STARTTLS setup: %s (acting on %s)",
+				krb5_get_error_message (krb_ctx, k5err),
+				cfg);
+		retval = GNUTLS_E_UNWANTED_ALGORITHM;
+	}
+	if (krb_kt_cli != NULL) {
+		tlog (TLOG_DAEMON, LOG_WARNING, "Ignoring the configured kerberos_client_keytab -- it is not implemented yet");
+	}
+	if (krb_cc_cli == NULL) {
+		tlog (TLOG_DAEMON, LOG_ERR, "No kerberos_client_credcache configured, so Kerberos cannot work at all");
+		retval = GNUTLS_E_UNWANTED_ALGORITHM;
+	}
+	if (krb_cc_srv == NULL) {
+		tlog (TLOG_DAEMON, LOG_WARNING, "No kerberos_server_credcache configured, so user-to-user Kerberos will not work");
+	}
+	if (retval != GNUTLS_E_SUCCESS) {
+		cleanup_starttls_kerberos ();
+	}
+	return retval;
+}
+#endif
+
+/* Cleanup Kerberks resources.  This must be an idempotent function, because
+ * it is called when Kerberos panics as well as when 
+ */
+#ifdef HAVE_TLS_KDH
+static void cleanup_starttls_kerberos (void) {
+	if (krb_cc_srv != NULL) {
+		krb5_cc_close (krb_ctx, krb_cc_srv);
+		krb_cc_srv = NULL;
+	}
+	if (krb_cc_cli != NULL) {
+		krb5_cc_close (krb_ctx, krb_cc_cli);
+		krb_cc_cli = NULL;
+	}
+	if (krb_kt_srv != NULL) {
+		krb5_kt_close (krb_ctx, krb_kt_srv);
+		krb_kt_srv = NULL;
+	}
+	if (krb_kt_cli != NULL) {
+		krb5_kt_close (krb_ctx, krb_kt_cli);
+		krb_kt_cli = NULL;
+	}
+	if (krb_ctx != NULL) {
+		krb5_free_context (krb_ctx);
+		krb_ctx = NULL;
+	}
+}
+#endif
+
+
+/* Iterate over a credential cache collection, looking for the one that
+ * has the desired principal name and realm.  If it does not exist yet,
+ * create it.  This works with collections such as DIR:/var/tlspool/creds
+ * or, only on Linux, KEYRING:process:name to store creds in the kernel.
+ * The function returns 0 when ok, or otherwise nonzero.
+ */
+#ifdef HAVE_TLS_KDH
+static krb5_error_code have_credcache (krb5_principal sought, krb5_ccache *found) {
+	krb5_cccol_cursor crs;
+	krb5_ccache tmp;
+	krb5_principal princ;
+	*found = NULL;
+	crs = NULL;
+	int hit;
+	if (0 == krb5_cccol_cursor_new (krb_ctx, &crs)) {
+		while (0 != krb5_cccol_cursor_next (krb_ctx, crs, &tmp)) {
+			if (tmp == NULL) {
+				// No more ccache in directory
+				break;
+			}
+			if (0 != krb5_cc_get_principal (krb_ctx, tmp, &princ)) {
+				break;
+			}
+			hit = krb5_principal_compare (krb_ctx, princ, sought);
+			krb5_free_principal (krb_ctx, princ);
+			if (hit) {
+				*found = tmp;
+				// Avoid cleaning up the context
+				break;
+			}
+			krb5_cc_close (krb_ctx, tmp);
+		}
+	}
+	if (crs != NULL) {
+		krb5_cccol_cursor_free (krb_ctx, &crs);
+		crs = NULL;
+	}
+	// If need be, create a new credential cache
+	if (NULL == *found) {
+		//TODO// Param "type" set to "DIR" but that's pretty fixed.
+		//TODO// Is "hint" really not interpreted?!?
+		if (0 == krb5_cc_new_unique (krb_ctx, "DIR", NULL, &tmp)) {
+			if (0 == krb5_cc_initialize (krb_ctx, tmp, sought)) {
+				*found = tmp;
+			}
+		}
+		//TODO// krb5_cc_set_default_name ()
+	}
+	// If the credentials cache has no tickets, login
+	if (NULL == *found) {
+		//TODO// krb5_get_init_creds_password ()
+		//TODO// krb5_cc_store_cred()
+	}
+	// No return the result
+	return (NULL != *found)? 0: KRB5_CC_NOTFOUND;
+}
+#endif
 
 
 /********** VALIDATION EXPRESSION LINKUP TO GNUTLS **********/
@@ -2057,57 +2282,6 @@ static const struct valexp_handling *have_starttls_validation (void) {
 
 
 
-/* Iterate over a credential cache collection, looking for the one that
- * has the desired principal name and realm.  If it does not exist yet,
- * create it.  This works with collections such as DIR:/var/tlspool/creds
- * or, only on Linux, KEYRING:process:name to store creds in the kernel.
- * The function returns 0 when ok, or otherwise nonzero.
- */
-#ifdef HAVE_TLS_KDH
-static krb5_error_code have_credcache (krb5_principal sought, krb5_ccache *found) {
-	krb5_cccol_cursor crs;
-	krb5_ccache tmp;
-	krb5_principal princ;
-	*found = NULL;
-	crs = NULL;
-	int hit;
-	if (0 == krb5_cccol_cursor_new (kerberos_context, &crs)) {
-		while (0 != krb5_cccol_cursor_next (kerberos_context, crs, &tmp)) {
-			if (tmp == NULL) {
-				// No more ccache in directory
-				break;
-			}
-			if (0 != krb5_cc_get_principal (kerberos_context, tmp, &princ)) {
-				break;
-			}
-			hit = krb5_principal_compare (kerberos_context, princ, sought);
-			krb5_free_principal (kerberos_context, princ);
-			if (hit) {
-				*found = tmp;
-				// Avoid cleaning up the context
-				break;
-			}
-			krb5_cc_close (kerberos_context, tmp);
-		}
-	}
-	if (crs != NULL) {
-		krb5_cccol_cursor_free (kerberos_context, &crs);
-		crs = NULL;
-	}
-	// If need be, create a new credential cache
-	if (NULL == *found) {
-		//TODO// Param "type" set to "DIR" but that's pretty fixed.
-		//TODO// Is "hint" really not interpreted?!?
-		if (0 == krb5_cc_new_unique (kerberos_context, "DIR", NULL, &tmp)) {
-			if (0 == krb5_cc_initialize (kerberos_context, tmp, sought)) {
-				*found = tmp;
-			}
-		}
-	}
-	return (NULL != *found)? 0: KRB5_CC_NOTFOUND;
-}
-#endif
-
 /* If any remote credentials are noted, cleanup on them.  This removes
  * any remote_cert[...] entries, counting up to remote_cert_count which
  * is naturally set to 0 initially, as well as after this has run.
@@ -2576,7 +2750,7 @@ static int configure_session (struct command *cmd,
 			// "NORMAL:-RSA:" -- also ECDH-RSA, ECDHE-RSA, ...DSA...
 			"NONE:"
 #ifdef HAVE_TLS_KDH
-			"%GNUTLS_ASYM_CERT_TYPES:"
+			"%%ASYM_CERT_TYPES:"
 #endif
 			"+VERS-TLS-ALL:+VERS-DTLS-ALL:"
 			"+COMP-NULL:"
@@ -2586,7 +2760,7 @@ static int configure_session (struct command *cmd,
 			"%cCTYPE-X.509:"
 			"%cCTYPE-OPENPGP:"
 #ifdef HAVE_TLS_KDH
-			"%cCTYPE-CLI-KRB:%cCTYPE-SRV-X.509:",
+			"%cCTYPE-CLI-KRB:%cCTYPE-SRV-X.509:"
 #endif
 			"%cSRP:%cSRP-RSA:%cSRP-DSS",
 			anonpre_ok				?'+':'-',
@@ -2762,7 +2936,6 @@ static int setup_starttls_credentials (void) {
 	//TODO// gnutls_kdh_server_credentials_t cli_kdhcred = NULL;
 	int gtls_errno = GNUTLS_E_SUCCESS;
 	int gtls_errno_stack0 = GNUTLS_E_SUCCESS;
-	int krb5_errno = 0;
 
 	//
 	// Construct anonymous server credentials
@@ -2827,6 +3000,16 @@ static int setup_starttls_credentials (void) {
 	if (!have_error_codes ()) /* TODO:GnuTLSversions E_g2e (...) */ gnutls_certificate_set_retrieve_function2 (
 		clisrv_certcred,
 		clisrv_cert_retrieve);
+#ifdef HAVE_TLS_KDH
+	E_g2e ("Failed to set encoding callback for Kerberos Authenticators",
+			gnutls_authenticator_set_encode_function (
+					clisrv_certcred,
+					cli_kdhsig_encode));
+	E_g2e ("Failed to set decoding callback for Kerberos Authenticators",
+			gnutls_authenticator_set_decode_function (
+					clisrv_certcred,
+					srv_kdhsig_decode));
+#endif
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
 		// Setup for certificates
 		tlog (TLOG_CERT, LOG_INFO, "Setting client and server certificate credentials");
@@ -2879,14 +3062,6 @@ static int setup_starttls_credentials (void) {
 	} else if (cli_srpcred != NULL) {
 		gnutls_srp_free_client_credentials (cli_srpcred);
 		cli_srpcred = NULL;
-	}
-
-	//
-	// Construct credentials caching for Kerberos
-	kerberos_context = NULL;
-	//TODO:ALLOW_GLOBAL_CCACHE_LOOKUPS// kerberos_credcache = NULL;
-	if (krb5_errno == 0) {
-		krb5_errno = krb5_init_context (&kerberos_context);
 	}
 
 	//
