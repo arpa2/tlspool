@@ -138,10 +138,10 @@ struct cfgopt config_options [] = {
 	"deny_facilities",	cfg_setvar,	CFGVAR_FACILITIES_DENY,
 	"allow_facilities",	cfg_setvar,	CFGVAR_FACILITIES_ALLOW,
 	"dnssec_rootkey",	cfg_setvar,	CFGVAR_DNSSEC_ROOTKEY,
-	//NOTYET// "kerberos_client_keytab",	cfg_setvar,	CFGVAR_KRB_CLIENT_KEYTAB,
-	"kerberos_server_keytab",	cfg_setvar,	CFGVAR_KRB_SERVER_KEYTAB,
-	"kerberos_client_credcache",	cfg_setvar,	CFGVAR_KRB_CLIENT_CREDCACHE,
-	"kerberos_server_credcache",	cfg_setvar,	CFGVAR_KRB_SERVER_CREDCACHE,
+	"kerberos_client_keytab",   cfg_setvar,	CFGVAR_KRB_CLIENT_KEYTAB,
+	"kerberos_server_keytab",   cfg_setvar,	CFGVAR_KRB_SERVER_KEYTAB,
+	"kerberos_client_credcache",cfg_setvar,	CFGVAR_KRB_CLIENT_CREDCACHE,
+	"kerberos_server_credcache",cfg_setvar,	CFGVAR_KRB_SERVER_CREDCACHE,
 	//
 	NULL,			NULL,		CFGVAR_NONE
 };
