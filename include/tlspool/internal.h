@@ -13,6 +13,10 @@
 
 #include <db.h>
 
+#ifdef HAVE_TLS_KDH
+#include <krb5.h>
+#endif
+
 
 #define EXPECTED_LID_TYPE_COUNT 5
 
@@ -54,6 +58,9 @@ struct command {
 	int remote_cert_type;
 	void *remote_cert [CERTS_MAX_DEPTH];
 	uint8_t remote_cert_count;
+#ifdef HAVE_TLS_KDH
+	krb5_keyblock krb_key;		// Kerberos key for encryption
+#endif
 };
 
 
