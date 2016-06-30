@@ -186,7 +186,7 @@ static int chase_keyword_descriptor (const struct keyword_descriptor *kd,
 			return kdofs;
 		}
 	}
-	syslog (LOG_ERR, "Unrecognised keyword at offset %d in %s", offset, text);
+	syslog (LOG_ERR, "Unrecognised keyword at offset %d in %s", *offset, text);
 	return -1;
 }
 

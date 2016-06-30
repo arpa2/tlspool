@@ -71,18 +71,18 @@ fi
 # Let's make sure the working directory exists, and go there
 
 if [ ! -d "$BASEDIR/$WORKINGDIR" ]; then
-  mkdir "$BASEDIR/$WORKINGDIR" 
+  mkdir "$BASEDIR/$WORKINGDIR"
 fi
 
 cd "$BASEDIR/$WORKINGDIR"
 
-# By keeping the tlspool and nixpkgs repositories inside the same folder we can update 
-# tlspool with a simple "git pull" from the main repository and nix-build command. 
+# By keeping the tlspool and nixpkgs repositories inside the same folder we can update
+# tlspool with a simple "git pull" from the main repository and nix-build command.
 
 if [ ! -d "tlspool" ]; then
   git clone https://github.com/arpa2/tlspool
   git checkout 49bf1157e3471ee15bc279d41c9492646a2bf44c
-else 
+else
   cd tlspool
   git pull https://github.com/arpa2/tlspool
   git checkout 49bf1157e3471ee15bc279d41c9492646a2bf44c
@@ -91,16 +91,24 @@ fi
 
 if [ ! -d "nixpkgs" ]; then
   git clone https://github.com/arpa2/nixpkgs
-else 
+else
   cd nixpkgs
   git pull https://github.com/arpa2/nixpkgs
+  cd ..
+fi
+
+if [ ! -d "steamworks" ]; then
+  git clone https://github.com/arpa2/steamworks
+else
+  cd steamworks 
+  git pull https://github.com/arpa2/steamworks
   cd ..
 fi
 
 # Go into the nixpkgs folder and switch to the tlspool branch:
 
 cd nixpkgs
-export NIXPKGS="$BASEDIR/$WORKINGDIR/nixpkgs" 
+export NIXPKGS="$BASEDIR/$WORKINGDIR/nixpkgs"
 git checkout tlspool
 
 # Install tlspool and all the dependencies through nix:
@@ -109,7 +117,7 @@ nix-env -f "$NIXPKGS" -iA tlspool
 
 cd ..
 
-# NB: for SoftHSM you will need to create a config file 
+# NB: for SoftHSM you will need to create a config file
 CONFIGFILE="$HOME/.config/softhsm2/softhsm2.conf";
 
 # This will have the following minimal contents
@@ -120,11 +128,11 @@ LINE3="log.level = DEBUG";
 
 # Does the user already have a SoftHSM2 config file?
 
-if [ ! -e "$CONFIGFILE" ]; 
-then 
+if [ ! -e "$CONFIGFILE" ];
+then
 
   printf "Don't forget to create the config file for SoftHSM2\n"
-  printf "You can create a file named $CONFIGFILE" 
+  printf "You can create a file named $CONFIGFILE"
   printf "with the following suggested content:\n"
   printf  "%s\n--------\n";
   printf "$LINE1a$LINE1b\n$LINE2\n$LINE3\n"
@@ -176,3 +184,6 @@ if [ ! -e $UPDATESCRIPT ]; then
 fi
 
 printf "A simple git pull will update either.\n\nOr just copy $UPDATESCRIPT to wherever you want it to be.\n\n"
+
+printf "You can run 'tlspool -c configfile'. There is an example config file at "
+printf "~i/.nix-profile/etc/tlspool/tlspool.conf which you can modify for usage." 
