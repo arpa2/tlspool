@@ -132,9 +132,8 @@ static gnutls_x509_privkey_t onthefly_subjectkey = NULL;
 static pthread_mutex_t onthefly_signer_lock = PTHREAD_MUTEX_INITIALIZER;
 
 #ifdef HAVE_TLS_KDH
-static krb5_context krb_ctx;
-static krb5_keytab krb_kt_cli, krb_kt_srv;
-static krb5_ccache krb_cc_cli, krb_cc_srv;
+static krb5_context krbctx_cli, krbctx_srv;
+static krb5_keytab  krb_kt_cli, krb_kt_srv;
 static krb5_error_code have_credcache (krb5_principal sought, krb5_ccache *found);
 #endif
 
@@ -1379,7 +1378,7 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			ok = ok && (0 == have_credcache (prep_creds.client, &mycache));
 			ok = ok && (mycache != NULL);
 			ok = ok && (0 == krb5_get_credentials (
-					krb_ctx,
+					krbctx_cli,
 					0,
 					mycache,
 					&prep_creds,
@@ -1397,7 +1396,7 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 					&certdatum,
 					0));
 			if (gotten_creds != NULL) {
-				krb5_free_creds (krb_ctx, gotten_creds);
+				krb5_free_creds (krbctx_cli, gotten_creds);
 				gotten_creds = NULL;
 			}
 		} else {
@@ -1597,40 +1596,58 @@ static int setup_starttls_kerberos (void) {
 	int k5err = 0;
 	char *cfg;
 	int retval = GNUTLS_E_SUCCESS;
+	krb5_ccache krb_cc_tmp;
+	const char *cctype_cli = NULL;
+	const char *cctype_srv = NULL;
 	//
 	// Initialise
-	krb_ctx = NULL;
+	krbctx_cli = krbctx_srv = NULL;
 	krb_kt_cli = krb_kt_srv = NULL;
-	krb_cc_cli = krb_cc_srv = NULL;
 	//
 	// Construct credentials caching for Kerberos
-	krb_ctx = NULL;
 	if (k5err == 0) {
-		k5err = krb5_init_context (&krb_ctx);
+		k5err = krb5_init_context (&krbctx_cli);
+	}
+	if (k5err == 0) {
+		k5err = krb5_init_context (&krbctx_srv);
 	}
 	//
 	// Load the various configuration variables
 	cfg = cfg_krb_client_keytab ();
 	if ((k5err == 0) && (cfg != NULL)) {
-		k5err = krb5_kt_resolve (krb_ctx, cfg, &krb_kt_cli);
+		k5err = krb5_kt_resolve (krbctx_cli, cfg, &krb_kt_cli);
 	}
 	cfg = cfg_krb_server_keytab ();
 	if ((k5err == 0) && (cfg != NULL)) {
-		k5err = krb5_kt_resolve (krb_ctx, cfg, &krb_kt_srv);
+		k5err = krb5_kt_resolve (krbctx_srv, cfg, &krb_kt_srv);
 	}
 	cfg = cfg_krb_client_credcache ();
 	if ((k5err == 0) && (cfg != NULL)) {
-		k5err = krb5_cc_resolve (krb_ctx, cfg, &krb_cc_cli);
+		k5err = krb5_cc_set_default_name (krbctx_cli, cfg);
+		if (k5err == 0) {
+			k5err = krb5_cc_default (krbctx_cli, &krb_cc_tmp);
+		}
+		if (k5err == 0) {
+			cctype_cli = krb5_cc_get_type (krbctx_cli, krb_cc_tmp);
+			krb5_cc_close (krbctx_cli, krb_cc_tmp);
+		}
 	}
 	cfg = cfg_krb_server_credcache ();
 	if ((k5err == 0) && (cfg != NULL)) {
-		k5err = krb5_cc_resolve (krb_ctx, cfg, &krb_cc_srv);
+		k5err = krb5_cc_set_default_name (krbctx_srv, cfg);
+		if (k5err == 0) {
+			k5err = krb5_cc_default (krbctx_srv, &krb_cc_tmp);
+		}
+		if (k5err == 0) {
+			cctype_srv = krb5_cc_get_type (krbctx_cli, krb_cc_tmp);
+			krb5_cc_close (krbctx_srv, krb_cc_tmp);
+		}
 	}
 	//
 	// Check for consistency and log helpful messages for the sysop
 	if (k5err != 0) {
 		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "Error during STARTTLS setup: %s (acting on %s)",
-				krb5_get_error_message (krb_ctx, k5err),
+				krb5_get_error_message (krbctx_cli, k5err),
 				cfg);
 		retval = GNUTLS_E_UNWANTED_ALGORITHM;
 	}
@@ -1646,21 +1663,18 @@ static int setup_starttls_kerberos (void) {
 		retval = GNUTLS_E_UNWANTED_ALGORITHM;
  */
 	}
-
-	if (krb_cc_cli == NULL) {
+	if (krbctx_cli == NULL) {
 		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "No kerberos_client_credcache configured, so Kerberos cannot work at all");
 		retval = GNUTLS_E_UNWANTED_ALGORITHM;
 	} else if (!krb5_cc_support_switch (
-			krb_ctx, krb5_cc_get_type (
-				krb_ctx, krb_cc_cli))) {
+			krbctx_cli, cctype_cli)) {
 		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "Your kerberos_client_credcache does not support multilpe identities");
 		retval = GNUTLS_E_UNWANTED_ALGORITHM;
 	}
-	if (krb_cc_srv == NULL) {
+	if (krbctx_srv == NULL) {
 		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_WARNING, "No kerberos_server_credcache configured, so user-to-user Kerberos will not work");
 	} else if (!krb5_cc_support_switch (
-			krb_ctx, krb5_cc_get_type (
-				krb_ctx, krb_cc_srv))) {
+			krbctx_srv, cctype_srv)) {
 		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "Your kerberos_server_credcache does not support multilpe identities");
 		retval = GNUTLS_E_UNWANTED_ALGORITHM;
 	}
@@ -1676,25 +1690,21 @@ static int setup_starttls_kerberos (void) {
  */
 #ifdef HAVE_TLS_KDH
 static void cleanup_starttls_kerberos (void) {
-	if (krb_cc_srv != NULL) {
-		krb5_cc_close (krb_ctx, krb_cc_srv);
-		krb_cc_srv = NULL;
-	}
-	if (krb_cc_cli != NULL) {
-		krb5_cc_close (krb_ctx, krb_cc_cli);
-		krb_cc_cli = NULL;
-	}
 	if (krb_kt_srv != NULL) {
-		krb5_kt_close (krb_ctx, krb_kt_srv);
+		krb5_kt_close (krbctx_srv, krb_kt_srv);
 		krb_kt_srv = NULL;
 	}
 	if (krb_kt_cli != NULL) {
-		krb5_kt_close (krb_ctx, krb_kt_cli);
+		krb5_kt_close (krbctx_cli, krb_kt_cli);
 		krb_kt_cli = NULL;
 	}
-	if (krb_ctx != NULL) {
-		krb5_free_context (krb_ctx);
-		krb_ctx = NULL;
+	if (krbctx_srv != NULL) {
+		krb5_free_context (krbctx_srv);
+		krbctx_srv = NULL;
+	}
+	if (krbctx_cli != NULL) {
+		krb5_free_context (krbctx_cli);
+		krbctx_cli = NULL;
 	}
 }
 #endif
@@ -1706,7 +1716,7 @@ static void cleanup_starttls_kerberos (void) {
  * or, only on Linux, KEYRING:process:name to store creds in the kernel.
  * The function returns 0 when ok, or otherwise nonzero.
  */
-#ifdef HAVE_TLS_KDH
+#ifdef HAVE_TLS_KDH_OLD_ATTEMPT
 static krb5_error_code have_credcache (krb5_principal sought, krb5_ccache *found) {
 	krb5_cccol_cursor crs;
 	krb5_ccache tmp;
@@ -1755,6 +1765,105 @@ static krb5_error_code have_credcache (krb5_principal sought, krb5_ccache *found
 	}
 	// No return the result
 	return (NULL != *found)? 0: KRB5_CC_NOTFOUND;
+}
+#endif
+
+
+/* Find a Kerberos ticket and keyblock to use for the localid.  Do not look
+ * into services yet in this function.  This function implements a simple
+ * procedure, based on optional arguments p11uri, keytab, credcache.  It
+ * produces <key,tgt> or <key,NULL> or (for errors) <NULL,NULL>.
+ *
+ * The procedure followed, fully written out, is outlined below:
+ *
+ *	IF	have(credcache) AND acceptable (renewable) time
+ *	THEN	RETURN <key,tgt>
+ *	ELSE	IF have (keytab) AND found a suitable key
+ *		THEN	IF have(credcache) and it works
+ *			THEN	fetch cred tgt and key (auth with key in keytab)
+ *				create credcache
+ *				RETURN <key,tgt>
+ *			ELSE	RETURN <key,NULL>
+ *		ELSE	IF have(p11uri) AND it works
+ *			THEN	fetch cred tgt and key (auth with pwd in p11uri)
+ *				create credcache
+ *				RETURN <key,tgt>
+ *			ELSE	RETURN <NULL,NULL>
+ *
+ * The function returns no values other than the <key,tgt> pair.
+ */
+#ifdef HAVE_TLS_KDH
+static void have_key_tgt (struct command *cmd,	     // in, session context
+				krb5_context ctx,    // in, kerberos context
+				char *p11uri,	     // in/opt, PKCS #11 pwd URI
+				krb5_keytab kt,	     // in/opt, keytab
+				krb5_ccache cc,	     // in/opt, credcache
+				krb5_keyblock *key,  // opt/opt session key
+				krb5_creds *tgt) {   // out/opt, tkt granting tkt
+	int k5err = 0;
+	krb5_ccache cc = NULL;
+	krb5_principal sought  = NULL;
+	krb5_principal tgtname = NULL;
+	//
+	// Assertions, and initialise variables
+	assert (cmd != NULL);
+	assert (ctx != NULL);
+	assert (key != NULL);
+	assert (tgt != NULL);
+	* (void **) tgt = NULL;
+	* (void **) key = NULL;
+	//
+	//TODO// Map cmd to a krb5_principal for cmd->localid / service / flags
+	//
+	// First try to locate information in an existing cache
+#if 0
+	krb5_cache try = NULL;
+	krb5_cccol_cursor crs = NULL;
+	krb5_principal found   = NULL;
+	k5err = krb5_cccol_cursor_new (ctx, &crs);
+	while ((k5err == 0) && (cc = NULL)) {
+		k5err = krb5_cccol_cursor_next (ctx, crs, &try);
+		if (k5err == 0) {
+			k5err = krb5_cc_get_principal (ctx, try, &found);
+		}
+		if ((k5err == 0) && (krb5_principal_compare
+					(ctx, sought, found)) {
+			// Found the ccache for sought principal!
+			// Prepare for graceful loop exit, with cleanup
+			cc = try;
+			try = NULL;
+		}
+		if (princ != NULL) {
+			krb5_free_principal (ctx, found);
+			found = NULL;
+		}
+		if (try != NULL) {
+			krb5_cc_close (ctx, try);
+			try = NULL;
+		}
+	}
+	if (crs != NULL) {
+		krb5_cccol_cursor_free (ctx, crs);
+		crs = NULL;
+	}
+#else
+	k5err = krb5_cc_cache_match (ctx, sought, &cc);
+	if (k5err != 0) {
+		cc = NULL;
+	}
+#endif
+	k5err = 0;	// The only result of interest is in cc
+	//
+	// Setup the TGT name
+	"TODO:TGT:NAME";
+	//
+	// Get the service ticket for the TGT name from the cache
+	//
+	// Cleanup and return the <key,tgt> values as they were delivered
+cleanup:
+	if (cc != NULL) {
+		krb5_cc_close (cc);
+	}
 }
 #endif
 
@@ -3929,9 +4038,8 @@ fprintf (stderr, "DEBUG: Unregistered verun 0x%016x\n", (uint64_t) verun);
 	//
 	// Cleanup any Kerberos session key -- it served its purpose
 	if (cmd->krb_key.contents != NULL) {
-		krb5_free_keyblock_contents (krb_ctx, &cmd->krb_key);
-		cmd->krb_key.length = 0;
-		cmd->krb_key.contents = NULL;
+		// RATHER BLUNT: It shouldn't matter which krbctx_ is used...
+		krb5_free_keyblock_contents (krbctx_srv, &cmd->krb_key);
 	}
 
 #if 0
