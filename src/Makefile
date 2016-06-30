@@ -17,8 +17,10 @@ CFLAGS += -DHAVE_SYSTEMD
 LIBS   += -lsystemd-daemon
 endif
 
+ifndef WITHOUT_KERBEROS
 CFLAGS += -DHAVE_TLS_KDH $(KERBEROS_CFLAGS)
 LIBS += $(KERBEROS_LIBS)
+endif
 
 GNUTLS_CFLAGS = $(shell $(PKG_CONFIG) --cflags gnutls)
 GNUTLS_LIBS   = $(shell $(PKG_CONFIG) --libs   gnutls)

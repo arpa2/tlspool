@@ -3917,6 +3917,13 @@ fprintf (stderr, "DEBUG: Unregistered verun 0x%016x\n", (uint64_t) verun);
 		free (cmd->trust_valexp);
 		cmd->trust_valexp = NULL;
 	}
+	//
+	// Cleanup any Kerberos session key -- it served its purpose
+	if (cmd->krb_key.contents != NULL) {
+		krb5_free_keyblock_contents (krb_ctx, &cmd->krb_key);
+		cmd->krb_key.length = 0;
+		cmd->krb_key.contents = NULL;
+	}
 
 #if 0
 /* This is not proper.  gnutls_certificate_set_key() suggests that these are
