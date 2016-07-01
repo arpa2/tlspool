@@ -1606,6 +1606,10 @@ gnutls_pcert_st *load_certificate_chain (uint32_t flags, unsigned int *chainlen,
 
 
 
+/********** KERBEROS SUPPORT FUNCTIONS FOR TLS-KDH **********/
+
+
+
 /* Prepare the Kerberos resources for use by clients and/or servers.
  */
 #ifdef HAVE_TLS_KDH
@@ -1729,11 +1733,6 @@ static void cleanup_starttls_kerberos (void) {
 	}
 }
 #endif
-
-
-
-/********** KERBEROS SUPPORT FUNCTIONS FOR TLS-KDH **********/
-
 
 
 /* Prompter callback function for PKCS #11.
@@ -2297,7 +2296,7 @@ done:
  * the session's Kerberos key.
  */
 #ifdef HAVE_TLS_KDH
-gtls_error cli_kdhsig_encode (gnutls_session_t session,
+static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 			gnutls_datum_t *enc_authenticator,
 			gnutls_datum_t *dec_authenticator,
 			const gnutls_datum_t *hash,
@@ -2337,7 +2336,7 @@ gtls_error cli_kdhsig_encode (gnutls_session_t session,
 				ENCTYPE_AES256_CTS_HMAC_SHA1_96,
 				&subkey);
 		if (k5err != 0) {
-			return GNUTLS_E_UNSUPPORTED_SIGNATURE_ALGORITHM;
+			return GNUTLS_E_ENCRYPTION_FAILED;
 		}
 		auth.subkey.keytype = qder2b_pack_int32 (dersubkey, subkey.enctype);
 		auth.subkey.keyvalue.derptr = subkey.contents;
@@ -2380,7 +2379,8 @@ gtls_error cli_kdhsig_encode (gnutls_session_t session,
 					cmd->krb_tkt.keyblock.enctype,
 					declen,
 					&rawlen)) {
-		return GNUTLS_E_UNSUPPORTED_SIGNATURE_ALGORITHM;
+		free (decptr);
+		return GNUTLS_E_ENCRYPTION_FAILED;
 	}
 	uint8_t *rawptr = malloc (rawlen);
 	if (rawptr == NULL) {
@@ -2401,7 +2401,9 @@ gtls_error cli_kdhsig_encode (gnutls_session_t session,
 					NULL,
 					&decdata,
 					&rawdata)) {
-		return GNUTLS_E_UNSUPPORTED_SIGNATURE_ALGORITHM;
+		free (rawptr);
+		free (decptr);
+		return GNUTLS_E_ENCRYPTION_FAILED;
 	}
 	//
 	// Prepare the header information
@@ -2420,6 +2422,8 @@ gtls_error cli_kdhsig_encode (gnutls_session_t session,
 					);
 	uint8_t *encptr = malloc (enclen);
 	if (encptr == NULL) {
+		free (rawptr);
+		free (decptr);
 		return GNUTLS_E_MEMORY_ERROR;
 	}
 	der_pack (			encdata_packer,
@@ -2442,7 +2446,7 @@ gtls_error cli_kdhsig_encode (gnutls_session_t session,
  * provided session hash and returns the decrypted authenticator.
  */
 #ifdef HAVE_TLS_KDH
-int srv_kdhsig_decode (gnutls_session_t session,
+static int srv_kdhsig_decode (gnutls_session_t session,
 			const gnutls_datum_t *enc_authenticator,
 			gnutls_datum_t *dec_authenticator,
 			gnutls_datum_t *hash,
@@ -2466,10 +2470,10 @@ int srv_kdhsig_decode (gnutls_session_t session,
 					encdata_packer,
 					(dercursor *) &encdata,
 					1)) {
-		return GNUTLS_E_PK_SIG_VERIFY_FAILED;
+		return GNUTLS_E_DECRYPTION_FAILED;
 	}
 	if (encdata.kvno.derptr != NULL) {
-		return GNUTLS_E_PK_SIG_VERIFY_FAILED;
+		return GNUTLS_E_DECRYPTION_FAILED;
 	}
 	int32_t etype = qder2b_unpack_int32 (encdata.etype);
 	//
@@ -2489,7 +2493,7 @@ int srv_kdhsig_decode (gnutls_session_t session,
 					NULL,
 					&rawdata,
 					&decdata)) {
-		return GNUTLS_E_PK_SIG_VERIFY_FAILED;
+		return GNUTLS_E_DECRYPTION_FAILED;
 	}
 	dec_authenticator->size = decdata.length;
 	//
@@ -2502,18 +2506,18 @@ int srv_kdhsig_decode (gnutls_session_t session,
 					auth_packer,
 					(dercursor *) &auth,
 					1)) {
-		return GNUTLS_E_PK_SIG_VERIFY_FAILED;
+		return GNUTLS_E_DECRYPTION_FAILED;
 	}
 	//
 	// Validate the contents of the Authenticator
 	if (qder2b_unpack_int32 (auth.authenticator_vno) != 5) {
-		return GNUTLS_E_PK_SIG_VERIFY_FAILED;
+		return GNUTLS_E_DECRYPTION_FAILED;
 	}
 	if (auth.cksum.checksum.derptr == NULL) {
-		return GNUTLS_E_PK_SIG_VERIFY_FAILED;
+		return GNUTLS_E_DECRYPTION_FAILED;
 	}
 	if (auth.cksum.checksum.derlen < 16) {
-		return GNUTLS_E_PK_SIG_VERIFY_FAILED;
+		return GNUTLS_E_DECRYPTION_FAILED;
 	}
 	//TODO// Optionally, for KDH-Only, ensure presence and size of a subkey
 	//
