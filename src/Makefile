@@ -77,8 +77,11 @@ all: $(TARGETS)
 tlspool$(EXE): $(OBJS)
 	$(CC) $(LDFLAGS) -o "$@" $(OBJS) $(LIBS)
 
-.c.o:
+%.o: %.c
 	$(CC) -c $(CFLAGS) -o "$@" "$<"
+
+%.pre: %.c
+	$(CC) -E $(CFLAGS) -o "$@" "$<"
 
 .PHONY: clean
 clean:
