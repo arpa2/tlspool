@@ -41,6 +41,7 @@
 #include <quick-der/rfc4120.h>
 typedef DER_OVLY_rfc4120_Ticket ticket_t;
 typedef DER_OVLY_rfc4120_Authenticator authenticator_t;
+typedef DER_OVLY_rfc4120_EncryptedData encrypted_data_t;
 
 #include <tlspool/internal.h>
 
@@ -1086,46 +1087,6 @@ client = INVALID_POOL_HANDLE;
 }
 
 
-/* The callback function that retrieves a TLS-KDH "signature", which is kept
- * outside of GnuTLS.  The callback computes an authenticator encrypted to
- * the session's Kerberos key.
- */
-#ifdef HAVE_TLS_KDH
-gtls_error cli_kdhsig_encode (gnutls_session_t session,
-			gnutls_datum_t *enc_authenticator,
-			gnutls_datum_t *dec_authenticator,
-			const gnutls_datum_t *hash,
-			int32_t checksum_type) {
-	gnutls_certificate_type_t peercert;
-	"...SETUP SECURE HASH IN AUTHENTICATOR...";
-	peercert = gnutls_certificate_type_get_peers (session);
-	if (peercert == GNUTLS_CRT_KRB) {
-		// This is KDH-Only, and so we MUST create a new key
-		"...GENERATE RANDOM...AND SETUP AS SUBKEY...";
-	}
-	"...SETUP MICROSECOND TIMER...";
-	"...SETUP KRB VERSION NUMBER...";
-	"...SETUP CLIENT REALM AND PRINCIPALNAME...";
-	return GNUTLS_E_UNSUPPORTED_SIGNATURE_ALGORITHM;
-}
-#endif
-
-
-/* The callback function that verifies a TLS-KDH "signature", which is kept
- * outside of GnuTLS.  The callback verifies the authenticator against the
- * provided session hash and returns the decrypted authenticator.
- */
-#ifdef HAVE_TLS_KDH
-int srv_kdhsig_decode (gnutls_session_t session,
-			const gnutls_datum_t *enc_authenticator,
-			gnutls_datum_t *dec_authenticator,
-			gnutls_datum_t *hash,
-			int32_t *checksum_type) {
-	return GNUTLS_E_UNSUPPORTED_SIGNATURE_ALGORITHM;
-}
-#endif
-
-
 /* The callback function that retrieves certification information from either
  * the client or the server in the course of the handshake procedure.
  */
@@ -1366,11 +1327,9 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			// First, try to obtain a TGT and key, in various ways
 			krb5_keyblock key;
 			krb5_creds tgt;
-			krb5_creds tkt;
 			int status;
 			memset (&key, 0, sizeof (key));
 			memset (&tgt, 0, sizeof (tgt));
-			memset (&tkt, 0, sizeof (tkt));
 			status = have_key_tgt (
 				cmd, krbctx_cli,
 				1, 0, 0,
@@ -1393,21 +1352,20 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 				cmd, krbctx_cli,
 				NULL,	//TODO// Should get cc from have_key_tgt()
 				tgt.client,
-				&tkt);
+				&cmd->krb_tkt);
 			krb5_free_cred_contents (krbctx_cli, &tgt);
 			if (status < 1) {
 				// Stop processing when no ticket was found
 				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
 				break;
 			}
-			certdatum.data = tkt.ticket.data;
-			certdatum.size = tkt.ticket.length;
+			certdatum.data = cmd->krb_tkt.ticket.data;
+			certdatum.size = cmd->krb_tkt.ticket.length;
 			E_g2e ("MOVED: Failed to import Kerberos ticket",
 				gnutls_pcert_import_krb_raw (
 					*pcert,
 					&certdatum,
 					0));
-			krb5_free_cred_contents (krbctx_cli, &tkt);
 		} else {
 			//
 			// For KDH-Only, the server supplies one of:
@@ -1419,7 +1377,6 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			//TODO// 		&certdatum,	//TODO:WHATSFOUND//
 			//TODO// 		0));
 			int u2u = 0;
-			krb5_creds tgt;
 			int status;
 			//
 			// Determine whether we want to run in user-to-user mode
@@ -1444,13 +1401,12 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			// Continue specifically for user-to-user mode.
 			//
 			// Fetch the service's key
-			memset (&tgt, 0, sizeof (tgt));
 			status = have_key_tgt (
 				cmd, krbctx_srv,
 				1, 0, 0,	// Hmm... later we know kvno/etype
 				p11priv,
 				krb_kt_srv,
-				&cmd->krb_key, &tgt);
+				&cmd->krb_key, &cmd->krb_tkt);
 			if (status == 1) {
 				// There's no use in having just the key
 				krb5_free_keyblock_contents (krbctx_srv, &cmd->krb_key);
@@ -1459,14 +1415,13 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
 				break;
 			}
-			certdatum.data = tgt.ticket.data;
-			certdatum.size = tgt.ticket.length;
+			certdatum.data = cmd->krb_tkt.ticket.data;
+			certdatum.size = cmd->krb_tkt.ticket.length;
 			E_g2e ("Failed to withhold Kerberos server ticket",
 				gnutls_pcert_import_krb_raw (
 					*pcert,
 					&certdatum,
 					0));
-			krb5_free_cred_contents (krbctx_srv, &tgt);
 		}
 		break;
 #endif
@@ -1750,6 +1705,7 @@ static int setup_starttls_kerberos (void) {
 }
 #endif
 
+
 /* Cleanup Kerberos resources.  This must be an idempotent function, because
  * it is called when Kerberos panics as well as when 
  */
@@ -1775,6 +1731,11 @@ static void cleanup_starttls_kerberos (void) {
 #endif
 
 
+
+/********** KERBEROS SUPPORT FUNCTIONS FOR TLS-KDH **********/
+
+
+
 /* Prompter callback function for PKCS #11.
  *
  * TODO: Use "struct pkcs11iter" as data, possibly interact with the user,
@@ -1795,7 +1756,6 @@ static krb5_error_code clisrv_p11krb_callback (krb5_context ctx,
 	struct command *cmd = (struct command *) vcmd;
 	int i;
 	krb5_prompt_type *codes = krb5_get_prompt_types (ctx);
-	char pin [129];
 	int attempt = 0;
 	static const char *token_url = "pkcs11:manufacturer=Kerberos+infrastructure;model=TLS+Pool;serial=%28none%29";
 	static const char *token_label = "Kerberos infrastructure";
@@ -1808,20 +1768,19 @@ static krb5_error_code clisrv_p11krb_callback (krb5_context ctx,
 			//TODO// Do we need to cycle passwords to cover retry?
 			//TODO// Delete any failed passwords?
 			//TODO:FIXED//
-			memset (pin, 0, sizeof (pin));
 			if (attempt >= MAX_P11ITER_ATTEMPTS) {
 				return KRB5_LIBOS_CANTREADPWD;
 			}
 			// Nothing in PKCS #11 --> so fallback on manual entry
 			if (!pin_callback (attempt,
 					token_url, "Enter Kerberos password:",
-					pin, sizeof (pin)-1)) {
-				memset (pin, 0, sizeof (pin));
+					prompts [i].reply->data,
+					prompts [i].reply->length)) {
+				memset (prompts [i].reply->data, 0, prompts [i].reply->length);
 				return KRB5_LIBOS_CANTREADPWD;
 			}
 			//TODO// Manage data structure
-			prompts [i].reply->data = strdup (pin);
-			prompts [i].reply->length = strlen (pin);
+			prompts [i].reply->length = strlen (prompts [i].reply->data);
 			return 0;
 		case KRB5_PROMPT_TYPE_NEW_PASSWORD:
 		case KRB5_PROMPT_TYPE_NEW_PASSWORD_AGAIN:
@@ -1935,6 +1894,9 @@ retry:
 					strnlen (lid, 128), lid,
 					0);
 	case KRB5_NT_SRV_HST:
+		if (strcmp (svc, "http") == 0) {
+			svc = "HTTP";
+		}
 		k5err = krb5_build_principal_ext (ctx, &sought,
 					strlen (realm), realm,
 					strlen (svc), svc,
@@ -2130,7 +2092,9 @@ cleanup:
  * missing backend services; this is not something the client should decide
  * on, and certainly not after being requested by the service.  The error
  * and recovery could be implemented here (if we can get the error info out
- * of the libkrb5 API).
+ * of the libkrb5 API).  Alternatively, we might consider passing the
+ * authorization data in the authenticator since we get to control it.
+ * What will the specification say?
  *
  * The return value indicates how many of the requested output values have
  * been provided, counting from the first.  So, 0 means a total failure and
@@ -2191,6 +2155,9 @@ static int have_service_ticket (
 	} else {
 		k5err = 0;
 	}
+	if (strcmp (svc, "http") == 0) {
+		svc = "HTTP";
+	}
 	k5err = krb5_build_principal_ext (ctx, &srv,
 				strlen (realm), realm,
 				strlen (svc), svc,
@@ -2241,7 +2208,252 @@ cleanup:
 #endif
 
 
+/* DER utility: This should probably appear in Quick DER sometime soon.
+ *
+ * Pack an Int32 or UInt32 and return the number of bytes.  Do not pack a header
+ * around it.  The function returns the number of bytes taken, even 0 is valid.
+ */
+typedef uint8_t QDERBUF_INT32_T [4];
+dercursor qder2b_pack_int32 (uint8_t *target_4b, int32_t value) {
+	dercursor retval;
+	int shift = 24;
+	retval.derptr = target_4b;
+	retval.derlen = 0;
+	while (shift >= 0) {
+		if ((retval.derlen == 0) && (shift > 0)) {
+			// Skip sign-extending initial bytes
+			uint32_t neutro = (value >> (shift - 1) ) & 0x000001ff;
+			if ((neutro == 0x000001ff) || (neutro == 0x00000000)) {
+				continue;
+			}
+		}
+		target_4b [retval.derlen] = (value >> shift) & 0xff;
+		retval.derlen++;
+		shift -= 8;
+	}
+	return retval;
+}
+typedef uint8_t QDERBUF_UINT32_T [5];
+dercursor qder2b_pack_uint32 (uint8_t *target_5b, uint32_t value) {
+	dercursor retval;
+	int ofs = 0;
+	if (value & 0x80000000) {
+		*target_5b = 0x00;
+		ofs = 1;
+	}
+	retval = qder2b_pack_int32 (target_5b + ofs, (int32_t) value);
+	retval.derptr -= ofs;
+	retval.derlen += ofs;
+	return retval;
+}
+
+
+/* DER utility: This should probably appear in Quick DER sometime soon.
+ *
+ * Unpack an Int32 or UInt32 from a given number of bytes.  Do not assume a header
+ * around it.  The function returns the value found.
+ *
+ * Out of range values are returned as 0.  This value only indicates invalid
+ * return when len > 1, so check for that.
+ */
+int32_t qder2b_unpack_int32 (dercursor data4) {
+	int32_t retval = 0;
+	int idx;
+	if (data4.derlen > 4) {
+		goto done;
+	}
+	if ((data4.derlen > 0) && (0x80 & *data4.derptr)) {
+		retval = -1;
+	}
+	for (idx=0; idx<data4.derlen; idx++) {
+		retval <<= 8;
+		retval += data4.derptr [idx];
+	}
+done:
+	return retval;
+}
+uint32_t qder2b_unpack_uint32 (dercursor data5) {
+	uint32_t retval = 0;
+	int ofs = 0;
+	if (data5.derlen > 5) {
+		goto done;
+	}
+	if (data5.derlen == 5) {
+		if (*data5.derptr != 0x00) {
+			goto done;
+		}
+		// Modify the local copy on our stack
+		data5.derlen--;
+		data5.derptr++;
+	}
+	retval = (uint32_t) qder2b_unpack_int32 (data5);
+done:
+	return retval;
+}
+
+
+/* The callback function that retrieves a TLS-KDH "signature", which is kept
+ * outside of GnuTLS.  The callback computes an authenticator encrypted to
+ * the session's Kerberos key.
+ */
+#ifdef HAVE_TLS_KDH
+gtls_error cli_kdhsig_encode (gnutls_session_t session,
+			gnutls_datum_t *enc_authenticator,
+			gnutls_datum_t *dec_authenticator,
+			const gnutls_datum_t *hash,
+			int32_t checksum_type) {
+	//
+	// Variables, sanity checking, initialisation
+	struct command *cmd;
+	int k5err = 0;
+	authenticator_t auth;
+	QDERBUF_INT32_T derv5;
+	QDERBUF_INT32_T dernametype;
+	QDERBUF_INT32_T dercksumtype;
+	krb5_keyblock subkey;
+	gnutls_certificate_type_t peercert;
+	QDERBUF_INT32_T dersubkey;
+	krb5_timestamp now_s;
+	char derctime [100];
+	krb5_int32 now_us;
+	QDERBUF_INT32_T dercusec;
+	cmd = (struct command *) gnutls_session_get_ptr (session);
+	memset (&auth, 0, sizeof (auth));
+	memset (&subkey, 0, sizeof (subkey));
+	assert (cmd->krb_tkt.client != NULL);
+	assert (cmd->krb_key.contents != NULL);
+	//
+	// Setup secure hash in authenticator (never optional for TLS-KDH)
+	auth.cksum.cksumtype = qder2b_pack_int32 (dercksumtype, checksum_type);
+	//
+	// Optionally include a subkey (namely, for KDH-Only)
+	peercert = gnutls_certificate_type_get_peers (session);
+	if (peercert == GNUTLS_CRT_KRB) {
+		// This is KDH-Only, for which we MUST create a random subkey
+		k5err = krb5_c_make_random_key (
+				krbctx_cli,
+				ENCTYPE_AES256_CTS_HMAC_SHA1_96,
+				&subkey);
+		if (k5err != 0) {
+			return GNUTLS_E_UNSUPPORTED_SIGNATURE_ALGORITHM;
+		}
+		auth.subkey.keytype = qder2b_pack_int32 (dersubkey, subkey.enctype);
+		auth.subkey.keyvalue.derptr = subkey.contents;
+		auth.subkey.keyvalue.derlen = subkey.length;
+	}
+	//
+	// Setup the client realm and principal name
+	auth.crealm.derptr = cmd->krb_tkt.client->realm.data;
+	auth.crealm.derlen = cmd->krb_tkt.client->realm.length;
+	auth.cname.name_type = qder2b_pack_int32 (dernametype, cmd->krb_tkt.client->type);
+	// The SEQUENCE OF with just one component is trivial to prepack
+	auth.cname.name_string.derptr = cmd->krb_tkt.client->data [0].data;
+	auth.cname.name_string.derlen = cmd->krb_tkt.client->data [0].length;
+	//
+	// Setup the Kerberos version number (5)
+	auth.authenticator_vno = qder2b_pack_int32 (derv5, 5);
+	//
+	// Setup the obliged microsecond timer values (ignore error returns)
+	krb5_us_timeofday (krbctx_cli, &now_s, &now_us);
+	krb5_timestamp_to_string (now_s, derctime, sizeof (derctime));
+	derctime [sizeof (derctime)-1] = '\0';
+	auth.ctime.derptr = derctime;
+	auth.ctime.derlen = strlen (derctime);
+	auth.cusec = qder2b_pack_int32 (dercusec, now_us);
+	//
+	// Pack the decoded result into dec_authenticator
+	uint8_t auth_packer [] = { DER_PACK_rfc4120_Authenticator };
+	size_t declen = der_pack (	auth_packer,
+					(const dercursor *) &auth,
+					NULL	// Measure length, no output yet
+					);
+	uint8_t *decptr = malloc (declen);
+	if (decptr == NULL) {
+		return GNUTLS_E_MEMORY_ERROR;
+	}
+	der_pack (			auth_packer,
+					(const dercursor *) &auth,
+					decptr);
+	size_t rawlen;
+	if (0 != krb5_c_encrypt_length (krbctx_cli,
+					cmd->krb_tkt.keyblock.enctype,
+					declen,
+					&rawlen)) {
+		return GNUTLS_E_UNSUPPORTED_SIGNATURE_ALGORITHM;
+	}
+	uint8_t *rawptr = malloc (rawlen);
+	if (rawptr == NULL) {
+		free (decptr);
+		return GNUTLS_E_MEMORY_ERROR;
+	}
+	krb5_data decdata;
+	krb5_enc_data rawdata;
+	memset (&decdata, 0, sizeof (decdata));
+	decdata.data   = decptr;
+	decdata.length = declen;
+	rawdata.ciphertext.data   = rawptr;
+	rawdata.ciphertext.length = rawlen;
+	if (0 != krb5_c_encrypt (	krbctx_cli,
+					&cmd->krb_tkt.keyblock,
+					11 /* stealing key usage from AP-REQ */,
+					NULL,
+					&decdata,
+					&rawdata)) {
+		return GNUTLS_E_UNSUPPORTED_SIGNATURE_ALGORITHM;
+	}
+	//
+	// Prepare the header information
+	QDERBUF_INT32_T deretype;
+	QDERBUF_UINT32_T derkvno;
+	encrypted_data_t encdata;
+	encdata.etype = qder2b_pack_int32 (deretype, cmd->krb_tkt.keyblock.enctype);
+	//NOT// encdata.kvno  = qder2b_pack_int32 (derkvno,  cmd->krb_tkt.keyblock.kvno);
+	encdata.cipher.derptr = rawdata.ciphertext.data;
+	encdata.cipher.derlen = rawdata.ciphertext.length;
+	//
+	// Prepare for packing the header and rawdata as EncryptedData
+	uint8_t encdata_packer [] = { DER_PACK_rfc4120_EncryptedData };
+	size_t enclen = der_pack (	encdata_packer,
+					(const dercursor *) &encdata,
+					NULL	// Measure length, no output yet
+					);
+	uint8_t *encptr = malloc (enclen);
+	if (encptr == NULL) {
+		return GNUTLS_E_MEMORY_ERROR;
+	}
+	der_pack (			encdata_packer,
+					(const dercursor *) &encdata,
+					encptr);
+	free (rawptr);
+	//
+	// Return our final verdict on the generation of the Authenticator
+	dec_authenticator->data = decptr;
+	dec_authenticator->size = declen;
+	enc_authenticator->data = encptr;
+	enc_authenticator->size = enclen;
+	return 0;
+}
+#endif
+
+
+/* The callback function that verifies a TLS-KDH "signature", which is kept
+ * outside of GnuTLS.  The callback verifies the authenticator against the
+ * provided session hash and returns the decrypted authenticator.
+ */
+#ifdef HAVE_TLS_KDH
+int srv_kdhsig_decode (gnutls_session_t session,
+			const gnutls_datum_t *enc_authenticator,
+			gnutls_datum_t *dec_authenticator,
+			gnutls_datum_t *hash,
+			int32_t *checksum_type) {
+	return GNUTLS_E_UNSUPPORTED_SIGNATURE_ALGORITHM;
+}
+#endif
+
+
+
 /********** VALIDATION EXPRESSION LINKUP TO GNUTLS **********/
+
 
 
 /*
@@ -4413,6 +4625,12 @@ fprintf (stderr, "DEBUG: Unregistered verun 0x%016x\n", (uint64_t) verun);
 	if (cmd->krb_key.contents != NULL) {
 		// RATHER BLUNT: It shouldn't matter which krbctx_ is used...
 		krb5_free_keyblock_contents (krbctx_srv, &cmd->krb_key);
+		memset (&cmd->krb_key, 0, sizeof (cmd->krb_key));
+	}
+	if (cmd->krb_tkt.client != NULL) {
+		// RATHER BLUNT: It shouldn't matter which krbctx_ is used...
+		krb5_free_cred_contents (krbctx_srv, &cmd->krb_tkt);
+		memset (&cmd->krb_tkt, 0, sizeof (cmd->krb_tkt));
 	}
 
 #if 0
