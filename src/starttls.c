@@ -2322,6 +2322,8 @@ gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	memset (&subkey, 0, sizeof (subkey));
 	assert (cmd->krb_tkt.client != NULL);
 	assert (cmd->krb_key.contents != NULL);
+	static const uint8_t auth_packer [] = { DER_PACK_rfc4120_Authenticator };
+	static const uint8_t encdata_packer [] = { DER_PACK_rfc4120_EncryptedData };
 	//
 	// Setup secure hash in authenticator (never optional for TLS-KDH)
 	auth.cksum.cksumtype = qder2b_pack_int32 (dercksumtype, checksum_type);
@@ -2362,7 +2364,6 @@ gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	auth.cusec = qder2b_pack_int32 (dercusec, now_us);
 	//
 	// Pack the decoded result into dec_authenticator
-	uint8_t auth_packer [] = { DER_PACK_rfc4120_Authenticator };
 	size_t declen = der_pack (	auth_packer,
 					(const dercursor *) &auth,
 					NULL	// Measure length, no output yet
@@ -2389,6 +2390,7 @@ gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	krb5_data decdata;
 	krb5_enc_data rawdata;
 	memset (&decdata, 0, sizeof (decdata));
+	memset (&rawdata, 0, sizeof (rawdata));
 	decdata.data   = decptr;
 	decdata.length = declen;
 	rawdata.ciphertext.data   = rawptr;
@@ -2412,7 +2414,6 @@ gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	encdata.cipher.derlen = rawdata.ciphertext.length;
 	//
 	// Prepare for packing the header and rawdata as EncryptedData
-	uint8_t encdata_packer [] = { DER_PACK_rfc4120_EncryptedData };
 	size_t enclen = der_pack (	encdata_packer,
 					(const dercursor *) &encdata,
 					NULL	// Measure length, no output yet
@@ -2446,7 +2447,81 @@ int srv_kdhsig_decode (gnutls_session_t session,
 			gnutls_datum_t *dec_authenticator,
 			gnutls_datum_t *hash,
 			int32_t *checksum_type) {
-	return GNUTLS_E_UNSUPPORTED_SIGNATURE_ALGORITHM;
+	//
+	// Variables, sanity checks and initialisation
+	struct command *cmd;
+	static const uint8_t encdata_packer [] = { DER_PACK_rfc4120_EncryptedData };
+	static const uint8_t auth_packer [] = { DER_PACK_rfc4120_Authenticator };
+	encrypted_data_t encdata;
+	cmd = (struct command *) gnutls_session_get_ptr (session);
+	//TODO:NEEDED?// assert (cmd->krb_tkt.client != NULL);
+	//TODO// We may need to load the key, at least for KDH-Enhaced operation
+	assert (cmd->krb_key.contents != NULL);
+	//
+	// Harvest the EncryptedData fields from the enc_authenticator
+	dercursor enctransport;
+	enctransport.derptr = enc_authenticator->data;
+	enctransport.derlen = enc_authenticator->size;
+	if (0 != der_unpack (		&enctransport,
+					encdata_packer,
+					(dercursor *) &encdata,
+					1)) {
+		return GNUTLS_E_PK_SIG_VERIFY_FAILED;
+	}
+	if (encdata.kvno.derptr != NULL) {
+		return GNUTLS_E_PK_SIG_VERIFY_FAILED;
+	}
+	int32_t etype = qder2b_unpack_int32 (encdata.etype);
+	//
+	// Decrypt the EncryptedData fields into the dec_authenticator
+	krb5_enc_data rawdata;
+	krb5_data decdata;
+	memset (&rawdata, 0, sizeof (rawdata));
+	memset (&decdata, 0, sizeof (decdata));
+	rawdata.enctype = etype;
+	rawdata.ciphertext.data   = encdata.cipher.derptr;
+	rawdata.ciphertext.length = encdata.cipher.derlen;
+	decdata.data   = dec_authenticator->data;
+	decdata.length = dec_authenticator->size;
+	if (0 != krb5_c_decrypt (	krbctx_srv,
+					&cmd->krb_key,
+					11 /* stealing key usage from AP-REQ */,
+					NULL,
+					&rawdata,
+					&decdata)) {
+		return GNUTLS_E_PK_SIG_VERIFY_FAILED;
+	}
+	dec_authenticator->size = decdata.length;
+	//
+	// Unpack the decrypted Authenticator
+	dercursor decsyntax;
+	decsyntax.derptr = decdata.data;
+	decsyntax.derlen = decdata.length;
+	authenticator_t auth;
+	if (0 != der_unpack (		&decsyntax,
+					auth_packer,
+					(dercursor *) &auth,
+					1)) {
+		return GNUTLS_E_PK_SIG_VERIFY_FAILED;
+	}
+	//
+	// Validate the contents of the Authenticator
+	if (qder2b_unpack_int32 (auth.authenticator_vno) != 5) {
+		return GNUTLS_E_PK_SIG_VERIFY_FAILED;
+	}
+	if (auth.cksum.checksum.derptr == NULL) {
+		return GNUTLS_E_PK_SIG_VERIFY_FAILED;
+	}
+	if (auth.cksum.checksum.derlen < 16) {
+		return GNUTLS_E_PK_SIG_VERIFY_FAILED;
+	}
+	//TODO// Optionally, for KDH-Only, ensure presence and size of a subkey
+	//
+	// Produce the requested content from the Authenticator and return
+	*checksum_type = qder2b_unpack_int32 (auth.cksum.cksumtype);
+	hash->data = auth.cksum.checksum.derptr;
+	hash->size = auth.cksum.checksum.derlen;
+	return 0;
 }
 #endif
 
