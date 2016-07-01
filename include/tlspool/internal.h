@@ -60,6 +60,7 @@ struct command {
 	uint8_t remote_cert_count;
 #ifdef HAVE_TLS_KDH
 	krb5_keyblock krb_key;		// Kerberos key for encryption
+	krb5_creds krb_tkt;		// Kerberos ticket facing remote
 #endif
 };
 
