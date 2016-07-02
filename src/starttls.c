@@ -36,6 +36,11 @@
 #include <libtasn1.h>
 
 #include <krb5.h>
+/* Plus, from k5-int.h: */
+krb5_error_code KRB5_CALLCONV krb5_decrypt_tkt_part(krb5_context,
+                                                    const krb5_keyblock *,
+                                                    krb5_ticket * );
+
 
 #include <quick-der/api.h>
 #include <quick-der/rfc4120.h>
@@ -1346,26 +1351,50 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 				break;
 			}
 			//
+			// Store client identity in session object
+			if (0 != krb5_copy_principal (
+					krbctx_cli,
+					tgt.client,
+					&cmd->krbid_cli)) {
+				krb5_free_cred_contents (krbctx_cli, &tgt);
+				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
+				break;
+			}
+			krb5_free_cred_contents (krbctx_cli, &tgt);
+			//
 			// Now find a service ticket to talk to
 			//TODO// Pass credcache instead?
 			status = have_service_ticket (
 				cmd, krbctx_cli,
 				NULL,	//TODO// Should get cc from have_key_tgt()
-				tgt.client,
-				&cmd->krb_tkt);
-			krb5_free_cred_contents (krbctx_cli, &tgt);
+				cmd->krbid_cli,
+				&tgt);
 			if (status < 1) {
 				// Stop processing when no ticket was found
 				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
 				break;
 			}
-			certdatum.data = cmd->krb_tkt.ticket.data;
-			certdatum.size = cmd->krb_tkt.ticket.length;
+			//
+			// Only for KDH-Only mode can the client rely on a
+			// server principal taken from the ticket;
+			// So only store krbid_srv for KDH-Only mode.
+			if ((gnutls_certificate_type_get_peers (cmd->session) == GNUTLS_CRT_KRB) &&
+					(0 != krb5_copy_principal (
+						krbctx_cli,
+						tgt.server,
+						&cmd->krbid_srv))) {
+				krb5_free_cred_contents (krbctx_cli, &tgt);
+				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
+				break;
+			}
+			certdatum.data = tgt.ticket.data;
+			certdatum.size = tgt.ticket.length;
 			E_g2e ("MOVED: Failed to import Kerberos ticket",
 				gnutls_pcert_import_krb_raw (
 					*pcert,
 					&certdatum,
 					0));
+			krb5_free_cred_contents (krbctx_cli, &tgt);
 		} else {
 			//
 			// For KDH-Only, the server supplies one of:
@@ -1378,6 +1407,7 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			//TODO// 		0));
 			int u2u = 0;
 			int status;
+			krb5_creds tgt;
 			//
 			// Determine whether we want to run in user-to-user mode
 			// for which we should supply a TGT to the TLS client
@@ -1399,6 +1429,7 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			}
 			//
 			// Continue specifically for user-to-user mode.
+			//TODO// Setup server principal identity
 			//
 			// Fetch the service's key
 			status = have_key_tgt (
@@ -1406,22 +1437,28 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 				1, 0, 0,	// Hmm... later we know kvno/etype
 				p11priv,
 				krb_kt_srv,
-				&cmd->krb_key, &cmd->krb_tkt);
+				&cmd->krb_key, &tgt);
 			if (status == 1) {
 				// There's no use in having just the key
 				krb5_free_keyblock_contents (krbctx_srv, &cmd->krb_key);
+				memset (&cmd->krb_key, 0, sizeof (cmd->krb_key));
 			}
 			if (status < 2) {
 				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
-				break;
+			} else if (0 != krb5_copy_principal (
+						krbctx_srv, 
+						tgt.server, 
+						&cmd->krbid_srv)) {
+				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
 			}
-			certdatum.data = cmd->krb_tkt.ticket.data;
-			certdatum.size = cmd->krb_tkt.ticket.length;
+			certdatum.data = tgt.ticket.data;
+			certdatum.size = tgt.ticket.length;
 			E_g2e ("Failed to withhold Kerberos server ticket",
 				gnutls_pcert_import_krb_raw (
 					*pcert,
 					&certdatum,
 					0));
+			krb5_free_cred_contents (krbctx_cli, &tgt);
 		}
 		break;
 #endif
@@ -2319,7 +2356,7 @@ static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	cmd = (struct command *) gnutls_session_get_ptr (session);
 	memset (&auth, 0, sizeof (auth));
 	memset (&subkey, 0, sizeof (subkey));
-	assert (cmd->krb_tkt.client != NULL);
+	assert (cmd->krbid_cli != NULL);
 	assert (cmd->krb_key.contents != NULL);
 	static const uint8_t auth_packer [] = { DER_PACK_rfc4120_Authenticator };
 	static const uint8_t encdata_packer [] = { DER_PACK_rfc4120_EncryptedData };
@@ -2344,12 +2381,12 @@ static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	}
 	//
 	// Setup the client realm and principal name
-	auth.crealm.derptr = cmd->krb_tkt.client->realm.data;
-	auth.crealm.derlen = cmd->krb_tkt.client->realm.length;
-	auth.cname.name_type = qder2b_pack_int32 (dernametype, cmd->krb_tkt.client->type);
+	auth.crealm.derptr = cmd->krbid_cli->realm.data;
+	auth.crealm.derlen = cmd->krbid_cli->realm.length;
+	auth.cname.name_type = qder2b_pack_int32 (dernametype, cmd->krbid_cli->type);
 	// The SEQUENCE OF with just one component is trivial to prepack
-	auth.cname.name_string.derptr = cmd->krb_tkt.client->data [0].data;
-	auth.cname.name_string.derlen = cmd->krb_tkt.client->data [0].length;
+	auth.cname.name_string.derptr = cmd->krbid_cli->data [0].data;
+	auth.cname.name_string.derlen = cmd->krbid_cli->data [0].length;
 	//
 	// Setup the Kerberos version number (5)
 	auth.authenticator_vno = qder2b_pack_int32 (derv5, 5);
@@ -2376,7 +2413,7 @@ static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 					decptr);
 	size_t rawlen;
 	if (0 != krb5_c_encrypt_length (krbctx_cli,
-					cmd->krb_tkt.keyblock.enctype,
+					cmd->krb_key.enctype,
 					declen,
 					&rawlen)) {
 		free (decptr);
@@ -2396,7 +2433,7 @@ static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	rawdata.ciphertext.data   = rawptr;
 	rawdata.ciphertext.length = rawlen;
 	if (0 != krb5_c_encrypt (	krbctx_cli,
-					&cmd->krb_tkt.keyblock,
+					&cmd->krb_key,
 					11 /* stealing key usage from AP-REQ */,
 					NULL,
 					&decdata,
@@ -2410,8 +2447,8 @@ static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	QDERBUF_INT32_T deretype;
 	QDERBUF_UINT32_T derkvno;
 	encrypted_data_t encdata;
-	encdata.etype = qder2b_pack_int32 (deretype, cmd->krb_tkt.keyblock.enctype);
-	//NOT// encdata.kvno  = qder2b_pack_int32 (derkvno,  cmd->krb_tkt.keyblock.kvno);
+	encdata.etype = qder2b_pack_int32 (deretype, cmd->krb_key.enctype);
+	//NOT// encdata.kvno  = qder2b_pack_int32 (derkvno,  cmd->krb_key.kvno);
 	encdata.cipher.derptr = rawdata.ciphertext.data;
 	encdata.cipher.derlen = rawdata.ciphertext.length;
 	//
@@ -2458,9 +2495,74 @@ static int srv_kdhsig_decode (gnutls_session_t session,
 	static const uint8_t auth_packer [] = { DER_PACK_rfc4120_Authenticator };
 	encrypted_data_t encdata;
 	cmd = (struct command *) gnutls_session_get_ptr (session);
-	//TODO:NEEDED?// assert (cmd->krb_tkt.client != NULL);
-	//TODO// We may need to load the key, at least for KDH-Enhaced operation
-	assert (cmd->krb_key.contents != NULL);
+	//
+	// Retrieve the session key and store it in cmd->krb_key.
+	//
+	// Prior setting of cmd->krb_key would be due to user-to-user mode
+	// having been setup with this as the server-supplied TGT key, in
+	// which case cmd->krb_key would need to be overwritten by the
+	// session key.
+	//
+	// When no prior cmd->krb_key is available, use the keytab to
+	// decode the client's ticket.
+	assert (gnutls_certificate_type_get_peers (session) == GNUTLS_CRT_KRB);
+	const gnutls_datum_t *certs;
+	unsigned int num_certs;
+	certs = gnutls_certificate_get_peers (cmd->session, &num_certs);
+	if (num_certs != 1) {
+		return GNUTLS_E_NO_CERTIFICATE_FOUND;
+	}
+	krb5_data krbcert;
+	krb5_ticket *tkt;
+	krbcert.data   = certs [0].data;
+	krbcert.length = certs [0].size;
+	if (0 != krb5_decode_ticket (&krbcert, &tkt)) {
+		return GNUTLS_E_NO_CERTIFICATE_FOUND;
+	}
+	bool notfound = 0;
+	if (cmd->krb_key.contents != NULL) {
+		// user-to-user mode
+		if (0 != krb5_decrypt_tkt_part (
+					krbctx_srv, &cmd->krb_key, tkt)) {
+			notfound = 1;
+		}
+		krb5_free_keyblock_contents (krbctx_srv, &cmd->krb_key);
+	} else {
+		// client-to-server mode
+		if (0 != krb5_server_decrypt_ticket_keytab (
+					krbctx_srv, krb_kt_srv, tkt)) {
+			notfound = 1;
+		}
+	}
+	if (0 != krb5_copy_keyblock_contents (
+					krbctx_srv,
+					tkt->enc_part2->session,
+					&cmd->krb_key)) {
+		notfound = 1;
+	}
+	if (0 != krb5_copy_principal (	krbctx_srv,
+					tkt->enc_part2->client,
+					&cmd->krbid_cli)) {
+		notfound = 1;
+	}
+	if (cmd->krbid_srv->data != NULL) {
+		if (!krb5_principal_compare (	krbctx_srv,
+						tkt->server,
+						cmd->krbid_srv)) {
+			// Server name changed since u2u setup -- not permitted
+			notfound = 1;
+		}
+	} else {
+		if (0 != krb5_copy_principal (	krbctx_srv,
+						tkt->server,
+						&cmd->krbid_srv)) {
+			notfound = 1;
+		}
+	}
+	krb5_free_ticket (krbctx_srv, tkt);
+	if (notfound) {
+		return GNUTLS_E_NO_CERTIFICATE_FOUND;
+	}
 	//
 	// Harvest the EncryptedData fields from the enc_authenticator
 	dercursor enctransport;
@@ -4706,10 +4808,15 @@ fprintf (stderr, "DEBUG: Unregistered verun 0x%016x\n", (uint64_t) verun);
 		krb5_free_keyblock_contents (krbctx_srv, &cmd->krb_key);
 		memset (&cmd->krb_key, 0, sizeof (cmd->krb_key));
 	}
-	if (cmd->krb_tkt.client != NULL) {
+	if (cmd->krbid_srv != NULL) {
 		// RATHER BLUNT: It shouldn't matter which krbctx_ is used...
-		krb5_free_cred_contents (krbctx_srv, &cmd->krb_tkt);
-		memset (&cmd->krb_tkt, 0, sizeof (cmd->krb_tkt));
+		krb5_free_principal (krbctx_srv, cmd->krbid_srv);
+		cmd->krbid_srv = NULL;
+	}
+	if (cmd->krbid_cli != NULL) {
+		// RATHER BLUNT: It shouldn't matter which krbctx_ is used...
+		krb5_free_principal (krbctx_srv, cmd->krbid_cli);
+		cmd->krbid_cli = NULL;
 	}
 
 #if 0
