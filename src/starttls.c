@@ -817,6 +817,7 @@ void setup_starttls (void) {
 			"+COMP-NULL:"
 			"+CIPHER-ALL:+CURVE-ALL:+SIGN-ALL:+MAC-ALL:"
 			"+ANON-ECDH:"
+			"+ECDHE-KRB:" // +ECDHE-KRB-RSA:+ECDHE-KRB-ECDSA:"
 			"+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:"
 			"+CTYPE-SRV-KRB:+CTYPE-SRV-X.509:+CTYPE-SRV-OPENPGP:"
 			"+CTYPE-CLI-KRB:+CTYPE-CLI-X.509:+CTYPE-CLI-OPENPGP:"
@@ -1439,8 +1440,8 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			//
 			// When not in user-to-user mode, deliver 0 bytes
 			if (!u2u) {
-				certdatum.data = "\x05\x00";
-				certdatum.size = 2;
+				certdatum.data = "";
+				certdatum.size = 0;
 				E_g2e ("Failed to withhold Kerberos server ticket",
 					gnutls_pcert_import_krb_raw (
 						*pcert,
@@ -3680,6 +3681,7 @@ static int configure_session (struct command *cmd,
 			"+COMP-NULL:"
 			"+CIPHER-ALL:+CURVE-ALL:+SIGN-ALL:+MAC-ALL:"
 			"%cANON-ECDH:"
+			"+ECDHE-KRB:" // +ECDHE-KRB-RSA:+ECDHE-KRB-ECDHE:" // opt?
 			"+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:" //TODO//
 			"+CTYPE-SRV-KRB:+CTYPE-SRV-X.509:+CTYPE-SRV-OPENPGP:"
 			"%cCTYPE-CLI-KRB:"
