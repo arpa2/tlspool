@@ -33,7 +33,7 @@
 # Setting for the configuration file tlspool.conf
 # Setting of the number of RSA private key bits (radically ignoring 2^n trends)
 #
-CONFFILE=$(shell pwd)/../etc/tlspool.conf
+{CONFFILE:="$(shell pwd)/../etc/tlspool.conf"}
 RSABITS=2000
 PGPRSABITS=2048
 
@@ -47,18 +47,25 @@ DMNUSR=$(shell sed < $(CONFFILE) -n 's/^daemon_user //p')
 DMNGRP=$(shell sed < $(CONFFILE) -n 's/^daemon_group //p')
 BDBENV=$(shell sed < $(CONFFILE) -n 's/^dbenv_dir //p')
 
+{COMMANDDIR:="../tool/"}
+
+SLICOMMAND=$(COMMANDDIR)set_localid
+SDCOMMAND=$(COMMANDDIR)set_disclose
+STCOMMAND=$(COMMANDDIR)set_trust
+
 #
 # Embellish p11tool command; if fixed, provide the PKCS #11 PIN automatically
 #
 ifeq ($(P11PIN),)
 P11TOOL=p11tool --provider $(P11LIB) --login
 CERTTOOL=certtool --provider $(P11LIB)
-PGPTOOL=../tool/pgp11_genkey
+PGPTOOL=pgp11_genkey
 else
 P11TOOL=GNUTLS_PIN=$(P11PIN) p11tool --provider $(P11LIB) --login
 CERTTOOL=GNUTLS_PIN=$(P11PIN) certtool --provider $(P11LIB)
-PGPTOOL=GNUTLS_PIN=$(P11PIN) ../tool/pgp11_genkey
+PGPTOOL=GNUTLS_PIN=$(P11PIN) pgp11_genkey
 endif
+
 
 #
 # Establish which private keys need to be generated on the PKCS #11 token
@@ -289,28 +296,28 @@ tlspool-test-srp:
 #
 
 tlspool.env:
-	mkdir -p $@
-	chown $(DMNUSR):$(DMNGRP) $@
+	mkdir -p $(BDBENV)/$@
+	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/$@
 
 localid.db: tlspool.env
-	../tool/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab OpenPGP,client '$(PRIVKEY1)' tlspool-test-client-pubkey.pgp
-	../tool/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab OpenPGP,server '$(PRIVKEY2)' tlspool-test-server-pubkey.pgp
-	../tool/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab x.509,client '$(PRIVKEY3)' tlspool-test-client-cert.der
-	../tool/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab x.509,server '$(PRIVKEY4)' tlspool-test-server-cert.der
-	../tool/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server 'tI&' /dev/null
-	../tool/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server 'It&' /dev/null
-	../tool/set_localid $(CONFFILE) tlspool.arpa2.lab x.509,server,client '$(PRIVKEY7)' tlspool-test-webhost-cert.der
-	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
+	$(SLICOMMAND) $(CONFFILE) testcli@tlspool.arpa2.lab OpenPGP,client '$(PRIVKEY1)' tlspool-test-client-pubkey.pgp
+	$(SLICOMMAND) $(CONFFILE) testsrv@tlspool.arpa2.lab OpenPGP,server '$(PRIVKEY2)' tlspool-test-server-pubkey.pgp
+	$(SLICOMMAND) $(CONFFILE) testcli@tlspool.arpa2.lab x.509,client '$(PRIVKEY3)' tlspool-test-client-cert.der
+	$(SLICOMMAND) $(CONFFILE) testsrv@tlspool.arpa2.lab x.509,server '$(PRIVKEY4)' tlspool-test-server-cert.der
+	$(SLICOMMAND) $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server 'tI&' /dev/null
+	$(SLICOMMAND) $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server 'It&' /dev/null
+	$(SLICOMMAND) $(CONFFILE) tlspool.arpa2.lab x.509,server,client '$(PRIVKEY7)' tlspool-test-webhost-cert.der
+	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $(BDBENV)/$@
 
 disclose.db: tlspool.env localid.db
-	../tool/set_disclose $(CONFFILE) @.arpa2.lab testcli@tlspool.arpa2.lab testsrv@tlspool.arpa2.lab
-	../tool/set_disclose $(CONFFILE) . tlspool.arpa2.lab
-	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
+	$(SDCOMMAND) $(CONFFILE) @.arpa2.lab testcli@tlspool.arpa2.lab testsrv@tlspool.arpa2.lab
+	$(SDCOMMAND) $(CONFFILE) . tlspool.arpa2.lab
+	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $(BDBENV)/$@
 
 trust.db: tlspool.env tlspool-test-ca-cert.der tlspool-test-ca-cert.keyid tlspool-test-flying-signer.der tlspool-test-flying-signer.keyid
-	../tool/set_trust $(CONFFILE) x509,client,server `cat tlspool-test-ca-cert.keyid` 1 tlspool-test-ca-cert.der
-	../tool/set_trust $(CONFFILE) x509,client,server `cat tlspool-test-flying-signer.keyid` 1 tlspool-test-flying-signer.der
-	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
+	$(STCOMMAND) $(CONFFILE) x509,client,server `cat tlspool-test-ca-cert.keyid` 1 tlspool-test-ca-cert.der
+	$(STCOMMAND) $(CONFFILE) x509,client,server `cat tlspool-test-flying-signer.keyid` 1 tlspool-test-flying-signer.der
+	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $(BDBENV)/$@
 
 clean: clean-db
 	rm -f *.der *.pgp
