@@ -808,13 +808,32 @@ void setup_starttls (void) {
 		setup_starttls_credentials ());
 	//
 	// Parse the default priority string
-	E_g2e ("Failed to setup NORMAL priority cache",
-		gnutls_priority_init (&priority_normal, "NONE:+VERS-TLS-ALL:+VERS-DTLS-ALL:+COMP-NULL:"
 #ifdef HAVE_TLS_KDH
-		"%%ASYM_CERT_TYPES:"
+	E_g2e ("Failed to setup NORMAL priority cache",
+		gnutls_priority_init (&priority_normal,
+			"NONE:"
+			"%ASYM_CERT_TYPES:"
+			"+VERS-TLS-ALL:+VERS-DTLS-ALL:"
+			"+COMP-NULL:"
+			"+CIPHER-ALL:+CURVE-ALL:+SIGN-ALL:+MAC-ALL:"
+			"+ANON-ECDH:"
+			"+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:"
+			"+CTYPE-SRV-KRB:+CTYPE-SRV-X.509:+CTYPE-SRV-OPENPGP:"
+			"+CTYPE-CLI-KRB:+CTYPE-CLI-X.509:+CTYPE-CLI-OPENPGP:"
+			"+SRP:+SRP-RSA:+SRP-DSS",
+			NULL));
+#else
+	E_g2e ("Failed to setup NORMAL priority cache",
+		gnutls_priority_init (&priority_normal,
+			"NONE:"
+			"+VERS-TLS-ALL:+VERS-DTLS-ALL:"
+			"+COMP-NULL:+CIPHER-ALL:+CURVE-ALL:+SIGN-ALL:+MAC-ALL:"
+			"+ANON-ECDH:"
+			"+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:"
+			"+CTYPE-X.509:+CTYPE-OPENPGP:"
+			"+SRP:+SRP-RSA:+SRP-DSS",
+			NULL));
 #endif
-		"+CIPHER-ALL:+CURVE-ALL:+SIGN-ALL:+MAC-ALL:+ANON-ECDH:+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:+CTYPE-X.509:+CTYPE-OPENPGP:+SRP:+SRP-RSA:+SRP-DSS", NULL));
-		// gnutls_priority_init (&priority_normal, "NORMAL:-RSA:+ANON-ECDH:+RSA:+CTYPE-X.509:+CTYPE-OPENPGP:+SRP:+SRP-RSA:+SRP-DSS", NULL));
 	//
 	// Try to setup on-the-fly signing key / certificate and gen a certkey
 	otfsigcrt = cfg_tls_onthefly_signcert ();
@@ -1199,7 +1218,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 #endif
 	} else {
 		// GNUTLS_CRT_RAW, GNUTLS_CRT_UNKNOWN, or other
-		tlog (TLOG_TLS, LOG_ERR, "Funny sort of certificate retrieval attempted as a %s", rolestr);
+		tlog (TLOG_TLS, LOG_ERR, "Funny sort of certificate %d retrieval attempted as a %s", certtp, rolestr);
 		E_g2e ("Requested certtype is neither X.509 nor OpenPGP",
 			GNUTLS_E_CERTIFICATE_ERROR);
 		return gtls_errno;
@@ -1420,8 +1439,8 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			//
 			// When not in user-to-user mode, deliver 0 bytes
 			if (!u2u) {
-				certdatum.data = "";
-				certdatum.size = 0;
+				certdatum.data = "\x05\x00";
+				certdatum.size = 2;
 				E_g2e ("Failed to withhold Kerberos server ticket",
 					gnutls_pcert_import_krb_raw (
 						*pcert,
@@ -1511,6 +1530,9 @@ fprintf (stderr, "DEBUG: About to import %d bytes worth of X.509 certificate int
 				GNUTLS_OPENPGP_FMT_RAW,
 				NULL,	/* use master key */
 				0));
+		break;
+	case LID_TYPE_KRB5:
+		/* Binary information is currently moot, so do not load it */
 		break;
 	default:
 		/* Should not happen */
@@ -1683,6 +1705,7 @@ static int setup_starttls_kerberos (void) {
 		k5err = krb5_kt_resolve (krbctx_srv, cfg, &krb_kt_srv);
 	}
 	cfg = cfg_krb_client_credcache ();
+#if 0  /* Temporary bypass of cctype checks */
 	if ((k5err == 0) && (cfg != NULL)) {
 		k5err = krb5_cc_set_default_name (krbctx_cli, cfg);
 		if (k5err == 0) {
@@ -1694,7 +1717,9 @@ static int setup_starttls_kerberos (void) {
 			krb5_cc_close (krbctx_cli, krb_cc_tmp);
 		}
 	}
+#endif
 	cfg = cfg_krb_server_credcache ();
+#if 0  /* Temporary bypass of cctype checks */
 	if ((k5err == 0) && (cfg != NULL)) {
 		k5err = krb5_cc_set_default_name (krbctx_srv, cfg);
 		if (k5err == 0) {
@@ -1706,6 +1731,7 @@ static int setup_starttls_kerberos (void) {
 			krb5_cc_close (krbctx_srv, krb_cc_tmp);
 		}
 	}
+#endif
 	//
 	// Check for consistency and log helpful messages for the sysop
 	if (k5err != 0) {
@@ -1721,25 +1747,29 @@ static int setup_starttls_kerberos (void) {
 		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "No kerberos_server_keytab configured, so Kerberos cannot work at all");
 		retval = GNUTLS_E_UNWANTED_ALGORITHM;
 /* TODO: Only for MIT krb5 1.11 and up
-	} else if (0 == krb5_kt_have_content (krb_ctx, krb_kt_cli)) {
-		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "Keytab in kerberos_client_keytab is absent or empty");
+	} else if (0 == krb5_kt_have_content (krb_ctx, krb_kt_srv)) {
+		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "Keytab in kerberos_server_keytab is absent or empty");
 		retval = GNUTLS_E_UNWANTED_ALGORITHM;
  */
 	}
 	if (krbctx_cli == NULL) {
 		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "No kerberos_client_credcache configured, so Kerberos cannot work at all");
 		retval = GNUTLS_E_UNWANTED_ALGORITHM;
+#if 0  /* Temporary bypass of cctype checks */
 	} else if (!krb5_cc_support_switch (
 			krbctx_cli, cctype_cli)) {
 		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "Your kerberos_client_credcache does not support multilpe identities");
 		retval = GNUTLS_E_UNWANTED_ALGORITHM;
+#endif
 	}
 	if (krbctx_srv == NULL) {
 		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_WARNING, "No kerberos_server_credcache configured, so user-to-user Kerberos will not work");
+#if 0  /* Temporary bypass of cctype checks */
 	} else if (!krb5_cc_support_switch (
 			krbctx_srv, cctype_srv)) {
 		tlog (TLOG_DAEMON | TLOG_KERBEROS, LOG_ERR, "Your kerberos_server_credcache does not support multilpe identities");
 		retval = GNUTLS_E_UNWANTED_ALGORITHM;
+#endif
 	}
 	if (retval != GNUTLS_E_SUCCESS) {
 		cleanup_starttls_kerberos ();
@@ -3602,7 +3632,6 @@ fprintf (stderr, "DEBUG: otfcert retrieval returned GNUTLS_E_AGAIN, so skip it\n
  * Return 1 for yes or 0 for no; this is used in priority strings.
  */
 static inline int lidtpsup (struct command *cmd, int lidtp) {
-	return 1;	//TODO// Can we decide if we needn't authenticate?
 	return cmd->lids [lidtp - LID_TYPE_MIN].data != NULL;
 }
 
@@ -3641,13 +3670,37 @@ static int configure_session (struct command *cmd,
 	//  - Configured security parameters (database? variable?)
 	//  - CTYPEs, SRP, ANON-or-not --> fill in as + or - characters
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
-		char priostr [256];
+		char priostr [512];
+#ifdef HAVE_TLS_KDH
 		snprintf (priostr, sizeof (priostr)-1,
 			// "NORMAL:-RSA:" -- also ECDH-RSA, ECDHE-RSA, ...DSA...
 			"NONE:"
-#ifdef HAVE_TLS_KDH
 			"%%ASYM_CERT_TYPES:"
-#endif
+			"+VERS-TLS-ALL:+VERS-DTLS-ALL:"
+			"+COMP-NULL:"
+			"+CIPHER-ALL:+CURVE-ALL:+SIGN-ALL:+MAC-ALL:"
+			"%cANON-ECDH:"
+			"+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:" //TODO//
+			"+CTYPE-SRV-KRB:+CTYPE-SRV-X.509:+CTYPE-SRV-OPENPGP:"
+			"%cCTYPE-CLI-KRB:"
+			"%cCTYPE-CLI-X.509:"
+			"%cCTYPE-CLI-OPENPGP:"
+			"%cSRP:%cSRP-RSA:%cSRP-DSS",
+			anonpre_ok				?'+':'-',
+			1 /* lidtpsup (cmd, LID_TYPE_KRB5)*/		?'+':'-',
+			1 /*lidtpsup (cmd, LID_TYPE_X509)*/		?'+':'-',
+			1 /*lidtpsup (cmd, LID_TYPE_PGP)*/		?'+':'-',
+			//TODO// Temporarily patched out SRP
+			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
+			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
+			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-');
+#else
+		// It's not possible to make good decisions on certificate type
+		// for both sides based on knowledge of local authentication
+		// abilities.  So we permit all (but would like to be subtler).
+		snprintf (priostr, sizeof (priostr)-1,
+			// "NORMAL:-RSA:" -- also ECDH-RSA, ECDHE-RSA, ...DSA...
+			"NONE:"
 			"+VERS-TLS-ALL:+VERS-DTLS-ALL:"
 			"+COMP-NULL:"
 			"+CIPHER-ALL:+CURVE-ALL:+SIGN-ALL:+MAC-ALL:"
@@ -3655,23 +3708,15 @@ static int configure_session (struct command *cmd,
 			"+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:" //TODO//
 			"%cCTYPE-X.509:"
 			"%cCTYPE-OPENPGP:"
-#ifdef HAVE_TLS_KDH
-			"%cCTYPE-CLI-KRB:%cCTYPE-SRV-X.509:"
-#endif
 			"%cSRP:%cSRP-RSA:%cSRP-DSS",
 			anonpre_ok				?'+':'-',
-			lidtpsup (cmd, LID_TYPE_X509)		?'+':'-',
-			lidtpsup (cmd, LID_TYPE_PGP)		?'+':'-',
-#ifdef HAVE_TLS_KDH
-			lidtpsup (cmd, LID_TYPE_KRB5)		?'+':'-',
-			lidtpsup (cmd, LID_TYPE_KRB5)		?'+':'-',
-#endif
+			1		?'+':'-',
+			1		?'+':'-',
 			//TODO// Temporarily patched out SRP
-			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
-			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
-			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-');
-// strcpy (priostr, "NONE:+VERS-TLS-ALL:+MAC-ALL:+RSA:+AES-128-CBC:+SIGN-ALL:+COMP-NULL");  //TODO:TEST//
-// strcpy (priostr, "NONE:+VERS-TLS-ALL:+VERS-DTLS-ALL:+MAC-ALL:+RSA:+AES-128-CBC:+SIGN-ALL:+COMP-NULL");  //TODO:TEST//
+			1		?'+':'-',
+			1		?'+':'-',
+			1		?'+':'-');
+#endif
 		tlog (TLOG_TLS, LOG_DEBUG, "Constructed priority string %s for local ID %s",
 			priostr, cmd->cmd.pio_data.pioc_starttls.localid);
 		E_g2e ("Failed to set GnuTLS priority string",
@@ -3693,24 +3738,30 @@ static int configure_session (struct command *cmd,
  *  - TLS hints -- Server Name Indication
  *  - User hints -- local and remote identities provided
  */
-int srv_clienthello (gnutls_session_t session) {
+static int srv_clienthello (gnutls_session_t session, unsigned int htype, unsigned int post, unsigned int incoming, const gnutls_datum_t *msg) {
 	struct command *cmd;
+	int gtls_errno = GNUTLS_E_SUCCESS;
 	char sni [sizeof (cmd->cmd.pio_data.pioc_starttls.remoteid)]; // static
 	size_t snilen = sizeof (sni);
 	int snitype;
-	int gtls_errno = GNUTLS_E_SUCCESS;
 	char *lid;
+
+tlog (LOG_DAEMON, LOG_INFO, "Invoked %sprocessor for Client Hello, htype=%d, incoming=%d\n",
+		post ? "post" : "pre",
+		htype,
+		incoming);
 
 fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 errno = 0;
 fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
+
+if (!post) {
 	//
 	// Setup a number of common references
 	cmd = (struct command *) gnutls_session_get_ptr (session);
 	if (cmd == NULL) {
 		return GNUTLS_E_INVALID_SESSION;
 	}
-	lid = cmd->cmd.pio_data.pioc_starttls.localid;
 
 	//
 	// Setup server-specific credentials and priority string
@@ -3723,6 +3774,16 @@ fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), 
 			srv_creds, srv_credcount, 
 			cmd->anonpre & ANONPRE_SERVER));
 fprintf (stderr, "DEBUG: Got gtls_errno = %d at %d\n", gtls_errno, __LINE__);
+
+} else {
+
+	//
+	// Setup a number of common references
+	cmd = (struct command *) gnutls_session_get_ptr (session);
+	if (cmd == NULL) {
+		return GNUTLS_E_INVALID_SESSION;
+	}
+	lid = cmd->cmd.pio_data.pioc_starttls.localid;
 
 	//
 	// Setup to ignore/request/require remote identity (from client)
@@ -3789,6 +3850,7 @@ fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), 
 		sni [sizeof (sni) - 1] = '\0';
 	}
 fprintf (stderr, "DEBUG: Got gtls_errno = %d at %d\n", gtls_errno, __LINE__);
+}
 
 	//
 	// Lap up any unnoticed POSIX error messages
@@ -4486,8 +4548,10 @@ fprintf (stderr, "DEBUG: Configuring client credentials\n");
 fprintf (stderr, "DEBUG: Configuring for server credentials callback if %d==0\n", gtls_errno);
 if (!renegotiating) {	//TODO:TEST//
 		if (gtls_errno == GNUTLS_E_SUCCESS) {
-			gnutls_handshake_set_post_client_hello_function (
+			gnutls_handshake_set_hook_function (
 				session,
+				GNUTLS_HANDSHAKE_CLIENT_HELLO,
+				GNUTLS_HOOK_BOTH,
 				srv_clienthello);
 		}
 } //TODO:TEST//
