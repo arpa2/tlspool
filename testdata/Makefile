@@ -296,8 +296,8 @@ tlspool-test-srp:
 #
 
 tlspool.env:
-	mkdir -p $@
-	chown $(DMNUSR):$(DMNGRP) $@
+	mkdir -p $(BDBENV)/$@
+	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/$@
 
 localid.db: tlspool.env
 	$(SLICOMMAND) $(CONFFILE) testcli@tlspool.arpa2.lab OpenPGP,client '$(PRIVKEY1)' tlspool-test-client-pubkey.pgp
@@ -307,17 +307,17 @@ localid.db: tlspool.env
 	$(SLICOMMAND) $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server 'tI&' /dev/null
 	$(SLICOMMAND) $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server 'It&' /dev/null
 	$(SLICOMMAND) $(CONFFILE) tlspool.arpa2.lab x.509,server,client '$(PRIVKEY7)' tlspool-test-webhost-cert.der
-	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
+	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $(BDBENV)/$@
 
 disclose.db: tlspool.env localid.db
 	$(SDCOMMAND) $(CONFFILE) @.arpa2.lab testcli@tlspool.arpa2.lab testsrv@tlspool.arpa2.lab
 	$(SDCOMMAND) $(CONFFILE) . tlspool.arpa2.lab
-	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
+	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $(BDBENV)/$@
 
 trust.db: tlspool.env tlspool-test-ca-cert.der tlspool-test-ca-cert.keyid tlspool-test-flying-signer.der tlspool-test-flying-signer.keyid
 	$(STCOMMAND) $(CONFFILE) x509,client,server `cat tlspool-test-ca-cert.keyid` 1 tlspool-test-ca-cert.der
 	$(STCOMMAND) $(CONFFILE) x509,client,server `cat tlspool-test-flying-signer.keyid` 1 tlspool-test-flying-signer.der
-	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
+	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $(BDBENV)/$@
 
 clean: clean-db
 	rm -f *.der *.pgp
