@@ -3,11 +3,17 @@
 #ifndef TLSPOOL_STARTTLS_H
 #define TLSPOOL_STARTTLS_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
 #include <tlspool/commands.h>
 
 #ifdef WINDOWS_PORT
 #include <windows.h>
+#else
+#include <unistd.h>
 #endif /* WINDOWS_PORT */
 
 
@@ -240,7 +246,7 @@ int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout,
  *
  * This function returns -1 on error, or 0 on success.
  */
-int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec, void (*cb) (struct pioc_pinentry *entry, void *data), void *data);
+int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec, void (*cb) (pinentry_t *entry, void *data), void *data);
 
 /* Generate a pseudo-random sequence based on session cryptographic keys.
  *
@@ -289,5 +295,9 @@ int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec
 int tlspool_prng (char *label, char *opt_ctxvalue,
 		uint16_t prng_len, uint8_t *prng_buf,
 		uint8_t *ctlkey);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // TLSPOOL_STARTTLS_H
