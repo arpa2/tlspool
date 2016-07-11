@@ -81,11 +81,9 @@ cd "$BASEDIR/$WORKINGDIR"
 
 if [ ! -d "tlspool" ]; then
   git clone https://github.com/arpa2/tlspool
-  git checkout 49bf1157e3471ee15bc279d41c9492646a2bf44c
 else
   cd tlspool
   git pull https://github.com/arpa2/tlspool
-  git checkout 49bf1157e3471ee15bc279d41c9492646a2bf44c
   cd ..
 fi
 
@@ -153,7 +151,7 @@ then
     fi
     # Create the config file and check wether it was created.
     printf "$LINE1a$BASEDIR/$WORKINGDIR/token\n$LINE2\n$LINE3\n" >> "$CONFIGFILE"
-    if [ -a "$CONFIGFILE" ]; then 
+    if [ -e "$CONFIGFILE" ]; then 
       printf "\nSoftHSMv2 configuration file $CONFIGFILE created.\n"
     fi
     # Now, given that there was no config, surely there will not be a token. 
@@ -186,4 +184,4 @@ fi
 printf "A simple git pull will update either.\n\nOr just copy $UPDATESCRIPT to wherever you want it to be.\n\n"
 
 printf "You can run 'tlspool -c configfile'. There is an example config file at "
-printf "~i/.nix-profile/etc/tlspool/tlspool.conf which you can modify for usage." 
+printf "~/.nix-profile/etc/tlspool/tlspool.conf which you can modify for usage." 
