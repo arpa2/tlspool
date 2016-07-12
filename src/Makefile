@@ -34,7 +34,7 @@ QUICKDER_LIBS   = $(shell $(PKG_CONFIG) --libs   quick-der)
 ifdef WINVER
 CFLAGS += -D_WIN32_WINNT=0x0600 -DATTRIBUTE_UNUSED="" -I ../include/windows
 OBJS += windows/syslog.o windows/windows.o windows/getopt.o
-LIBS += -lkernel32 -ladvapi32 -lmsvcrt -lwsock32 -lws2_32 -lwldap32
+LIBS += -lkernel32 -ladvapi32 -lmsvcrt -lwsock32 -lws2_32 -lwldap32 -lunbound
 EXE = .exe
 else
 LIBS += -lldap
