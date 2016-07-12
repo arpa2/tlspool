@@ -80,18 +80,26 @@ cd "$BASEDIR/$WORKINGDIR"
 # tlspool with a simple "git pull" from the main repository and nix-build command.
 
 if [ ! -d "tlspool" ]; then
-  git clone https://github.com/arpa2/tlspool
+  git clone https://github.com/amarsman/tlspool
+  cd tlspool
+  git checkout tlspool-gui
+  cd ..
 else
   cd tlspool
-  git pull https://github.com/arpa2/tlspool
+  git checkout tlspool-gui
+  git pull https://github.com/amarsman/tlspool
   cd ..
 fi
 
 if [ ! -d "nixpkgs" ]; then
-  git clone https://github.com/arpa2/nixpkgs
+  git clone https://github.com/amarsman/nixpkgs
+  cd nixpkgs
+  git checkout tlspool-gui
+  cd ..
 else
   cd nixpkgs
-  git pull https://github.com/arpa2/nixpkgs
+  git checkout tlspool-gui
+  git pull https://github.com/amarsman/nixpkgs
   cd ..
 fi
 
@@ -103,15 +111,24 @@ else
   cd ..
 fi
 
+if [ ! -d "tlspool-gui" ]; then
+  git clone https://github.com/amarsman/tlspool-gui
+else
+  cd steamworks 
+  git pull https://github.com/amarsman/tlspool-gui
+  cd ..
+fi
+
 # Go into the nixpkgs folder and switch to the tlspool branch:
 
 cd nixpkgs
 export NIXPKGS="$BASEDIR/$WORKINGDIR/nixpkgs"
-git checkout tlspool
+git checkout tlspool-gui
 
 # Install tlspool and all the dependencies through nix:
 
 nix-env -f "$NIXPKGS" -iA tlspool
+nix-env -f "$NIXPKGS" -iA tlspool-gui
 
 cd ..
 
