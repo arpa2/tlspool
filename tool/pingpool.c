@@ -49,6 +49,7 @@ int main (int argc, char *argv []) {
 	if (argc == 2) {
 		sockpath = argv [1];
 	}
+	(void) tlspool_open_poolhandle (sockpath);
 
 	memset (&pp, 0, sizeof (pp));
 	strcpy (pp.YYYYMMDD_producer, TLSPOOL_IDENTITY_V2);
