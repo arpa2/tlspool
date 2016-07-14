@@ -15,6 +15,7 @@ WRAPPERS = python
 #WISHLIST: tcl ruby perl tcl java cis php lua go r modula3 javascript [and so on...]
 
 CFLAGS += -fPIC -I ../include -std=gnu11
+CFLAGS += -O0 -ggdb3
 
 LDFLAGS += -std=gnu11
 

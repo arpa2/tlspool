@@ -23,7 +23,7 @@
 
 // type maps
 
-//TODO// This typemap crashes ping (...)
+//TODO// This typemap crashes ping (...) because not $1 but arg1 is passed
 %typemap(in) pingpool_t *pingdata {
 	// Code largely copied and adapted from ping_data_facilities_get
 	ping_data *arg1 = (ping_data *) 0 ;
@@ -37,9 +37,10 @@
 	}
 	arg1 = (ping_data *)(argp1);
 	$1 = alloca (sizeof (pingpool_t));
-	memcpy ($1->YYYYMMDD_producer,
+	strncpy ($1->YYYYMMDD_producer,
 			(arg1)->YYYYMMDD_producer,
-			sizeof ($1->YYYYMMDD_producer));
+			sizeof ($1->YYYYMMDD_producer)-1);
+	$1->YYYYMMDD_producer [sizeof ($1->YYYYMMDD_producer)-1] = '\0';
 	$1->facilities = (int) ((arg1)->facilities);
 }
 
