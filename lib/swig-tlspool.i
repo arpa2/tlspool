@@ -32,45 +32,64 @@
 
 // basic data types
 
+%apply unsigned char  { uint8_t  }
+%apply unsigned short { uint16_t }
+%apply unsigned int   { uint32_t }
+%apply          short {  int16_t }
+
 %inline{
 
 	typedef char identity_t [128];
 
-	typedef unsigned char ctlkey_t [16];
+	typedef uint8_t ctlkey_t [16];
 
 	typedef char service_t [16];
 
 	typedef int pool_handle_t;
 
 	typedef struct {
-		char YYYYMMDD_producer [134];
-		int facilities;
+		int tlserrno;
+		char message [128];
+	} error_data;
+
+	typedef struct {
+		char YYYYMMDD_producer [8+128];	// when & who?
+		uint32_t facilities;		// PIOF_FACILITY_xxx
 	} ping_data;
 
 	typedef struct {
-		int flags;
-		int local;
-		int ipproto;
-		int streamid;
+		uint32_t flags;
+		uint32_t local;
+		uint8_t ipproto;
+		uint16_t streamid;
 		identity_t localid;
 		identity_t remoteid;
 		ctlkey_t ctlkey;
 		service_t service;
-		int timeout;
+		uint32_t timeout;
 	} starttls_data;
 
 	typedef struct {
-		int flags;
+		uint32_t flags;
 		ctlkey_t ctlkey;
 		identity_t name;
 	} control_data;
 
 	typedef struct {
-		int in1_len, in2_len, prng_len;
-		char buffer [350];
+		int16_t in1_len, in2_len, prng_len;
+		uint8_t buffer [350];
 	} prng_data;
 
+	typedef union {
+		int unix_socket;
+	} socket_data;
+
 };
+
+
+// helper fun
+
+//IF ANY//
 
 
 // libtlspool.so
@@ -79,10 +98,10 @@ int tlspool_pid (char *opt_pidfile);
 
 pool_handle_t tlspool_open_poolhandle (char *path);
 
-int tlspool_ping (pingpool_t *pingdata);
+int tlspool_ping (ping_data *pingdata);
 
-int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
-                        int *privdata,
+int tlspool_starttls (int cryptfd, starttls_data *tlsdata,
+                        void *privdata,
                         // int (*namedconnect) (starttls_t *tlsdata,void *privdata));
 			void *swig_null_callback);
 
