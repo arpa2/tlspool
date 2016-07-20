@@ -31,7 +31,8 @@ install: all
 	python setup.py install
 
 uninstall: all
-	python setup.py uninstall
+	##### OOPS -- PYTHON SETUP.PY CANNOT HANDLE UNINSTALL #####
+	# python setup.py uninstall
 
 _tlspool.so: tlspool.c
 	@#MANUAL# $(CC) -shared -o "$@" $(CFLAGS) $(PYTHON_CFLAGS) $(LDFLAGS) $(PYTON_LDFLAGS) "$<" ../libtlspool.so
