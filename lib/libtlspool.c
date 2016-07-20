@@ -355,7 +355,7 @@ static int np_send_command(struct tlspool_command *cmd) {
 
 	if (!fSuccess && GetLastError() == ERROR_IO_PENDING )
 	{
-printf ("DEBUG: Write I/O pending\n");
+// printf ("DEBUG: Write I/O pending\n");
 		fSuccess = WaitForSingleObject(overlapped.hEvent, INFINITE) == WAIT_OBJECT_0;
 	}
 
@@ -369,9 +369,9 @@ printf ("DEBUG: Write I/O pending\n");
 		errno = EPIPE;
 		return -1;
 	} else {
-printf ("DEBUG: Wrote %ld bytes to pipe\n", cbWritten);
+// printf ("DEBUG: Wrote %ld bytes to pipe\n", cbWritten);
 	}
-printf("DEBUG: Message sent to server, receiving reply as follows:\n");
+// printf("DEBUG: Message sent to server, receiving reply as follows:\n");
 	return 0;
 }
 #endif /* WINDOWS_PORT */
@@ -438,7 +438,7 @@ static void *master_thread (void *path) {
 		usec = 1000000;
 		while (poolfd == INVALID_POOL_HANDLE) {
 #ifdef WINDOWS_PORT
-printf ("DEBUG: path = %s\n", (char *) path);
+// printf ("DEBUG: path = %s\n", (char *) path);
 			pool_handle_t newpoolfd = open_named_pipe ((LPCTSTR) path);
 // printf ("DEBUG: newpoolfd = %d\n", newpoolfd);
 			if (newpoolfd != INVALID_POOL_HANDLE) {
@@ -505,7 +505,7 @@ printf ("DEBUG: path = %s\n", (char *) path);
 
 			if (!fSuccess && GetLastError() == ERROR_IO_PENDING )
 			{
-printf ("DEBUG: Read I/O pending\n");
+// printf ("DEBUG: Read I/O pending\n");
 				fSuccess = WaitForSingleObject(overlapped.hEvent, INFINITE) == WAIT_OBJECT_0;
 			}
 
@@ -518,7 +518,7 @@ printf ("DEBUG: Read I/O pending\n");
 				_tprintf(TEXT("ReadFile from pipe failed. GLE=%d\n"), GetLastError());
 				retval = -1;
 			} else {
-printf ("DEBUG: Read %ld bytes from pipe\n", cbRead);
+// printf ("DEBUG: Read %ld bytes from pipe\n", cbRead);
 			}
 #else
 			iov.iov_base = &cmd;
@@ -561,7 +561,7 @@ printf ("DEBUG: Read %ld bytes from pipe\n", cbRead);
 					sendmsg (poolfd, &mh, MSG_NOSIGNAL);
 #endif
 					// Ignore errors
-printf ("DEBUG: Sent      PIOC_ERROR_V2 as callback to TLS Pool\n");
+// printf ("DEBUG: Sent      PIOC_ERROR_V2 as callback to TLS Pool\n");
 				}
 				// Do not attempt delivery
 				continue;
@@ -629,7 +629,7 @@ int tlspool_ping (pingpool_t *pingdata) {
 
 	/* Prepare command structure */
 	poolfd = tlspool_open_poolhandle (NULL);
-printf ("DEBUG: poolfd = %d\n", poolfd);
+// printf ("DEBUG: poolfd = %d\n", poolfd);
 	if (poolfd == INVALID_POOL_HANDLE) {
 		errno = ENODEV;
 		return -1;
@@ -950,7 +950,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 					ULONG pid;
 					GetNamedPipeServerProcessId(poolfd, &pid);
 					cmd.pio_ancil_type = ANCIL_TYPE_SOCKET;
-					printf("DEBUG: pid = %d, plainfd = %d\n", pid, plainfd);
+					// printf("DEBUG: pid = %d, plainfd = %d\n", pid, plainfd);
 					if (socket_dup_protocol_info(plainfd, pid, &cmd.pio_ancil_data.pioa_socket) == -1) {
 						// printf("DEBUG: cygwin_socket_dup_protocol_info error\n");
 						// Let SIGPIPE be reported as EPIPE
@@ -1008,7 +1008,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 	/* Close the now-duplicated or now-erradicated plaintext fd */
 
 	memcpy (tlsdata, &cmd.pio_data.pioc_starttls, sizeof (struct pioc_starttls));
-printf ("DEBUG: Returning control key %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n", tlsdata->ctlkey [0], tlsdata->ctlkey [1], tlsdata->ctlkey [2], tlsdata->ctlkey [3], tlsdata->ctlkey [4], tlsdata->ctlkey [5], tlsdata->ctlkey [6], tlsdata->ctlkey [7], tlsdata->ctlkey [8], tlsdata->ctlkey [9], tlsdata->ctlkey [10], tlsdata->ctlkey [11], tlsdata->ctlkey [12], tlsdata->ctlkey [13], tlsdata->ctlkey [14], tlsdata->ctlkey [15]);
+// printf ("DEBUG: Returning control key %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n", tlsdata->ctlkey [0], tlsdata->ctlkey [1], tlsdata->ctlkey [2], tlsdata->ctlkey [3], tlsdata->ctlkey [4], tlsdata->ctlkey [5], tlsdata->ctlkey [6], tlsdata->ctlkey [7], tlsdata->ctlkey [8], tlsdata->ctlkey [9], tlsdata->ctlkey [10], tlsdata->ctlkey [11], tlsdata->ctlkey [12], tlsdata->ctlkey [13], tlsdata->ctlkey [14], tlsdata->ctlkey [15]);
 	registry_update (&entry_reqid, NULL);
 	return 0;
 }

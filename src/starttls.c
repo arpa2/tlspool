@@ -3180,8 +3180,9 @@ if (!renegotiating) {	//TODO:TEST//
 				len++;
 			}
 			// If no usable remoteid was setup, ignore it
-			if ((len + ofs > 0) && (len < 128)) {
+			if ((len > ofs) && (len < 128)) {
 				cmd->cmd.pio_data.pioc_starttls.remoteid [sizeof (cmd->cmd.pio_data.pioc_starttls.remoteid)-1] = '\0';
+				tlog (TLOG_TLS, LOG_DEBUG, "Sending ServerNameIndication \"%.*s\"", len - ofs, str + ofs);
 				E_g2e ("Client failed to setup SNI",
 					gnutls_server_name_set (
 						session,
