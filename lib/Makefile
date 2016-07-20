@@ -1,7 +1,7 @@
 ifdef WINVER
 TARGETS = libtlspool.dll libtlspool.lib
 else
-TARGETS = libtlspool.so libtlspool.a tlspool.pyc tlspool.pyo
+TARGETS = libtlspool.so libtlspool.a
 endif
 
 #
@@ -59,12 +59,6 @@ libtlspool.a: $(libtlspool_OBJS)
 	rm -f "$@"
 	ar rc "$@" $(libtlspool_OBJS)
 
-tlspool.pyo: tlspool.py
-	python -O -m compileall "$<"
-
-tlspool.pyc: tlspool.py
-	python -m compileall "$<"
-
 libtlspool.dll: $(libtlspool_OBJS)
 	$(CC) -shared $(LDFLAGS) -o "$@" $(libtlspool_OBJS) $(LIBS)
 
@@ -76,6 +70,7 @@ libtlspool.lib: windows/libtlspool.def
 
 clean:
 	rm -f $(OBJS) *.lo *.la $(TARGETS)
+	@$(foreach w,$(WRAPPERS),$(MAKE) DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) -C '$(w)' clean && ) echo Wrappers cleaned for $(WRAPPERS)
 
 anew: clean all
 
