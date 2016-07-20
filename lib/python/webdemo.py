@@ -9,19 +9,21 @@ import tlspool
 sox = socket.socket (socket.AF_INET6, socket.SOCK_STREAM)
 sox.connect ( ('www.arpa2.net', 443) )
 
-cnx = tlspool.Connection (sox, service='http', flags=0x0d)
+cli2srv = (	tlspool.PIOF_STARTTLS_LOCALROLE_CLIENT |
+		tlspool.PIOF_STARTTLS_REMOTEROLE_SERVER )
+cnx = tlspool.Connection (sox, service='http', flags=cli2srv)
 
 cnx.tlsdata.localid='testcli@tlspool.arpa2.lab'
 cnx.tlsdata.remoteid='www.arpa2.net'
 
-cnx = cnx.starttls ()
+web = cnx.starttls ()
 
-cnx.send ('GET / HTTP/1.0\r\nHost: www.arpa2.net\r\n\r\n')
+web.send ('GET / HTTP/1.0\r\nHost: www.arpa2.net\r\n\r\n')
 
-dta = cnx.recv (4096)
+dta = web.recv (4096)
 while dta != '':
-	print dta,
-	dta = cnx.recv (4096)
+	sys.stdout.write (dta)
+	dta = web.recv (4096)
 
 cnx.close ()
 

@@ -20,7 +20,7 @@
 
 // by default, export nothing (we rename most anyway)
 
-//LATER// %ignore "";
+%ignore "";
 
 
 // welcome flags and tags
@@ -30,7 +30,7 @@
 %rename("%s", regexpmatch$name="^PIOF_") "";
 
 
-// basic data types
+// basic data types -- retyping a few parameters in SWIG-understandable terms
 
 %apply unsigned char  { uint8_t  }
 %apply unsigned short { uint16_t }
@@ -130,11 +130,5 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 
 //NOTMAPPED// %rename(localid_service) tlspool_localid_service;
 //NOTMAPPED// // int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout, char * (*cb) (lidentry_t *entry, void *data), void *data);
-
-
-// now, given the renames above, and ignoring the rest, import the definitions
-
-//TODO// %include "../../include/tlspool/starttls.h"
-//TODO// %include "../../include/tlspool/commands.h"
 
 

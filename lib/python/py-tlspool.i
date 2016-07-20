@@ -21,9 +21,23 @@
 %rename(_prng) tlspool_prng;
 
 
-// type maps
+// type maps to translate between SWIG's abstract data types and Python types
 
-/* IF ANY */
+%typemap(in) ctlkey_t {
+	ssize_t inlen = 0;
+	if ((PyString_AsStringAndSize ($input, (char **) &($1), &inlen) == -1) || (inlen != TLSPOOL_CTLKEYLEN)) {
+		PyErr_SetString (PyExc_ValueError, "Control keys are binary strings of length 16");
+		return NULL;
+	}
+}
+
+%typemap(out) ctlkey_t {
+	if ($result == NULL) {
+		$1 = Py_None;
+	} else {
+		$1 = PyString_FromStringAndSize ($result, TLSPOOL_CTLKEYLEN);
+	}
+}
 
 
 // apply the settings above as modifiers to the generic TLS Pool wrapping
@@ -52,8 +66,7 @@ def pid (pidfile=None):
 	"""
 	process_id = _pid (pidfile)
 	if process_id < 0:
-		#TODO# Harvest errno, errstr
-		raise Exception ('The TLS Pool is not running')
+		raise OSError (os.errno)
 	else:
 		return process_id
 
@@ -67,10 +80,14 @@ def open_poolhandle (path=None):
 	   contact to the TLS Pool has been made; if that has happened, then
 	   this function returns the previously found socket handle.
 	"""
-	#TODO# In case of error, harvest errno, errstr
-	return _open_poolhandle (path)
+	fd = _open_poolhandle (path)
+	if fd < 0:
+		raise OSError (os.errno)
+	else:
+		return fd
 
-def ping (YYYYMMDD_producer, facilities):
+def ping (YYYYMMDD_producer=_tlspool.TLSPOOL_IDENTITY_V2,
+			facilities=_tlspool.PIOF_FACILITY_ALL_CURRENT):
 	"""This function takes in a string with a date in YYYYMMDD format, followed
 	   by a user@domain producer identifier.  It takes in an integer value
 	   that is the logical or of PIOF_FACILITY_xxx values.  This is sent to
@@ -82,9 +99,10 @@ def ping (YYYYMMDD_producer, facilities):
 	pp = ping_data ()
 	pp.YYYYMMDD_producer = YYYYMMDD_producer
 	pp.facilities = facilities
-	_ping (pp)
-	#TODO# In case of error, harvest errno, errstr
-	return (pp.YYYYMMDD_producer, pp.facilities)
+	if _ping (pp) < 0:
+		raise OSError (os.errno)
+	else:
+		return (pp.YYYYMMDD_producer, pp.facilities)
 
 class Connection:
 	"""The tlspool.Connection class wraps around a connection to be protected
@@ -154,27 +172,50 @@ class Connection:
 		else:
 			socktp = socket.SOCK_STREAM
 		plainsockptr = socket_data ()
-		plainsockptr.unix_socket = -1
+		plainsockptr.unix_socket = self.plainfd
 		# Provide None for the callback function, SWIG won't support it
 		# We might at some point desire a library of C routine options?
 		rv = _starttls (self.cryptfd, self.tlsdata, plainsockptr, None)
+		self.plainfd = -1
 		self.cryptfd = -1
 		self.cryptsk = None
 		if rv < 0:
-			#TODO# Harvest errno, errstr
-			raise Exception ('Failed to start TLS')
+			raise OSError (os.errno)
 		self.plainfd = plainsockptr.unix_socket
 		self.plainsk = socket.fromfd (self.plainfd, af, socket.SOCK_STREAM)
 		return self.plainsk
 
-	def prng (self, label, ctxvalue=None):
-		raise Exception ("prng() not yet implemented")
+	def prng (self, length, label, ctxvalue=None):
+		"""Produce length bytes of randomness from the master key, after
+		   mixing it with the label and optional context value in ctxvalue.
+		   The procedure has been described in RFC 5705.
+		   #TODO# Find a way to return the random bytes, and use the length
+		"""
+		buf = prng_data ()
+		rv = _prng (label, ctxvalue, length, buf, self.tlsdata.ctlkey)
+		if rv < 0:
+			raise OSError (os.errno)
+		else:
+			return buf
 
-	def detach (self):
-		raise Exception ("detach() not yet implemented")
+	def control_detach (self):
+		"""Detach control of this connection.  Although the connection
+		   itself will still be available, control over it is diminished
+		   and its continuation is no longer dependent on the current
+		   connection.  You may need to pass tlsdata.ctlkey to another
+		   process, or use control_reattach(), before this is reversed
+		   in this process or another.
+		"""
+		_control_detach (self.tlsdata.ctlkey)
 
-	def reattach (self, ctlkey=None):
-		raise Exception ("reattach() not yet implemented")
+	def control_reattach (self, ctlkey=None):
+		"""Reattach control of this connection.  The connection may have
+		   called control_detach() in this process or another.  To help
+		   with the latter case, its tlsdata.ctlkey must have been moved
+		   into this instance.
+		"""
+		_control_reattach (self.tlsdata.ctlkey)
 
 %}
 
+%include "defines.h"

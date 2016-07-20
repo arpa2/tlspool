@@ -9,6 +9,8 @@ from distutils.core import setup, Extension
 
 tlspool_module = Extension('_tlspool',
                            sources=['tlspool.c'],
+			   library_dirs=['..'],
+			   libraries=['tlspool']
                            )
 
 setup (name = 'tlspool',
