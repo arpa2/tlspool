@@ -21,6 +21,7 @@
  * Each fits in a variable of the online2success_t type.
  */
 
+#include "whoami.h"
 
 #include <stdlib.h>
 #include <stdint.h>
@@ -28,13 +29,19 @@
 #include <assert.h>
 #include <syslog.h>
 
+#ifdef WINDOWS_PORT
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <winldap.h>
+#else
 #include <sys/types.h>
-#include <sys/time.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
-
 #define LDAP_DEPRECATED 1
 #include <ldap.h>
+#endif
+
+#include <sys/time.h>
 
 #include <unbound.h>
 #include <ldns/ldns.h>
@@ -46,6 +53,7 @@
 
 #include <tlspool/commands.h>
 #include <tlspool/internal.h>
+
 
 #include "pgp.h"
 
