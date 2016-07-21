@@ -46,7 +46,7 @@ else
 fi
 
 if [ -z "$2" ]; then
-  WORKINGDIR="$(date --iso-8601)-tlspool-environment"; 
+  WORKINGDIR="$(date '+%Y-%m-%d')-tlspool-environment";
 else
   y="$2"
   WORKINGDIR=${y##*/};
