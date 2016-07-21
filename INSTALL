@@ -177,6 +177,27 @@ good exchange will cry for attention in WireShark, assuming packet formatting
 errors.
 
 
+Trusting well-known CAs
+-----------------------
+
+By default, the testdata is not setup to trust any well-known CA certificate.
+We did however sample a Debian distribution of CA certificates, and installed
+it under testdata -- where it will NOT BE KEPT UP-TO-DATE.
+
+If you choose to rely on these CA's and need it for testing purposes, you can
+import them with
+
+	cd testdata
+	make anchors
+
+Once more, TRUST THIS ONLY FOR TESTING PURPOSES -- use a proper distrubution
+mechanism such as your OS or perhaps ARPA2 SteamWorks for anything that should
+withstand the pressure of an Internet whose intent is in part criminal.
+
+This is the reason why it must be installed as an explicit choice.  We made it
+really easy to install, but also won't keep the set secure.
+
+
 Running
 -------
 

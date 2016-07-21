@@ -322,5 +322,10 @@ clean: clean-db
 	rm -f *.der *.pgp
 	rm -f *.pem *.asc
 
+anchors: trust.db
+	@$(foreach rootca,$(shell ls -1 $(shell pwd)/trust-anchors/*.pem),$(CERTTOOL) --certificate-info --infile "$(rootca)" --outder --outfile "$(rootca:.pem=.der)" && ) echo 'Converted all root CA .pem to .der'
+	@$(foreach rootca,$(shell ls -1 $(shell pwd)/trust-anchors/*.der),$(CERTTOOL) --inraw --infile "$(rootca)" -i | sed -e '1,/Public Key ID:/d' -e '/Public key.s random art:/,$$d' -e 's/[ \t]*//' > "$(rootca:.der=.keyid)" && ) echo 'Converted all root CA .der to .keyid'
+	@$(foreach rootca,$(shell ls -1 $(shell pwd)/trust-anchors/*.der),$(TOOLDIR)/set_trust $(CONFFILE) x509,client,server `cat "$(rootca:.der=.keyid)"` 1 "$(rootca)" && ) echo 'Imported  all root CA .der into trust.db'
+
 anew: clean all
 
