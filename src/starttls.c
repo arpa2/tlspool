@@ -14,12 +14,6 @@
 #include <syslog.h>
 #include <errno.h>
 
-#include <sys/types.h>
-#include <sys/socket.h>
-
-#include <arpa/inet.h>
-#include <netinet/in.h>
-
 #include <gnutls/gnutls.h>
 #include <gnutls/pkcs11.h>
 #include <gnutls/abstract.h>
@@ -32,6 +26,7 @@
 
 #ifdef WINDOWS_PORT
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #else
 #include <poll.h>
 #include <sys/types.h>
@@ -40,6 +35,7 @@
 #ifndef __MINGW64__
 #include <arpa/inet.h>
 #endif
+#include <netinet/in.h>
 #endif
 
 #ifdef WINDOWS_PORT
@@ -1623,9 +1619,11 @@ static void valexp_Dd_start (void *vcmd, struct valexp *ve, char pred) {
 	case IPPROTO_UDP:
 		proto = "udp";
 		break;
+#ifndef WINDOWS_PORT
 	case IPPROTO_SCTP:
 		proto = "sctp";
 		break;
+#endif		
 	default:
 		goto setflagval;
 	}

@@ -13,7 +13,11 @@
 #include <unistd.h>
 #include <time.h>
 
+#ifdef WINDOWS_PORT
+#include <winsock2.h>
+#else
 #include <arpa/inet.h>
+#endif
 
 #include <tlspool/internal.h>
 
