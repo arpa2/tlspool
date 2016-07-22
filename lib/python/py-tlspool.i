@@ -1,5 +1,5 @@
 /* This is the specifics module for SWIG mapping to Python.
- * It includes generic definitions from ../gen-tlspool.i
+ * It includes generic definitions from ../swig-tlspool.i
  *
  * This separation enables us to override function names, for instance
  * to raw/internal names, and then to add language-specific wrappers.

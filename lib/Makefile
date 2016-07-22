@@ -11,7 +11,7 @@ endif
 #
 # Since the TLS Pool passes structures in and out, language wrappers may be needed.
 #
-WRAPPERS = python
+WRAPPERS = python go
 #WISHLIST: tcl ruby perl tcl java cis php lua go r modula3 javascript [and so on...]
 
 CFLAGS += -fPIC -I ../include -std=gnu11
@@ -50,7 +50,7 @@ TCL_LIBS =
 all: $(TARGETS) wrappers
 
 wrappers:
-	@$(foreach w,$(WRAPPERS),$(MAKE) DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) -C '$(w)' all && ) echo Wrappers built for $(WRAPPERS)
+	#DIY# @$(foreach w,$(WRAPPERS),$(MAKE) DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) -C '$(w)' all && ) echo Wrappers built for $(WRAPPERS)
 
 libtlspool.so: $(libtlspool_OBJS)
 	$(CC) -shared $(LDFLAGS) -o "$@" $(libtlspool_OBJS) $(LIBS)
@@ -70,7 +70,7 @@ libtlspool.lib: windows/libtlspool.def
 
 clean:
 	rm -f $(OBJS) *.lo *.la $(TARGETS)
-	@$(foreach w,$(WRAPPERS),$(MAKE) DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) -C '$(w)' clean && ) echo Wrappers cleaned for $(WRAPPERS)
+	#DIY# @$(foreach w,$(WRAPPERS),$(MAKE) DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) -C '$(w)' clean && ) echo Wrappers cleaned for $(WRAPPERS)
 
 anew: clean all
 
@@ -88,7 +88,7 @@ else
 	@echo '# You may need to run ldconfig to update the ld.so cache'
 	@echo '#'
 endif
-	@$(foreach w,$(WRAPPERS),$(MAKE) DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) -C '$(w)' install && ) echo Wrappers installed for $(WRAPPERS)
+	#DIY# @$(foreach w,$(WRAPPERS),$(MAKE) DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) -C '$(w)' install && ) echo Wrappers installed for $(WRAPPERS)
 
 uninstall:
 ifdef WINVER
@@ -102,5 +102,5 @@ else
 	@echo '# Python libraries not yet removed'
 	@echo '#'
 endif
-	@$(foreach w,$(WRAPPERS),$(MAKE) DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) -C '$(w)' uninstall && ) echo Wrappers uninstalled for $(WRAPPERS)
+	#DIY# @$(foreach w,$(WRAPPERS),$(MAKE) DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) -C '$(w)' uninstall && ) echo Wrappers uninstalled for $(WRAPPERS)
 
