@@ -80,22 +80,27 @@ class Handler (BaseHTTPRequestHandler):
 		# that is permitted.  This enables the user to benefit from
 		# the TLS Pool's plethora of connection options.
 		#
-		# A socketpair() is used as the TLS Pool's plaintext sockets;
-		# one now for the server and later the other for the client.
-		#
-		srvtxt, clitxt = socket.socketpair ()
-		srvtlsdata = {
-			'flags': tlspool.PIOF_STARTTLS_LOCALROLE_CLIENT |
-				 tlspool.PIOF_STARTTLS_REMOTEROLE_SERVER |
-				 tlspool.PIOF_STARTTLS_FORK |
-				 tlspool.PIOF_STARTTLS_DETACH,
-			'remoteid': servername,
-			'ipproto': socket.IPPROTO_TCP,
-		}
-		srvprivdata = {
-			'plainfd': srvtxt,
-		}
-		if tlspool.starttls (srvtls, srvtlsdata, srvprivdata) != 0:
+		#OLD# # Since the socket library implements these differently from
+		#OLD# # common sockets (?!?) we shall apply Python's usual wrapper.
+		#OLD# #
+		#OLD# _srvtxt, _clitxt = socket.socketpair ()
+		#OLD# srvtxt = socket._socketobject (_sock=_srvtxt)
+		#OLD# clitxt = socket._socketobject (_sock=_clitxt)
+		#OLD# print 'server TLS socket ::', type (srvtls)
+		#OLD# print 'server TXT socket ::', type (srvtxt)
+		# print 'server TXT plainfd =', srvtxt.fromfd
+		#OLD# srvcnx = tlspool.Connection (cryptsocket=srvtls, plainsocket=srvtxt)
+		srvcnx = tlspool.Connection (cryptsocket=srvtls)
+		srvcnx.tlsdata.flags = ( tlspool.PIOF_STARTTLS_LOCALROLE_CLIENT |
+					 tlspool.PIOF_STARTTLS_REMOTEROLE_SERVER |
+					 tlspool.PIOF_STARTTLS_FORK |
+					 tlspool.PIOF_STARTTLS_DETACH )
+		srvcnx.tlsdata.remoteid = servername
+		srvcnx.tlsdata.ipproto = socket.IPPROTO_TCP
+		srvcnx.tlsdata.service = 'http'
+		try:
+			clitxt = srvcnx.starttls ()
+		except:
 			self.send_response (403, 'Forbidden')
 			return
 		#
@@ -109,24 +114,22 @@ class Handler (BaseHTTPRequestHandler):
 		# be connected.
 		#
 		clitls = self.wfile
-		clitlsdata = {
-			'flags': tlspool.PIOF_STARTTLS_LOCALROLE_SERVER |
-				 tlspool.PIOF_STARTTLS_REMOTEROLE_CLIENT |
-				 tlspool.PIOF_STARTTLS_FORK |
-				 tlspool.PIOF_STARTTLS_DETACH |
-				 tlspool.PIOF_STARTTLS_IGNORE_REMOTEID |
-				 tlspool.PIOF_STARTTLS_LOCALID_ONTHEFLY,
-			'localid': servername,
-			'ipproto': socket.IPPROTO_TCP,
-		}
-		cliprivdata = {
-			'plainfd': clitxt,
-		}
-		if tlspool.starttls (clitls, clitlsdata, cliprivdata) != 0:
-			print 'Failed to setup STARTTLS on the client side'
-			return
-		else:
-			return
+		#OLD# print 'client TLS socket ::', type (clitls)
+		#OLD# print 'client TXT socket ::', type (clitxt)
+		clicnx = tlspool.Connection (cryptsocket=clitls, plainsocket=clitxt)
+		clicnx.tlsdata.flags = ( tlspool.PIOF_STARTTLS_LOCALROLE_SERVER |
+				 	 tlspool.PIOF_STARTTLS_REMOTEROLE_CLIENT |
+				 	 tlspool.PIOF_STARTTLS_FORK |
+				 	 tlspool.PIOF_STARTTLS_DETACH |
+				 	 tlspool.PIOF_STARTTLS_IGNORE_REMOTEID |
+				 	 tlspool.PIOF_STARTTLS_LOCALID_ONTHEFLY )
+		clicnx.tlsdata.localid = servername
+		clicnx.tlsdata.ipproto = socket.IPPROTO_TCP
+		clicnx.tlsdata.service = 'http'
+		try:
+			clicnx.starttls ()
+		finally:
+			srvcnx.close ()
 
 
 class ThreadedHTTPServer (ThreadingMixIn, HTTPServer):
@@ -134,12 +137,10 @@ class ThreadedHTTPServer (ThreadingMixIn, HTTPServer):
 	pass
 
 
-#TODO# Threading is not currently implemented in the Python tlspool module.
 #TODO# Use a plain server for now!
 if __name__ == '__main__':
 	sockaddr = ('0.0.0.0', 8080)
-	#TODO# server = ThreadedHTTPServer ( sockaddr, Handler)
-	server = HTTPServer ( sockaddr, Handler)
+	server = ThreadedHTTPServer ( sockaddr, Handler)
 	print 'HTTPS proxy started on %s:%d -- stoppable with Ctrl-C' % sockaddr
 	server.serve_forever()
 

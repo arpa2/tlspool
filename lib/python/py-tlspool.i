@@ -1,5 +1,5 @@
 /* This is the specifics module for SWIG mapping to Python.
- * It includes generic definitions from ../gen-tlspool.i
+ * It includes generic definitions from ../swig-tlspool.i
  *
  * This separation enables us to override function names, for instance
  * to raw/internal names, and then to add language-specific wrappers.
@@ -45,6 +45,17 @@
 %include "../swig-tlspool.i"
 
 
+// helper function to raise OSError with the parameter set to C-reachable errno
+
+%inline %{
+
+PyObject *raise_errno (void) {
+	return PyErr_SetFromErrno (PyExc_OSError);
+}
+
+%}
+
+
 
 // full-blown Python code to include
 
@@ -66,7 +77,7 @@ def pid (pidfile=None):
 	"""
 	process_id = _pid (pidfile)
 	if process_id < 0:
-		raise OSError (os.errno)
+		_tlspool.raise_errno ()
 	else:
 		return process_id
 
@@ -82,7 +93,7 @@ def open_poolhandle (path=None):
 	"""
 	fd = _open_poolhandle (path)
 	if fd < 0:
-		raise OSError (os.errno)
+		_tlspool.raise_errno ()
 	else:
 		return fd
 
@@ -100,7 +111,7 @@ def ping (YYYYMMDD_producer=_tlspool.TLSPOOL_IDENTITY_V2,
 	pp.YYYYMMDD_producer = YYYYMMDD_producer
 	pp.facilities = facilities
 	if _ping (pp) < 0:
-		raise OSError (os.errno)
+		_tlspool.raise_errno ()
 	else:
 		return (pp.YYYYMMDD_producer, pp.facilities)
 
@@ -129,6 +140,7 @@ class Connection:
 					timeout=0):
 		self.cryptsk = cryptsocket
 		self.cryptfd = cryptsocket.fileno ()
+		self.plainsk = plainsocket
 		self.plainfd = plainsocket.fileno () if plainsocket else -1
 		self.tlsdata = starttls_data ()
 		self.ctlkey = ctlkey
@@ -164,12 +176,18 @@ class Connection:
 		assert (self.cryptsk is not None)
 		assert (self.cryptfd >= 0)
 		assert (self.tlsdata.service != '')
-		af = self.cryptsk.family
-		if   self.cryptsk.proto in [socket.IPPROTO_UDP]:
-			socktp = socket.SOCK_DGRAM
-		elif self.cryptsk.proto in [socket.IPPROTO_SCTP]:
-			socktp = socket.SOCK_SEQPACKET
-		else:
+		try:
+			af = self.cryptsk.family
+		except:
+			af = socket.AF_INET
+		try:
+			if   self.cryptsk.proto in [socket.IPPROTO_UDP]:
+				socktp = socket.SOCK_DGRAM
+			elif self.cryptsk.proto in [socket.IPPROTO_SCTP]:
+				socktp = socket.SOCK_SEQPACKET
+			else:
+				socktp = socket.SOCK_STREAM
+		except:
 			socktp = socket.SOCK_STREAM
 		plainsockptr = socket_data ()
 		plainsockptr.unix_socket = self.plainfd
@@ -180,9 +198,10 @@ class Connection:
 		self.cryptfd = -1
 		self.cryptsk = None
 		if rv < 0:
-			raise OSError (os.errno)
-		self.plainfd = plainsockptr.unix_socket
-		self.plainsk = socket.fromfd (self.plainfd, af, socket.SOCK_STREAM)
+			_tlspool.raise_errno ()
+		if self.plainsk is None:
+			self.plainfd = plainsockptr.unix_socket
+			self.plainsk = socket.fromfd (self.plainfd, af, socktp)
 		return self.plainsk
 
 	def prng (self, length, label, ctxvalue=None):
@@ -194,7 +213,7 @@ class Connection:
 		buf = prng_data ()
 		rv = _prng (label, ctxvalue, length, buf, self.tlsdata.ctlkey)
 		if rv < 0:
-			raise OSError (os.errno)
+			_tlspool.raise_errno ()
 		else:
 			return buf
 
