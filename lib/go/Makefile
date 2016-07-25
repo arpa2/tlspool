@@ -45,16 +45,20 @@ defines.h:
 
 tlspool.c tlspool.go: go-tlspool.i ../swig-tlspool.i defines.h
 	$(SWIG) -go -cgo -intgosize 64 -o "$@" "$<"
+	sed -i 's/import "C"/\/\/ #cgo LDFLAGS: -ltlspool\n\0/' tlspool.go
 	ln -sf ../../include/tlspool tlspool
-	go build -x -ldflags='$(LDFLAGS)'
+	go build -work -x -ldflags='$(LDFLAGS)'
 
 .c.o:
 	$(CC) -c $(CFLAGS) -o "$@" "$<"
 
 clean:
-	rm -f $(OBJS) tlspool.go *.lo *.la *.so *.c $(TARGETS)
+	rm -f $(OBJS) *.lo *.la *.so $(TARGETS)
 	rm -rf defines.h
 	rm -rf build
+
+veryclean:
+	rm -f tlspool.c tlspool.go
 
 anew: clean all
 
