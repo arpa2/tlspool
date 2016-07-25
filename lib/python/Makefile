@@ -50,9 +50,12 @@ tlspool.c: py-tlspool.i ../swig-tlspool.i defines.h
 	$(CC) -c $(CFLAGS) -o "$@" "$<"
 
 clean:
-	rm -f $(OBJS) tlspool.py *.pyo *.pyc *.lo *.la *.so *.c $(TARGETS)
+	rm -f $(OBJS) *.pyo *.pyc *.lo *.la *.so $(TARGETS)
 	rm -rf defines.h
 	rm -rf build
+
+veryclean: clean
+	rm -f tlspool.py tlspool.c
 
 anew: clean all
 
