@@ -35,6 +35,9 @@ import threading
 
 import tlspool
 
+if len (sys.argv) == 2:
+	tlspool.open_poolhandle (sys.argv [1])
+
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 from SocketServer import ThreadingMixIn
 
