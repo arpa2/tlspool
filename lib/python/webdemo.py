@@ -6,6 +6,9 @@ import socket
 sys.path.append ('.')
 import tlspool
 
+if len (sys.argv) == 2:
+	tlspool.open_poolhandle (sys.argv [1])
+
 sox = socket.socket (socket.AF_INET6, socket.SOCK_STREAM)
 sox.connect ( ('www.arpa2.net', 443) )
 

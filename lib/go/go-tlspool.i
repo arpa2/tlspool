@@ -13,13 +13,13 @@
 
 /* Renames, starting with lowercase when wrapped below; this hides names from export
  */
-%rename(pid) tlspool_pid;
-%rename(open_poolhandle) tlspool_open_poolhandle;
-%rename(ping) tlspool_ping;
-%rename(starttls) tlspool_starttls;
-%rename(control_detach) tlspool_control_detach;
-%rename(control_reattach) tlspool_control_reattach;
-%rename(prng) tlspool_prng;
+%rename(Internal_pid) tlspool_pid;
+%rename(Internal_open_poolhandle) tlspool_open_poolhandle;
+%rename(Internal_ping) tlspool_ping;
+%rename(Internal_starttls) tlspool_starttls;
+%rename(Internal_control_detach) tlspool_control_detach;
+%rename(Internal_control_reattach) tlspool_control_reattach;
+%rename(Internal_prng) tlspool_prng;
 
 
 // type maps to translate between SWIG's abstract data types and Go types
@@ -60,7 +60,7 @@
 
 // full-blown Go code to include
 
-%go_import ("syscall")
+// %go_import ("syscall")
 
 %insert(go_wrapper) %{
 
@@ -73,14 +73,14 @@ type Connection struct {
 	TLSdata Starttls_data
 	cryptsock int
 	plainsock int
-	ctlkey ctlkey_t
+	ctlkey [16] byte //TODO// ctlkey ctlkey_t
 }
 
 // Pid() returns the process identity of the TLS Pool.  When no pidfile is
 // provided, the default path as configured in the TLS Pool library will be used.
 // When no TLS Pool is found, ok returns 0.
 func Pid (pidfile *string) (pid int, ok int) {
-	pid := pid (pidfile)
+	pid = Internal_pid (pidfile)
 	if pid < 0 {
 		return -1, 0
 	}
@@ -91,8 +91,8 @@ func Pid (pidfile *string) (pid int, ok int) {
 // OpenPoolHandle() returns a handle to the TLS Pool.  If no connection has been
 // made to the TLS Pool yet, it will try to open it at the given path, or else
 // at the default path.
-func OpenPoolHandle (path *string) (int handle, int ok) {
-	hdl := open_poolhandle (string)
+func OpenPoolHandle (path *string) (handle int, ok int) {
+	hdl := Internal_open_poolhandle (path)
 	if hdl < 0 {
 		return -1, 0
 	}
@@ -103,20 +103,21 @@ func OpenPoolHandle (path *string) (int handle, int ok) {
 // Ping() ensures that it is connected to the TLS Pool, and exchanges
 // a number of parameters, such as API function and supported features.
 // There is no need to have a Connection for this call.
+// Use "" and/or 0 as arguments to get decent defaults filled in.
 // The function returns 0 in ok when something stopped it from working
 //
-func Ping (yyyymmdd_producer *string, facilities *uint) (ymdprod string, facil uint, ok int) {
+func Ping (yyyymmdd_producer string, facilities uint) (ymdprod string, facil uint, ok int) {
 	pingdata := NewPing_data ()
 	defer DeletePing_data (pingdata)
-	if yyyymmdd_producer == nil {
+	if yyyymmdd_producer == "" {
 		yyyymmdd_producer = TLSPOOL_IDENTITY_V2
 	}
-	if facilities == nil {
+	if facilities == 0 {
 		facilities = PIOF_FACILITY_ALL_CURRENT
 	}
 	pingdata.SetYYYYMMDD_producer (yyyymmdd_producer)
 	pingdata.SetFacilities (facilities)
-	if ping (pingdata) != 0 {
+	if Internal_ping (pingdata) != 0 {
 		return "", 0, 0
 	}
 	return pingdata.GetYYYYMMDD_producer (), pingdata.GetFacilities (), 1
@@ -168,7 +169,7 @@ func (cnx Connection) StartTLS (plainsock int) (ok int) {
 // PRNG() produces length bytes of randomness from the master key, after mixing
 // it with the label and optional context value in ctxvalue.  The procedure has
 // been described in RFC 5705.
-func (cnx Connection) PRNG (length uint, label *byte, ctxvalue *byte) (random byte[], int ok) {
+func (cnx Connection) PRNG (length uint, label *byte, ctxvalue *byte) (random []byte, ok int) {
 	if label == nil {
 		return nil, 0
 	}
@@ -189,7 +190,7 @@ func (cnx Connection) PRNG (length uint, label *byte, ctxvalue *byte) (random by
 	} else {
 		prng.SetIn2_len (-1)
 	}
-	rv := prng (label, ctxvalue, length, buf, cnx.ctlkey)
+	rv := Internal_prng (label, ctxvalue, length, buf, cnx.ctlkey)
 	if rv < 0 {
 		return nil, 0
 	}
@@ -345,7 +346,7 @@ func (cnx Connection) PRNG (length uint, label *byte, ctxvalue *byte) (random by
 //		plainsockptr.unix_socket = self.plainfd
 //		# Provide None for the callback function, SWIG won't support it
 //		# We might at some point desire a library of C routine options?
-//		rv = _starttls (self.cryptfd, self.tlsdata, plainsockptr, None)
+//		rv = Internal_starttls (self.cryptfd, self.tlsdata, plainsockptr, None)
 //		self.plainfd = -1
 //		self.cryptfd = -1
 //		self.cryptsk = None
