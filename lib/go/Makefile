@@ -40,10 +40,8 @@ _tlspool.so: tlspool.c
 	# go build -gccgoflags '$(CFLAGS)' -gcflags '$(CFLAGS)' -ldflags='$(LDFLAGS)'
 	# go build -x -ldflags='$(LDFLAGS)'
 
-defines.h:
+tlspool.c tlspool.go: go-tlspool.i ../swig-tlspool.i
 	grep -h '^#define \(PIOF_\|PIOC_\|TLSPOOL_\)' ../../include/tlspool/commands.h ../../include/tlspool/starttls.h | grep -v 'PATH.*\\' | sed 's/\(\<0x80000000\>\)/-\1/g' | sort | uniq > "$@"
-
-tlspool.c tlspool.go: go-tlspool.i ../swig-tlspool.i defines.h
 	$(SWIG) -go -cgo -intgosize 64 -o "$@" "$<"
 	sed -i 's/import "C"/\/\/ #cgo LDFLAGS: -ltlspool\n\0/' tlspool.go
 	ln -sf ../../include/tlspool tlspool

@@ -40,10 +40,8 @@ _tlspool.so: tlspool.c
 	LDFLAGS="$(LDFLAGS) $(PYTHON_LDFLAGS)" \
 	python setup.py build_ext --inplace
 
-defines.h:
+tlspool.c: py-tlspool.i ../swig-tlspool.i
 	grep -h '^#define \(PIOF_\|PIOC_\|TLSPOOL_\)' ../../include/tlspool/commands.h ../../include/tlspool/starttls.h | grep -v 'PATH.*\\' | sort | uniq > "$@"
-
-tlspool.c: py-tlspool.i ../swig-tlspool.i defines.h
 	$(SWIG) -python -o "$@" "$<"
 
 .c.o:
