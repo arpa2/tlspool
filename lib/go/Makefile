@@ -58,5 +58,5 @@ clean:
 veryclean:
 	rm -f tlspool.c tlspool.go
 
-anew: clean all
+anew: veryclean all
 

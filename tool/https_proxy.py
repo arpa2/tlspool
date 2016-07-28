@@ -30,6 +30,7 @@
 # From: Rick van Rein <rick@openfortress.nl>
 
 
+import sys
 import socket
 import threading
 

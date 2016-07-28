@@ -143,7 +143,8 @@ class Connection:
 		self.plainsk = plainsocket
 		self.plainfd = plainsocket.fileno () if plainsocket else -1
 		self.tlsdata = starttls_data ()
-		self.ctlkey = ctlkey
+		if ctlkey is not None:
+			self.tlsdata.ctlkey = ctlkey
 		self.tlsdata.service = service
 		self.tlsdata.localid = localid
 		self.tlsdata.remoteid = remoteid

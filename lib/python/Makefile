@@ -55,5 +55,5 @@ clean:
 veryclean: clean
 	rm -f tlspool.py tlspool.c
 
-anew: clean all
+anew: veryclean all
 
