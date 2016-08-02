@@ -378,15 +378,6 @@ def ping (YYYYMMDD_producer=_tlspool.TLSPOOL_IDENTITY_V2,
 	else:
 		return (pp.YYYYMMDD_producer, pp.facilities)
 
-
-#UNUSED# def socketpair ():
-#UNUSED# 	"""This function returns a SOCK_STREAM socketpair.
-#UNUSED# 	   In some cases this works better than to rely on Python's OS binding.
-#UNUSED# 	"""
-#UNUSED# 	(a,b) = _tlspool._socketpair ()
-#UNUSED# 	return (socket.fromfd (a, socket.AF_UNIX, socket.SOCK_STREAM),
-#UNUSED# 		socket.fromfd (b, socket.AF_UNIX, socket.SOCK_STREAM))
-
 def make_tlsdata (localid='', remoteid='',
 		flags=0, local_flags=0,
 		ipproto=socket.IPPROTO_TCP, streamid=0, service='',
@@ -470,7 +461,6 @@ class Connection:
 		plainsockptr.unix_socket = self.plainfd
 # Provide None for the callback function, SWIG won't support it
 # We might at some point desire a library of C routine options?
-		print 'DEBUG: STARTTLS: cryptfd', self.cryptfd, 'plainfd', plainsockptr.unix_socket
 		rv = _starttls (self.cryptfd, self.tlsdata, plainsockptr, None)
 		self.plainfd = -1
 		self.cryptfd = -1
