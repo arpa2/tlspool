@@ -47,8 +47,7 @@ int tlspool_pid (char *opt_pidfile);
 /* OS independent pool handle
  */
 #ifdef WINDOWS_PORT
-typedef struct
-{
+typedef struct {
 	OVERLAPPED oOverlap;
 	HANDLE hPipeInst;
 	struct tlspool_command chRequest;
@@ -174,6 +173,7 @@ static inline int tlspool_control_detach (uint8_t *ctlkey) {
 	return _tlspool_control_command (PIOC_CONTROL_DETACH_V2, ctlkey);
 }
 
+
 /* Explicitly reattach a control connection to a TLS session.  This may be
  * called on a TLS session that is detached, by any process or program that
  * presents the proper control key.
@@ -224,7 +224,6 @@ static inline int tlspool_control_reattach (uint8_t *ctlkey) {
 int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout, char * (*cb) (struct pioc_lidentry *entry, void *data), void *data);
 
 
-
 /* The library function to service PIN entry callbacks.  It registers
  * with the TLS Pool and will service callback requests until it is no
  * longer welcomed.  Of course, if another process already has a claim on
@@ -247,6 +246,7 @@ int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout,
  * This function returns -1 on error, or 0 on success.
  */
 int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec, void (*cb) (pinentry_t *entry, void *data), void *data);
+
 
 /* Generate a pseudo-random sequence based on session cryptographic keys.
  *
@@ -299,5 +299,6 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 #ifdef __cplusplus
 }
 #endif
+
 
 #endif // TLSPOOL_STARTTLS_H
