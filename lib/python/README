@@ -1,0 +1,15 @@
+The files in this directory:
+
+py-tlspool.i ( and ../swig-tlspool.i )
+	These files map the TLS Pool library to Python.  Use import tlspool
+	and describe connections with the class tlspool.Connection.
+
+webdemo.py
+	A simple demonstration downloading a web page using the TLS Pool port
+	to Python.  Assumes IPv6 connectivity.
+
+whoami.py
+	A simple web server based on the TLS Pool port to Python.  It will
+	tell the client about its accepted identity.  If no identity is
+	presented by the client, it will say "You are NOBODY" instead.
+
