@@ -13,6 +13,7 @@
 #define SWIGPYTHON
 #endif
 
+#define SWIG_PYTHON_THREADS
 #define SWIG_PYTHON_DIRECTOR_NO_VTABLE
 
 /* -----------------------------------------------------------------------------
@@ -3619,7 +3620,11 @@ SWIGINTERN PyObject *_wrap_error_data_tlserrno_set(PyObject *SWIGUNUSEDPARM(self
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "error_data_tlserrno_set" "', argument " "2"" of type '" "int""'");
   } 
   arg2 = (int)(val2);
-  if (arg1) (arg1)->tlserrno = arg2;
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg1) (arg1)->tlserrno = arg2;
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -3641,7 +3646,11 @@ SWIGINTERN PyObject *_wrap_error_data_tlserrno_get(PyObject *SWIGUNUSEDPARM(self
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "error_data_tlserrno_get" "', argument " "1"" of type '" "error_data *""'"); 
   }
   arg1 = (error_data *)(argp1);
-  result = (int) ((arg1)->tlserrno);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (int) ((arg1)->tlserrno);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_int((int)(result));
   return resultobj;
 fail:
@@ -3671,8 +3680,12 @@ SWIGINTERN PyObject *_wrap_error_data_message_set(PyObject *SWIGUNUSEDPARM(self)
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "error_data_message_set" "', argument " "2"" of type '" "char [128]""'");
   }
   arg2 = (char *)(temp2);
-  if (arg2) memcpy(arg1->message,arg2,128*sizeof(char));
-  else memset(arg1->message,0,128*sizeof(char));
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg2) memcpy(arg1->message,arg2,128*sizeof(char));
+    else memset(arg1->message,0,128*sizeof(char));
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -3694,7 +3707,11 @@ SWIGINTERN PyObject *_wrap_error_data_message_get(PyObject *SWIGUNUSEDPARM(self)
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "error_data_message_get" "', argument " "1"" of type '" "error_data *""'"); 
   }
   arg1 = (error_data *)(argp1);
-  result = (char *)(char *) ((arg1)->message);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (char *)(char *) ((arg1)->message);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   {
     size_t size = SWIG_strnlen(result, 128);
     
@@ -3713,7 +3730,11 @@ SWIGINTERN PyObject *_wrap_new_error_data(PyObject *SWIGUNUSEDPARM(self), PyObje
   error_data *result = 0 ;
   
   if (!PyArg_ParseTuple(args,(char *)":new_error_data")) SWIG_fail;
-  result = (error_data *)calloc(1, sizeof(error_data));
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (error_data *)calloc(1, sizeof(error_data));
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_error_data, SWIG_POINTER_NEW |  0 );
   return resultobj;
 fail:
@@ -3734,7 +3755,11 @@ SWIGINTERN PyObject *_wrap_delete_error_data(PyObject *SWIGUNUSEDPARM(self), PyO
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "delete_error_data" "', argument " "1"" of type '" "error_data *""'"); 
   }
   arg1 = (error_data *)(argp1);
-  free((char *) arg1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    free((char *) arg1);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -3771,8 +3796,12 @@ SWIGINTERN PyObject *_wrap_ping_data_YYYYMMDD_producer_set(PyObject *SWIGUNUSEDP
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ping_data_YYYYMMDD_producer_set" "', argument " "2"" of type '" "char [8+128]""'");
   }
   arg2 = (char *)(temp2);
-  if (arg2) memcpy(arg1->YYYYMMDD_producer,arg2,8+128*sizeof(char));
-  else memset(arg1->YYYYMMDD_producer,0,8+128*sizeof(char));
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg2) memcpy(arg1->YYYYMMDD_producer,arg2,8+128*sizeof(char));
+    else memset(arg1->YYYYMMDD_producer,0,8+128*sizeof(char));
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -3794,7 +3823,11 @@ SWIGINTERN PyObject *_wrap_ping_data_YYYYMMDD_producer_get(PyObject *SWIGUNUSEDP
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ping_data_YYYYMMDD_producer_get" "', argument " "1"" of type '" "ping_data *""'"); 
   }
   arg1 = (ping_data *)(argp1);
-  result = (char *)(char *) ((arg1)->YYYYMMDD_producer);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (char *)(char *) ((arg1)->YYYYMMDD_producer);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   {
     size_t size = SWIG_strnlen(result, 8+128);
     
@@ -3830,7 +3863,11 @@ SWIGINTERN PyObject *_wrap_ping_data_facilities_set(PyObject *SWIGUNUSEDPARM(sel
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ping_data_facilities_set" "', argument " "2"" of type '" "uint32_t""'");
   } 
   arg2 = (uint32_t)(val2);
-  if (arg1) (arg1)->facilities = arg2;
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg1) (arg1)->facilities = arg2;
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -3852,7 +3889,11 @@ SWIGINTERN PyObject *_wrap_ping_data_facilities_get(PyObject *SWIGUNUSEDPARM(sel
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ping_data_facilities_get" "', argument " "1"" of type '" "ping_data *""'"); 
   }
   arg1 = (ping_data *)(argp1);
-  result =  ((arg1)->facilities);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result =  ((arg1)->facilities);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_unsigned_SS_int((unsigned int)(result));
   return resultobj;
 fail:
@@ -3865,7 +3906,11 @@ SWIGINTERN PyObject *_wrap_new_ping_data(PyObject *SWIGUNUSEDPARM(self), PyObjec
   ping_data *result = 0 ;
   
   if (!PyArg_ParseTuple(args,(char *)":new_ping_data")) SWIG_fail;
-  result = (ping_data *)calloc(1, sizeof(ping_data));
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (ping_data *)calloc(1, sizeof(ping_data));
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_ping_data, SWIG_POINTER_NEW |  0 );
   return resultobj;
 fail:
@@ -3886,7 +3931,11 @@ SWIGINTERN PyObject *_wrap_delete_ping_data(PyObject *SWIGUNUSEDPARM(self), PyOb
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "delete_ping_data" "', argument " "1"" of type '" "ping_data *""'"); 
   }
   arg1 = (ping_data *)(argp1);
-  free((char *) arg1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    free((char *) arg1);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -3923,7 +3972,11 @@ SWIGINTERN PyObject *_wrap_starttls_data_flags_set(PyObject *SWIGUNUSEDPARM(self
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "starttls_data_flags_set" "', argument " "2"" of type '" "uint32_t""'");
   } 
   arg2 = (uint32_t)(val2);
-  if (arg1) (arg1)->flags = arg2;
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg1) (arg1)->flags = arg2;
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -3945,7 +3998,11 @@ SWIGINTERN PyObject *_wrap_starttls_data_flags_get(PyObject *SWIGUNUSEDPARM(self
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "starttls_data_flags_get" "', argument " "1"" of type '" "starttls_data *""'"); 
   }
   arg1 = (starttls_data *)(argp1);
-  result =  ((arg1)->flags);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result =  ((arg1)->flags);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_unsigned_SS_int((unsigned int)(result));
   return resultobj;
 fail:
@@ -3975,7 +4032,11 @@ SWIGINTERN PyObject *_wrap_starttls_data_local_set(PyObject *SWIGUNUSEDPARM(self
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "starttls_data_local_set" "', argument " "2"" of type '" "uint32_t""'");
   } 
   arg2 = (uint32_t)(val2);
-  if (arg1) (arg1)->local = arg2;
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg1) (arg1)->local = arg2;
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -3997,7 +4058,11 @@ SWIGINTERN PyObject *_wrap_starttls_data_local_get(PyObject *SWIGUNUSEDPARM(self
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "starttls_data_local_get" "', argument " "1"" of type '" "starttls_data *""'"); 
   }
   arg1 = (starttls_data *)(argp1);
-  result =  ((arg1)->local);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result =  ((arg1)->local);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_unsigned_SS_int((unsigned int)(result));
   return resultobj;
 fail:
@@ -4027,7 +4092,11 @@ SWIGINTERN PyObject *_wrap_starttls_data_ipproto_set(PyObject *SWIGUNUSEDPARM(se
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "starttls_data_ipproto_set" "', argument " "2"" of type '" "uint8_t""'");
   } 
   arg2 = (uint8_t)(val2);
-  if (arg1) (arg1)->ipproto = arg2;
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg1) (arg1)->ipproto = arg2;
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4049,7 +4118,11 @@ SWIGINTERN PyObject *_wrap_starttls_data_ipproto_get(PyObject *SWIGUNUSEDPARM(se
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "starttls_data_ipproto_get" "', argument " "1"" of type '" "starttls_data *""'"); 
   }
   arg1 = (starttls_data *)(argp1);
-  result =  ((arg1)->ipproto);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result =  ((arg1)->ipproto);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_unsigned_SS_char((unsigned char)(result));
   return resultobj;
 fail:
@@ -4079,7 +4152,11 @@ SWIGINTERN PyObject *_wrap_starttls_data_streamid_set(PyObject *SWIGUNUSEDPARM(s
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "starttls_data_streamid_set" "', argument " "2"" of type '" "uint16_t""'");
   } 
   arg2 = (uint16_t)(val2);
-  if (arg1) (arg1)->streamid = arg2;
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg1) (arg1)->streamid = arg2;
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4101,7 +4178,11 @@ SWIGINTERN PyObject *_wrap_starttls_data_streamid_get(PyObject *SWIGUNUSEDPARM(s
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "starttls_data_streamid_get" "', argument " "1"" of type '" "starttls_data *""'"); 
   }
   arg1 = (starttls_data *)(argp1);
-  result =  ((arg1)->streamid);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result =  ((arg1)->streamid);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_unsigned_SS_short((unsigned short)(result));
   return resultobj;
 fail:
@@ -4131,8 +4212,12 @@ SWIGINTERN PyObject *_wrap_starttls_data_localid_set(PyObject *SWIGUNUSEDPARM(se
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "starttls_data_localid_set" "', argument " "2"" of type '" "char [128]""'");
   }
   arg2 = (char *)(temp2);
-  if (arg2) memcpy(arg1->localid,arg2,128*sizeof(char));
-  else memset(arg1->localid,0,128*sizeof(char));
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg2) memcpy(arg1->localid,arg2,128*sizeof(char));
+    else memset(arg1->localid,0,128*sizeof(char));
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4154,7 +4239,11 @@ SWIGINTERN PyObject *_wrap_starttls_data_localid_get(PyObject *SWIGUNUSEDPARM(se
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "starttls_data_localid_get" "', argument " "1"" of type '" "starttls_data *""'"); 
   }
   arg1 = (starttls_data *)(argp1);
-  result = (char *) ((arg1)->localid);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (char *) ((arg1)->localid);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   {
     size_t size = SWIG_strnlen(result, 128);
     
@@ -4190,8 +4279,12 @@ SWIGINTERN PyObject *_wrap_starttls_data_remoteid_set(PyObject *SWIGUNUSEDPARM(s
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "starttls_data_remoteid_set" "', argument " "2"" of type '" "char [128]""'");
   }
   arg2 = (char *)(temp2);
-  if (arg2) memcpy(arg1->remoteid,arg2,128*sizeof(char));
-  else memset(arg1->remoteid,0,128*sizeof(char));
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg2) memcpy(arg1->remoteid,arg2,128*sizeof(char));
+    else memset(arg1->remoteid,0,128*sizeof(char));
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4213,7 +4306,11 @@ SWIGINTERN PyObject *_wrap_starttls_data_remoteid_get(PyObject *SWIGUNUSEDPARM(s
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "starttls_data_remoteid_get" "', argument " "1"" of type '" "starttls_data *""'"); 
   }
   arg1 = (starttls_data *)(argp1);
-  result = (char *) ((arg1)->remoteid);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (char *) ((arg1)->remoteid);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   {
     size_t size = SWIG_strnlen(result, 128);
     
@@ -4250,12 +4347,16 @@ SWIGINTERN PyObject *_wrap_starttls_data_ctlkey_set(PyObject *SWIGUNUSEDPARM(sel
     }
   }
   {
-    if (arg2) {
-      size_t ii = 0;
-      for (; ii < (size_t)16; ++ii) *(uint8_t *)&arg1->ctlkey[ii] = *((uint8_t *)arg2 + ii);
-    } else {
-      SWIG_exception_fail(SWIG_ValueError, "invalid null reference " "in variable '""ctlkey""' of type '""uint8_t [16]""'");
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    {
+      if (arg2) {
+        size_t ii = 0;
+        for (; ii < (size_t)16; ++ii) *(uint8_t *)&arg1->ctlkey[ii] = *((uint8_t *)arg2 + ii);
+      } else {
+        SWIG_exception_fail(SWIG_ValueError, "invalid null reference " "in variable '""ctlkey""' of type '""uint8_t [16]""'");
+      }
     }
+    SWIG_PYTHON_THREAD_END_ALLOW;
   }
   resultobj = SWIG_Py_Void();
   return resultobj;
@@ -4278,7 +4379,11 @@ SWIGINTERN PyObject *_wrap_starttls_data_ctlkey_get(PyObject *SWIGUNUSEDPARM(sel
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "starttls_data_ctlkey_get" "', argument " "1"" of type '" "starttls_data *""'"); 
   }
   arg1 = (starttls_data *)(argp1);
-  result = (uint8_t *) ((arg1)->ctlkey);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (uint8_t *) ((arg1)->ctlkey);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   {
     if (resultobj == NULL) {
       result = Py_None;
@@ -4314,8 +4419,12 @@ SWIGINTERN PyObject *_wrap_starttls_data_service_set(PyObject *SWIGUNUSEDPARM(se
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "starttls_data_service_set" "', argument " "2"" of type '" "char [16]""'");
   }
   arg2 = (char *)(temp2);
-  if (arg2) memcpy(arg1->service,arg2,16*sizeof(char));
-  else memset(arg1->service,0,16*sizeof(char));
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg2) memcpy(arg1->service,arg2,16*sizeof(char));
+    else memset(arg1->service,0,16*sizeof(char));
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4337,7 +4446,11 @@ SWIGINTERN PyObject *_wrap_starttls_data_service_get(PyObject *SWIGUNUSEDPARM(se
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "starttls_data_service_get" "', argument " "1"" of type '" "starttls_data *""'"); 
   }
   arg1 = (starttls_data *)(argp1);
-  result = (char *) ((arg1)->service);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (char *) ((arg1)->service);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   {
     size_t size = SWIG_strnlen(result, 16);
     
@@ -4373,7 +4486,11 @@ SWIGINTERN PyObject *_wrap_starttls_data_timeout_set(PyObject *SWIGUNUSEDPARM(se
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "starttls_data_timeout_set" "', argument " "2"" of type '" "uint32_t""'");
   } 
   arg2 = (uint32_t)(val2);
-  if (arg1) (arg1)->timeout = arg2;
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg1) (arg1)->timeout = arg2;
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4395,7 +4512,11 @@ SWIGINTERN PyObject *_wrap_starttls_data_timeout_get(PyObject *SWIGUNUSEDPARM(se
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "starttls_data_timeout_get" "', argument " "1"" of type '" "starttls_data *""'"); 
   }
   arg1 = (starttls_data *)(argp1);
-  result =  ((arg1)->timeout);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result =  ((arg1)->timeout);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_unsigned_SS_int((unsigned int)(result));
   return resultobj;
 fail:
@@ -4408,7 +4529,11 @@ SWIGINTERN PyObject *_wrap_new_starttls_data(PyObject *SWIGUNUSEDPARM(self), PyO
   starttls_data *result = 0 ;
   
   if (!PyArg_ParseTuple(args,(char *)":new_starttls_data")) SWIG_fail;
-  result = (starttls_data *)calloc(1, sizeof(starttls_data));
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (starttls_data *)calloc(1, sizeof(starttls_data));
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_starttls_data, SWIG_POINTER_NEW |  0 );
   return resultobj;
 fail:
@@ -4429,7 +4554,11 @@ SWIGINTERN PyObject *_wrap_delete_starttls_data(PyObject *SWIGUNUSEDPARM(self), 
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "delete_starttls_data" "', argument " "1"" of type '" "starttls_data *""'"); 
   }
   arg1 = (starttls_data *)(argp1);
-  free((char *) arg1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    free((char *) arg1);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4466,7 +4595,11 @@ SWIGINTERN PyObject *_wrap_control_data_flags_set(PyObject *SWIGUNUSEDPARM(self)
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "control_data_flags_set" "', argument " "2"" of type '" "uint32_t""'");
   } 
   arg2 = (uint32_t)(val2);
-  if (arg1) (arg1)->flags = arg2;
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg1) (arg1)->flags = arg2;
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4488,7 +4621,11 @@ SWIGINTERN PyObject *_wrap_control_data_flags_get(PyObject *SWIGUNUSEDPARM(self)
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "control_data_flags_get" "', argument " "1"" of type '" "control_data *""'"); 
   }
   arg1 = (control_data *)(argp1);
-  result =  ((arg1)->flags);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result =  ((arg1)->flags);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_unsigned_SS_int((unsigned int)(result));
   return resultobj;
 fail:
@@ -4519,12 +4656,16 @@ SWIGINTERN PyObject *_wrap_control_data_ctlkey_set(PyObject *SWIGUNUSEDPARM(self
     }
   }
   {
-    if (arg2) {
-      size_t ii = 0;
-      for (; ii < (size_t)16; ++ii) *(uint8_t *)&arg1->ctlkey[ii] = *((uint8_t *)arg2 + ii);
-    } else {
-      SWIG_exception_fail(SWIG_ValueError, "invalid null reference " "in variable '""ctlkey""' of type '""uint8_t [16]""'");
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    {
+      if (arg2) {
+        size_t ii = 0;
+        for (; ii < (size_t)16; ++ii) *(uint8_t *)&arg1->ctlkey[ii] = *((uint8_t *)arg2 + ii);
+      } else {
+        SWIG_exception_fail(SWIG_ValueError, "invalid null reference " "in variable '""ctlkey""' of type '""uint8_t [16]""'");
+      }
     }
+    SWIG_PYTHON_THREAD_END_ALLOW;
   }
   resultobj = SWIG_Py_Void();
   return resultobj;
@@ -4547,7 +4688,11 @@ SWIGINTERN PyObject *_wrap_control_data_ctlkey_get(PyObject *SWIGUNUSEDPARM(self
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "control_data_ctlkey_get" "', argument " "1"" of type '" "control_data *""'"); 
   }
   arg1 = (control_data *)(argp1);
-  result = (uint8_t *) ((arg1)->ctlkey);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (uint8_t *) ((arg1)->ctlkey);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   {
     if (resultobj == NULL) {
       result = Py_None;
@@ -4583,8 +4728,12 @@ SWIGINTERN PyObject *_wrap_control_data_name_set(PyObject *SWIGUNUSEDPARM(self),
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "control_data_name_set" "', argument " "2"" of type '" "char [128]""'");
   }
   arg2 = (char *)(temp2);
-  if (arg2) memcpy(arg1->name,arg2,128*sizeof(char));
-  else memset(arg1->name,0,128*sizeof(char));
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg2) memcpy(arg1->name,arg2,128*sizeof(char));
+    else memset(arg1->name,0,128*sizeof(char));
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4606,7 +4755,11 @@ SWIGINTERN PyObject *_wrap_control_data_name_get(PyObject *SWIGUNUSEDPARM(self),
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "control_data_name_get" "', argument " "1"" of type '" "control_data *""'"); 
   }
   arg1 = (control_data *)(argp1);
-  result = (char *) ((arg1)->name);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (char *) ((arg1)->name);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   {
     size_t size = SWIG_strnlen(result, 128);
     
@@ -4625,7 +4778,11 @@ SWIGINTERN PyObject *_wrap_new_control_data(PyObject *SWIGUNUSEDPARM(self), PyOb
   control_data *result = 0 ;
   
   if (!PyArg_ParseTuple(args,(char *)":new_control_data")) SWIG_fail;
-  result = (control_data *)calloc(1, sizeof(control_data));
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (control_data *)calloc(1, sizeof(control_data));
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_control_data, SWIG_POINTER_NEW |  0 );
   return resultobj;
 fail:
@@ -4646,7 +4803,11 @@ SWIGINTERN PyObject *_wrap_delete_control_data(PyObject *SWIGUNUSEDPARM(self), P
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "delete_control_data" "', argument " "1"" of type '" "control_data *""'"); 
   }
   arg1 = (control_data *)(argp1);
-  free((char *) arg1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    free((char *) arg1);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4683,7 +4844,11 @@ SWIGINTERN PyObject *_wrap_prng_data_in1_len_set(PyObject *SWIGUNUSEDPARM(self),
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "prng_data_in1_len_set" "', argument " "2"" of type '" "int16_t""'");
   } 
   arg2 = (int16_t)(val2);
-  if (arg1) (arg1)->in1_len = arg2;
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg1) (arg1)->in1_len = arg2;
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4705,7 +4870,11 @@ SWIGINTERN PyObject *_wrap_prng_data_in1_len_get(PyObject *SWIGUNUSEDPARM(self),
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "prng_data_in1_len_get" "', argument " "1"" of type '" "prng_data *""'"); 
   }
   arg1 = (prng_data *)(argp1);
-  result =  ((arg1)->in1_len);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result =  ((arg1)->in1_len);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_short((short)(result));
   return resultobj;
 fail:
@@ -4735,7 +4904,11 @@ SWIGINTERN PyObject *_wrap_prng_data_in2_len_set(PyObject *SWIGUNUSEDPARM(self),
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "prng_data_in2_len_set" "', argument " "2"" of type '" "int16_t""'");
   } 
   arg2 = (int16_t)(val2);
-  if (arg1) (arg1)->in2_len = arg2;
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg1) (arg1)->in2_len = arg2;
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4757,7 +4930,11 @@ SWIGINTERN PyObject *_wrap_prng_data_in2_len_get(PyObject *SWIGUNUSEDPARM(self),
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "prng_data_in2_len_get" "', argument " "1"" of type '" "prng_data *""'"); 
   }
   arg1 = (prng_data *)(argp1);
-  result =  ((arg1)->in2_len);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result =  ((arg1)->in2_len);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_short((short)(result));
   return resultobj;
 fail:
@@ -4787,7 +4964,11 @@ SWIGINTERN PyObject *_wrap_prng_data_prng_len_set(PyObject *SWIGUNUSEDPARM(self)
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "prng_data_prng_len_set" "', argument " "2"" of type '" "int16_t""'");
   } 
   arg2 = (int16_t)(val2);
-  if (arg1) (arg1)->prng_len = arg2;
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg1) (arg1)->prng_len = arg2;
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4809,7 +4990,11 @@ SWIGINTERN PyObject *_wrap_prng_data_prng_len_get(PyObject *SWIGUNUSEDPARM(self)
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "prng_data_prng_len_get" "', argument " "1"" of type '" "prng_data *""'"); 
   }
   arg1 = (prng_data *)(argp1);
-  result =  ((arg1)->prng_len);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result =  ((arg1)->prng_len);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_short((short)(result));
   return resultobj;
 fail:
@@ -4840,12 +5025,16 @@ SWIGINTERN PyObject *_wrap_prng_data_buffer_set(PyObject *SWIGUNUSEDPARM(self), 
   } 
   arg2 = (uint8_t *)(argp2);
   {
-    if (arg2) {
-      size_t ii = 0;
-      for (; ii < (size_t)350; ++ii) *(uint8_t *)&arg1->buffer[ii] = *((uint8_t *)arg2 + ii);
-    } else {
-      SWIG_exception_fail(SWIG_ValueError, "invalid null reference " "in variable '""buffer""' of type '""uint8_t [350]""'");
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    {
+      if (arg2) {
+        size_t ii = 0;
+        for (; ii < (size_t)350; ++ii) *(uint8_t *)&arg1->buffer[ii] = *((uint8_t *)arg2 + ii);
+      } else {
+        SWIG_exception_fail(SWIG_ValueError, "invalid null reference " "in variable '""buffer""' of type '""uint8_t [350]""'");
+      }
     }
+    SWIG_PYTHON_THREAD_END_ALLOW;
   }
   resultobj = SWIG_Py_Void();
   return resultobj;
@@ -4868,7 +5057,11 @@ SWIGINTERN PyObject *_wrap_prng_data_buffer_get(PyObject *SWIGUNUSEDPARM(self), 
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "prng_data_buffer_get" "', argument " "1"" of type '" "prng_data *""'"); 
   }
   arg1 = (prng_data *)(argp1);
-  result = (uint8_t *)(uint8_t *) ((arg1)->buffer);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (uint8_t *)(uint8_t *) ((arg1)->buffer);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_uint8_t, 0 |  0 );
   return resultobj;
 fail:
@@ -4881,7 +5074,11 @@ SWIGINTERN PyObject *_wrap_new_prng_data(PyObject *SWIGUNUSEDPARM(self), PyObjec
   prng_data *result = 0 ;
   
   if (!PyArg_ParseTuple(args,(char *)":new_prng_data")) SWIG_fail;
-  result = (prng_data *)calloc(1, sizeof(prng_data));
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (prng_data *)calloc(1, sizeof(prng_data));
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_prng_data, SWIG_POINTER_NEW |  0 );
   return resultobj;
 fail:
@@ -4902,7 +5099,11 @@ SWIGINTERN PyObject *_wrap_delete_prng_data(PyObject *SWIGUNUSEDPARM(self), PyOb
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "delete_prng_data" "', argument " "1"" of type '" "prng_data *""'"); 
   }
   arg1 = (prng_data *)(argp1);
-  free((char *) arg1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    free((char *) arg1);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4939,7 +5140,11 @@ SWIGINTERN PyObject *_wrap_socket_data_unix_socket_set(PyObject *SWIGUNUSEDPARM(
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "socket_data_unix_socket_set" "', argument " "2"" of type '" "int""'");
   } 
   arg2 = (int)(val2);
-  if (arg1) (arg1)->unix_socket = arg2;
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    if (arg1) (arg1)->unix_socket = arg2;
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -4961,7 +5166,11 @@ SWIGINTERN PyObject *_wrap_socket_data_unix_socket_get(PyObject *SWIGUNUSEDPARM(
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "socket_data_unix_socket_get" "', argument " "1"" of type '" "socket_data *""'"); 
   }
   arg1 = (socket_data *)(argp1);
-  result = (int) ((arg1)->unix_socket);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (int) ((arg1)->unix_socket);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_int((int)(result));
   return resultobj;
 fail:
@@ -4974,7 +5183,11 @@ SWIGINTERN PyObject *_wrap_new_socket_data(PyObject *SWIGUNUSEDPARM(self), PyObj
   socket_data *result = 0 ;
   
   if (!PyArg_ParseTuple(args,(char *)":new_socket_data")) SWIG_fail;
-  result = (socket_data *)calloc(1, sizeof(socket_data));
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (socket_data *)calloc(1, sizeof(socket_data));
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_socket_data, SWIG_POINTER_NEW |  0 );
   return resultobj;
 fail:
@@ -4995,7 +5208,11 @@ SWIGINTERN PyObject *_wrap_delete_socket_data(PyObject *SWIGUNUSEDPARM(self), Py
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "delete_socket_data" "', argument " "1"" of type '" "socket_data *""'"); 
   }
   arg1 = (socket_data *)(argp1);
-  free((char *) arg1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    free((char *) arg1);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_Py_Void();
   return resultobj;
 fail:
@@ -5025,7 +5242,11 @@ SWIGINTERN PyObject *_wrap__pid(PyObject *SWIGUNUSEDPARM(self), PyObject *args) 
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "_pid" "', argument " "1"" of type '" "char *""'");
   }
   arg1 = (char *)(buf1);
-  result = (int)tlspool_pid(arg1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (int)tlspool_pid(arg1);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_int((int)(result));
   if (alloc1 == SWIG_NEWOBJ) free((char*)buf1);
   return resultobj;
@@ -5050,7 +5271,11 @@ SWIGINTERN PyObject *_wrap__open_poolhandle(PyObject *SWIGUNUSEDPARM(self), PyOb
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "_open_poolhandle" "', argument " "1"" of type '" "char *""'");
   }
   arg1 = (char *)(buf1);
-  result = (pool_handle_t)tlspool_open_poolhandle(arg1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (pool_handle_t)tlspool_open_poolhandle(arg1);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_int((int)(result));
   if (alloc1 == SWIG_NEWOBJ) free((char*)buf1);
   return resultobj;
@@ -5074,7 +5299,11 @@ SWIGINTERN PyObject *_wrap__ping(PyObject *SWIGUNUSEDPARM(self), PyObject *args)
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "_ping" "', argument " "1"" of type '" "ping_data *""'"); 
   }
   arg1 = (ping_data *)(argp1);
-  result = (int)tlspool_ping(arg1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (int)tlspool_ping(arg1);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_int((int)(result));
   return resultobj;
 fail:
@@ -5119,7 +5348,11 @@ SWIGINTERN PyObject *_wrap__starttls(PyObject *SWIGUNUSEDPARM(self), PyObject *a
   if (!SWIG_IsOK(res4)) {
     SWIG_exception_fail(SWIG_ArgError(res4), "in method '" "_starttls" "', argument " "4"" of type '" "void *""'"); 
   }
-  result = (int)tlspool_starttls(arg1,arg2,arg3,arg4);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (int)tlspool_starttls(arg1,arg2,arg3,arg4);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_int((int)(result));
   return resultobj;
 fail:
@@ -5141,7 +5374,11 @@ SWIGINTERN PyObject *_wrap__control_detach(PyObject *SWIGUNUSEDPARM(self), PyObj
       return NULL;
     }
   }
-  result = (int)tlspool_control_detach(arg1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (int)tlspool_control_detach(arg1);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_int((int)(result));
   return resultobj;
 fail:
@@ -5163,7 +5400,11 @@ SWIGINTERN PyObject *_wrap__control_reattach(PyObject *SWIGUNUSEDPARM(self), PyO
       return NULL;
     }
   }
-  result = (int)tlspool_control_reattach(arg1);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (int)tlspool_control_reattach(arg1);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_int((int)(result));
   return resultobj;
 fail:
@@ -5223,7 +5464,11 @@ SWIGINTERN PyObject *_wrap__prng(PyObject *SWIGUNUSEDPARM(self), PyObject *args)
       return NULL;
     }
   }
-  result = (int)tlspool_prng(arg1,arg2,arg3,arg4,arg5);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (int)tlspool_prng(arg1,arg2,arg3,arg4,arg5);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = SWIG_From_int((int)(result));
   if (alloc1 == SWIG_NEWOBJ) free((char*)buf1);
   if (alloc2 == SWIG_NEWOBJ) free((char*)buf2);
@@ -5240,7 +5485,11 @@ SWIGINTERN PyObject *_wrap_raise_errno(PyObject *SWIGUNUSEDPARM(self), PyObject 
   PyObject *result = 0 ;
   
   if (!PyArg_ParseTuple(args,(char *)":raise_errno")) SWIG_fail;
-  result = (PyObject *)raise_errno();
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (PyObject *)raise_errno();
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
   resultobj = result;
   return resultobj;
 fail:
@@ -6127,6 +6376,9 @@ SWIG_init(void) {
   SWIG_Python_SetConstant(d, "TLSPOOL_PRNGBUFLEN",SWIG_From_int((int)(350)));
   SWIG_Python_SetConstant(d, "TLSPOOL_SERVICELEN",SWIG_From_int((int)(16)));
   SWIG_Python_SetConstant(d, "TLSPOOL_TIMEOUT_DEFAULT",SWIG_From_int((int)(0)));
+  
+  /* Initialize threading */
+  SWIG_PYTHON_INITIALIZE_THREADS;
 #if PY_VERSION_HEX >= 0x03000000
   return m;
 #else

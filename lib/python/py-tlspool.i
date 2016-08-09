@@ -115,6 +115,28 @@ def ping (YYYYMMDD_producer=_tlspool.TLSPOOL_IDENTITY_V2,
 	else:
 		return (pp.YYYYMMDD_producer, pp.facilities)
 
+def make_tlsdata (localid='', remoteid='',
+		flags=0, local_flags=0,
+		ipproto=socket.IPPROTO_TCP, streamid=0, service='',
+		timeout=0, ctlkey=None):
+	"""Make a new tlsdata structure, based the fields that may be supplied
+	   as flags, or otherwise as defaults.  Note that the field "local" is
+	   renamed to "local_flags" for reasons of clarity.  This helper function
+	   returns a tlsdata structure or raises an exception.
+	"""
+	tlsdata = starttls_data ()
+	if ctlkey is not None:
+		tlsdata.ctlkey = ctlkey
+	tlsdata.service = service
+	tlsdata.localid = localid
+	tlsdata.remoteid = remoteid
+	tlsdata.flags = flags
+	tlsdata.local = local_flags
+	tlsdata.ipproto = ipproto
+	tlsdata.streamid = streamid
+	tlsdata.timeout = timeout
+	return tlsdata
+
 class Connection:
 	"""The tlspool.Connection class wraps around a connection to be protected
 	   by the TLS Pool.  It uses the global socket for attaching to the
@@ -125,34 +147,16 @@ class Connection:
 	   but these values may also be created through getters/setters.
 	   Some values have reasonable defaults, but some must have been
 	   set before invoking the starttls() method on the instance.
+	   The tlsdata fields all have defaults, as specified under
+	   tlspool.make_tlsdata().
 	"""
 
-	def __init__ (self, cryptsocket,
-					plainsocket=None,
-					ctlkey=None, 
-					localid='',
-					remoteid='',
-					flags=0,
-					local_flags=0,
-					ipproto=socket.IPPROTO_TCP,
-					streamid=0,
-					service='',
-					timeout=0):
+	def __init__ (self, cryptsocket, plainsocket=None, **tlsdata):
 		self.cryptsk = cryptsocket
 		self.cryptfd = cryptsocket.fileno ()
 		self.plainsk = plainsocket
 		self.plainfd = plainsocket.fileno () if plainsocket else -1
-		self.tlsdata = starttls_data ()
-		if ctlkey is not None:
-			self.tlsdata.ctlkey = ctlkey
-		self.tlsdata.service = service
-		self.tlsdata.localid = localid
-		self.tlsdata.remoteid = remoteid
-		self.tlsdata.flags = flags
-		self.tlsdata.local = local_flags
-		self.tlsdata.ipproto = ipproto
-		self.tlsdata.streamid = streamid
-		self.tlsdata.timeout = timeout
+		self.tlsdata = make_tlsdata (**tlsdata)
 
 	def close (self):
 		assert (self.plainsk is not None)
@@ -235,6 +239,156 @@ class Connection:
 		   into this instance.
 		"""
 		_control_reattach (self.tlsdata.ctlkey)
+
+class SecurityMixIn:
+	"""The SecurityMixIn class can be added as a subclass before a
+	   (subclass of) SocketServer.BaseServer and it adds the facilities
+	   of starttls(), startgss() and startssh() which add security through
+	   one of the mechanisms.  In addition, have_xxx() can be used to
+	   query in advance if startxxx() should be doable with the present
+	   combination of TLS Pool and client code.
+	   
+	   Set a tlsdata field in the subclass, using the tlspool.make_tlsdata()
+	   helper function, to bootstrap the same kind of behaviour on all
+	   clients for which this class will be instantiated.  Such a tlsdata
+	   class variable will automatically be cloned into instances.
+	   Example code:
+	   
+		from tlspool import SecurityMixIn
+		from SocketServer import BaseHandler
+		
+		class MyHandler (SecurityMixIn, BaseHandler):
+			
+			tlsdata = make_tlsdata (service=...)
+			
+			def handle (self):
+				...
+				self.starttls ()
+			
+			def handle_secure (self):
+				...
+	   
+	   Alternatively, you can setup the tlsdata structure, or any part of it,
+	   at a later time, through the tlsdata variable that will then be
+	   instantiated during object initialisation.  Any such changes to fields
+	   must be completed before invoking starttls() on this object.
+	"""
+
+	_pingdata = None
+	tlsdata = None
+
+	def __init__ (self):
+		if self.tlsdata is None:
+			self.tlsdata = make_tlsdata ()
+
+	def have_tls (self):
+		"""Check whether STARTTLS is supported on the current TLS Pool"""
+		if self._pingdata is None:
+			self._pingdata = ping ()
+		return (self._pingdata [1] & PIOF_FACILITY_STARTTLS) != 0
+
+	def have_ssh (self):
+		"""Check whether STARTSSH is supported on the current TLS Pool"""
+		if self._pingdata is None:
+			self._pingdata = ping ()
+		return (self._pingdata [1] & PIOF_FACILITY_STARTSSH) != 0
+
+	def have_gss (self):
+		"""Check whether STARTGSS is supported on the current TLS Pool"""
+		if self._pingdata is None:
+			self._pingdata = ping ()
+		return (self._pingdata [1] & PIOF_FACILITY_STARTGSS) != 0
+
+	def starttls (self):
+		"""Modify the current socket to make it a TLS socket.  Use the
+		   tlsdata as currently setup (see class-level documentation).
+		   Afterwards, call handle_secure() to start from scratch with
+		   a secure connection.  Also see the man page on the underlying
+		   C library call, tlspool_starttls(3).
+		   
+		   Some protocols start TLS immediately, for instance HTTPS;
+		   for such protocols, the handle() method would immediately
+		   call starttls() and the actual handler code would move
+		   into secure_handle().
+		   
+		   Other protocols, such as XMPP and IMAP, start in plaintext
+		   and exchange pleasantries until they agree on running TLS.
+		   This is the point where starttls() can be invoked.
+		   
+		   The methods startssh() and startgss() are place holders for
+		   future alternatives to start other security wrappers than
+		   TLS, after negotiating them in a manner similar to STARTTLS.
+		"""
+		if type (self.request) == tuple:
+			sox = self.request [1]
+		else:
+			sox = self.request
+		assert (type (sox) == socket._socketobject)
+		try:
+			af = sox.family
+		except:
+			af = socket.AF_INET
+		try:
+			if   sox.proto in [socket.IPPROTO_UDP]:
+				socktp = socket.SOCK_DGRAM
+			elif sox.proto in [socket.IPPROTO_SCTP]:
+				socktp = socket.SOCK_SEQPACKET
+			else:
+				socktp = socket.SOCK_STREAM
+		except:
+			socktp = socket.SOCK_STREAM
+		plainsockptr = socket_data ()
+		plainsockptr.unix_socket = -1
+		rv = _starttls (sox.fileno (), self.tlsdata, plainsockptr, None)
+		if rv < 0:
+			_tlspool.raise_errno ()
+		assert (plainsockptr.unix_socket >= 0)
+		sox2 = socket.fromfd (plainsockptr.unix_socket, af, socktp)
+		if type (self.request) == tuple:
+			self.request [1] = sox2
+		else:
+			self.request     = sox2
+		self.handle_secure ()
+
+	def startssh (self):
+		raise NotImplementedError ("Python wrapper does not implement STARTSSH")
+
+	def startgss (self):
+		raise NotImplementedError ("Python wrapper does not implement STARTGSS")
+
+	def handle (self):
+		"""When not overridden, the handle() method replaces the one in
+		   later-mentioned classes in the inheritance structure.  This
+		   means that this is the default behaviour when the SecureMixIn
+		   precedes the handler class.  This particular version of handle()
+		   does nothing but invoke starttls(), which in turn invokes
+		   handle_secure() after the TLS handshake has succeeded.
+		"""
+		print 'STARTTLS.BEGIN'
+		self.starttls ()
+		print 'STARTTLS.END'
+
+	def handle_secure (self):
+		"""This method may be overridden to handle the secure part of the
+		   connection, after starttls() has been called from within
+		   handle().  This function is special in the sense that it may
+		   refer to self.tlsdata and rely on the localid and remoteid
+		   as being negotiated over TLS.
+		   
+		   Since any prior actions in handle() are usually unauthenticated,
+		   it is common to start from scratch with the protocol.  The secure
+		   layer however, tends to enable more features, such as blunt
+		   password submission and, perhaps, privileged operations available
+		   to the authenticated self.tlsdata.remoteid user.
+		   
+		   As an example, if the handler class is BaseHTTPRequestHandler,
+		   its handle() method could be invoked on the secured content
+		   (possibly after authorisation) with an override as follows:
+		   
+			def handle_secure (self):
+				BaseHTTPRequestHandler.handle (self)
+		"""
+		pass
 
 %}
 
