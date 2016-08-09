@@ -109,12 +109,12 @@ enum anciltype {
 struct pioc_error {
 	int tlserrno;			// See <errno.h>
 	char message [128];
-} pioc_error;
+};
 
 struct pioc_ping {
 	char YYYYMMDD_producer [8+128];	// when & who?
 	uint32_t facilities;		// PIOF_FACILITY_xxx
-} pioc_ping;
+};
 
 struct pioc_starttls {
 	uint32_t flags;			// PIOF_STARTTLS_xxx below
@@ -126,7 +126,7 @@ struct pioc_starttls {
 	uint8_t ctlkey [TLSPOOL_CTLKEYLEN];	// Key for detach
 	uint8_t service [TLSPOOL_SERVICELEN];	// Names from IANA
 	uint32_t timeout;		// in ms, 0=default, ~0=infinite
-} pioc_starttls;
+};
 
 struct pioc_pinentry {
 	uint32_t flags;			// PIOF_PINENTRY_xxx below
@@ -152,12 +152,12 @@ struct pioc_control {
 	uint32_t flags;			// PIOF_CONTROL_xxx, none yet
 	uint8_t ctlkey [TLSPOOL_CTLKEYLEN]; // Control key
 	char name [128];		// A name field
-} pioc_control;
+};
 
 struct pioc_prng {
 	int16_t in1_len, in2_len, prng_len;
 	uint8_t buffer [TLSPOOL_PRNGBUFLEN]; // ctlkey, in1, in2
-} pioc_prng;
+};
 
 struct tlspool_command {
 	uint16_t pio_reqid;	// Request->Response request identifier
