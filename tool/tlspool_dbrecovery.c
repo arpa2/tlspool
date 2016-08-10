@@ -131,8 +131,7 @@ int main (int argc, char *argv []) {
 	}
 	//
 	// Initialise the modules taken from the src directory
-	parse_cfgfile (argv [1], 0);
-	dbenvdir = cfg_dbenv_dir ();
+	dbenvdir = tlspool_configvar (NULL, "dbenv_dir");
 	if (dbenvdir == NULL) {
 		fprintf (stderr, "Missing variable \"dbenv_dir\" in %s\n", argv [1]);
 		exit (1);

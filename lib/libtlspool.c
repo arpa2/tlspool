@@ -69,8 +69,12 @@ int tlspool_pid (char *opt_pidfile) {
 	unsigned long pid;
 
 	if (opt_pidfile == NULL) {
+		opt_pidfile = tlspool_configvar (NULL, "daemon_pidfile");
+	}
+	if (opt_pidfile == NULL) {
 		opt_pidfile = TLSPOOL_DEFAULT_PIDFILE_PATH;
 	}
+	assert (opt_pidfile != NULL);
 	fd = open (opt_pidfile, O_RDONLY);
 	if (fd != -1) {
 		len = read (fd, str_pid, sizeof (str_pid) -1);
@@ -108,8 +112,13 @@ pool_handle_t tlspool_open_poolhandle (char *path) {
 			unsigned int seed;
 			pid_t me;
 			if (!path) {
+				path = tlspool_configvar (NULL, "socket_name");
+			}
+			if (!path) {
 				path = TLSPOOL_DEFAULT_SOCKET_PATH;
 			}
+			assert (path != NULL);
+			fprintf (stderr, "DEBUG: Opening TLS Pool on socket path %s\n", path);
 #ifndef WINDOWS_PORT
 			if (strlen(path) + 1 > sizeof(((struct sockaddr_un *) NULL)->sun_path)) {
 				syslog(LOG_ERR, "TLS Pool path name too long for UNIX domain socket");
@@ -1209,3 +1218,4 @@ if (np_send_command (&cmd) == -1) {
 		return -1;
 	}
 }
+

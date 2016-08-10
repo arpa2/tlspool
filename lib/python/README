@@ -4,6 +4,10 @@ py-tlspool.i ( and ../swig-tlspool.i )
 	These files map the TLS Pool library to Python.  Use import tlspool
 	and describe connections with the class tlspool.Connection.
 
+setup.py
+	Uses the Python dist-utils to install the package.  Some day we should
+	also add PIP support (but not sure how, by we lay an egg already).
+
 webdemo.py
 	A simple demonstration downloading a web page using the TLS Pool port
 	to Python.  Assumes IPv6 connectivity.

@@ -44,6 +44,9 @@ typedef _gostring_ swig_type_13;
 typedef _gostring_ swig_type_14;
 typedef _gostring_ swig_type_15;
 typedef _gostring_ swig_type_16;
+typedef _gostring_ swig_type_17;
+typedef _gostring_ swig_type_18;
+typedef _gostring_ swig_type_19;
 extern void _wrap_Swig_free_tlspool_03ad2d7a43d805c7(uintptr_t arg1);
 extern uintptr_t _wrap_Swig_malloc_tlspool_03ad2d7a43d805c7(swig_intgo arg1);
 extern void _wrap_error_data_tlserrno_set_tlspool_03ad2d7a43d805c7(uintptr_t arg1, swig_intgo arg2);
@@ -107,6 +110,7 @@ extern swig_intgo _wrap_Internal_starttls_tlspool_03ad2d7a43d805c7(swig_intgo ar
 extern swig_intgo _wrap_Internal_control_detach_tlspool_03ad2d7a43d805c7(swig_voidp arg1);
 extern swig_intgo _wrap_Internal_control_reattach_tlspool_03ad2d7a43d805c7(swig_voidp arg1);
 extern swig_intgo _wrap_Internal_prng_tlspool_03ad2d7a43d805c7(swig_type_15 arg1, swig_type_16 arg2, short arg3, swig_voidp arg4, swig_voidp arg5);
+extern swig_type_17 _wrap_tlspool_configvar_tlspool_03ad2d7a43d805c7(swig_type_18 arg1, swig_type_19 arg2);
 extern swig_intgo _wrap_PIOC_LOCAL_tlspool_03ad2d7a43d805c7(void);
 #undef intgo
 */
@@ -720,6 +724,23 @@ func Internal_prng(arg1 string, arg2 string, arg3 uint16, arg4 *byte, arg5 *byte
 		Swig_escape_val = arg2
 	}
 	return swig_r
+}
+
+func Tlspool_configvar(arg1 string, arg2 string) (_swig_ret string) {
+	var swig_r string
+	_swig_i_0 := arg1
+	_swig_i_1 := arg2
+	swig_r_p := C._wrap_tlspool_configvar_tlspool_03ad2d7a43d805c7(*(*C.swig_type_18)(unsafe.Pointer(&_swig_i_0)), *(*C.swig_type_19)(unsafe.Pointer(&_swig_i_1)))
+	swig_r = *(*string)(unsafe.Pointer(&swig_r_p))
+	if Swig_escape_always_false {
+		Swig_escape_val = arg1
+	}
+	if Swig_escape_always_false {
+		Swig_escape_val = arg2
+	}
+	var swig_r_1 string
+ swig_r_1 = swigCopyString(swig_r) 
+	return swig_r_1
 }
 
 

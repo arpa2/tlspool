@@ -44,10 +44,10 @@ const char const *usage =
 
 
 /* Setup and tear down management */
-int setup_management (DB_ENV **dbenv, DB_TXN **txn, DB **dbh_disc, DB **dbh_lid) {
-	char *dbenv_dir = cfg_dbenv_dir ();
-	char *dblid_fnm = cfg_db_localid ();
-	char *dbdisc_fnm = cfg_db_disclose ();
+int setup_management (char *cfgfile, DB_ENV **dbenv, DB_TXN **txn, DB **dbh_disc, DB **dbh_lid) {
+	char *dbenv_dir = tlspool_configvar (cfgfile, "dbenv_dir");
+	char *dblid_fnm = tlspool_configvar (cfgfile, "db_localid");
+	char *dbdisc_fnm = tlspool_configvar (cfgfile, "db_disclose");
 	if (dbenv_dir == NULL) {
 		fprintf (stderr, "Please configure database environment directory\n");
 		return 0;
@@ -127,6 +127,7 @@ int main (int argc, char *argv []) {
 	DBT e_value;
 	int nomore;
 	int fd;
+	char *cfgfile;
 	//
 	// Sanity check
 	if (argc < 3) {
@@ -135,13 +136,14 @@ int main (int argc, char *argv []) {
 	}
 	//
 	// Initialise the modules taken from the src directory
-	parse_cfgfile (argv [1], 0);
+	;
 	//
 	// Prepare variables from arguments
+	cfgfile = argv [1];
 	selector = argv [2];
 	//
 	// Now prepare the database for changes
-	if (!setup_management (&dbenv, &txn, &dbh_disc, &dbh_lid)) {
+	if (!setup_management (cfgfile, &dbenv, &txn, &dbh_disc, &dbh_lid)) {
 		exit (1);
 	}
 	//

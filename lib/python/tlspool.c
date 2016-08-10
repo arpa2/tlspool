@@ -3582,18 +3582,18 @@ SWIG_From_short  (short value)
 
 
 
-
-PyObject *raise_errno (void) {
-	return PyErr_SetFromErrno (PyExc_OSError);
-}
-
-
-
 SWIGINTERNINLINE PyObject * 
 SWIG_FromCharPtr(const char *cptr)
 { 
   return SWIG_FromCharPtrAndSize(cptr, (cptr ? strlen(cptr) : 0));
 }
+
+
+
+PyObject *raise_errno (void) {
+	return PyErr_SetFromErrno (PyExc_OSError);
+}
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -4385,10 +4385,10 @@ SWIGINTERN PyObject *_wrap_starttls_data_ctlkey_get(PyObject *SWIGUNUSEDPARM(sel
     SWIG_PYTHON_THREAD_END_ALLOW;
   }
   {
-    if (resultobj == NULL) {
-      result = Py_None;
+    if (result == NULL) {
+      resultobj = Py_None;
     } else {
-      result = PyString_FromStringAndSize (resultobj, TLSPOOL_CTLKEYLEN);
+      resultobj = PyString_FromStringAndSize (result, TLSPOOL_CTLKEYLEN);
     }
   }
   return resultobj;
@@ -4694,10 +4694,10 @@ SWIGINTERN PyObject *_wrap_control_data_ctlkey_get(PyObject *SWIGUNUSEDPARM(self
     SWIG_PYTHON_THREAD_END_ALLOW;
   }
   {
-    if (resultobj == NULL) {
-      result = Py_None;
+    if (result == NULL) {
+      resultobj = Py_None;
     } else {
-      result = PyString_FromStringAndSize (resultobj, TLSPOOL_CTLKEYLEN);
+      resultobj = PyString_FromStringAndSize (result, TLSPOOL_CTLKEYLEN);
     }
   }
   return resultobj;
@@ -5480,16 +5480,53 @@ fail:
 }
 
 
+SWIGINTERN PyObject *_wrap_tlspool_configvar(PyObject *SWIGUNUSEDPARM(self), PyObject *args) {
+  PyObject *resultobj = 0;
+  char *arg1 = (char *) 0 ;
+  char *arg2 = (char *) 0 ;
+  int res1 ;
+  char *buf1 = 0 ;
+  int alloc1 = 0 ;
+  int res2 ;
+  char *buf2 = 0 ;
+  int alloc2 = 0 ;
+  PyObject * obj0 = 0 ;
+  PyObject * obj1 = 0 ;
+  char *result = 0 ;
+  
+  if (!PyArg_ParseTuple(args,(char *)"OO:tlspool_configvar",&obj0,&obj1)) SWIG_fail;
+  res1 = SWIG_AsCharPtrAndSize(obj0, &buf1, NULL, &alloc1);
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "tlspool_configvar" "', argument " "1"" of type '" "char *""'");
+  }
+  arg1 = (char *)(buf1);
+  res2 = SWIG_AsCharPtrAndSize(obj1, &buf2, NULL, &alloc2);
+  if (!SWIG_IsOK(res2)) {
+    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "tlspool_configvar" "', argument " "2"" of type '" "char *""'");
+  }
+  arg2 = (char *)(buf2);
+  {
+    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
+    result = (char *)tlspool_configvar(arg1,arg2);
+    SWIG_PYTHON_THREAD_END_ALLOW;
+  }
+  resultobj = SWIG_FromCharPtr((const char *)result);
+  if (alloc1 == SWIG_NEWOBJ) free((char*)buf1);
+  if (alloc2 == SWIG_NEWOBJ) free((char*)buf2);
+  return resultobj;
+fail:
+  if (alloc1 == SWIG_NEWOBJ) free((char*)buf1);
+  if (alloc2 == SWIG_NEWOBJ) free((char*)buf2);
+  return NULL;
+}
+
+
 SWIGINTERN PyObject *_wrap_raise_errno(PyObject *SWIGUNUSEDPARM(self), PyObject *args) {
   PyObject *resultobj = 0;
   PyObject *result = 0 ;
   
   if (!PyArg_ParseTuple(args,(char *)":raise_errno")) SWIG_fail;
-  {
-    SWIG_PYTHON_THREAD_BEGIN_ALLOW;
-    result = (PyObject *)raise_errno();
-    SWIG_PYTHON_THREAD_END_ALLOW;
-  }
+  result = (PyObject *)raise_errno();
   resultobj = result;
   return resultobj;
 fail:
@@ -5566,6 +5603,7 @@ static PyMethodDef SwigMethods[] = {
 	 { (char *)"_control_detach", _wrap__control_detach, METH_VARARGS, NULL},
 	 { (char *)"_control_reattach", _wrap__control_reattach, METH_VARARGS, NULL},
 	 { (char *)"_prng", _wrap__prng, METH_VARARGS, NULL},
+	 { (char *)"tlspool_configvar", _wrap_tlspool_configvar, METH_VARARGS, NULL},
 	 { (char *)"raise_errno", _wrap_raise_errno, METH_VARARGS, NULL},
 	 { NULL, NULL, 0, NULL }
 };

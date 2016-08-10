@@ -58,6 +58,9 @@ int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout,
 
 	/* Access the TLS Pool socket */
 	if (path == NULL) {
+		path = tlspool_configvar (NULL, "daemon_pidfile");
+	}
+	if (path == NULL) {
 		path = TLSPOOL_DEFAULT_SOCKET_PATH;
 	}
 	if (strlen (path) + 1 > sizeof (sun.sun_path)) {

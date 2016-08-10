@@ -32,10 +32,10 @@
 }
 
 %typemap(out) ctlkey_t {
-	if ($result == NULL) {
-		$1 = Py_None;
+	if ($1 == NULL) {
+		$result = Py_None;
 	} else {
-		$1 = PyString_FromStringAndSize ($result, TLSPOOL_CTLKEYLEN);
+		$result = PyString_FromStringAndSize ($1, TLSPOOL_CTLKEYLEN);
 	}
 }
 
@@ -46,6 +46,8 @@
 
 
 // helper function to raise OSError with the parameter set to C-reachable errno
+
+%nothread raise_errno;
 
 %inline %{
 
@@ -118,7 +120,7 @@ def ping (YYYYMMDD_producer=_tlspool.TLSPOOL_IDENTITY_V2,
 def make_tlsdata (localid='', remoteid='',
 		flags=0, local_flags=0,
 		ipproto=socket.IPPROTO_TCP, streamid=0, service='',
-		timeout=0, ctlkey=None):
+		timeout=0, ctlkey='TODOTODOTODOTODO'):
 	"""Make a new tlsdata structure, based the fields that may be supplied
 	   as flags, or otherwise as defaults.  Note that the field "local" is
 	   renamed to "local_flags" for reasons of clarity.  This helper function
@@ -215,12 +217,18 @@ class Connection:
 		   The procedure has been described in RFC 5705.
 		   #TODO# Find a way to return the random bytes, and use the length
 		"""
+		assert (length > 0)
+		assert (1 <= len (label) <= 254)
+		assert (1 <= len (ctxvalue or 'X') <= 254)
 		buf = prng_data ()
-		rv = _prng (label, ctxvalue, length, buf, self.tlsdata.ctlkey)
+		# buf.in1_len = len (label)
+		# buf.in2_len = len (ctxvalue) if ctxvalue is not None else 255
+		# buf.prng_len = length
+		rv = _prng (label, ctxvalue, length, buf.buffer, self.tlsdata.ctlkey)
 		if rv < 0:
 			_tlspool.raise_errno ()
 		else:
-			return buf
+			return buf.buffer [:length]
 
 	def control_detach (self):
 		"""Detach control of this connection.  Although the connection
@@ -349,6 +357,7 @@ class SecurityMixIn:
 		else:
 			self.request     = sox2
 		self.handle_secure ()
+		sox2.close ()
 
 	def startssh (self):
 		raise NotImplementedError ("Python wrapper does not implement STARTSSH")
@@ -364,9 +373,7 @@ class SecurityMixIn:
 		   does nothing but invoke starttls(), which in turn invokes
 		   handle_secure() after the TLS handshake has succeeded.
 		"""
-		print 'STARTTLS.BEGIN'
 		self.starttls ()
-		print 'STARTTLS.END'
 
 	def handle_secure (self):
 		"""This method may be overridden to handle the secure part of the
