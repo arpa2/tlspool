@@ -54,9 +54,9 @@ struct typemap_t typemap [] = {
 
 
 /* Setup and tear down management */
-int setup_management (DB_ENV **dbenv, DB_TXN **txn, DB **dbh) {
-	char *dbenv_dir = cfg_dbenv_dir ();
-	char *dblid_fnm = cfg_db_localid ();
+int setup_management (char *cfgfile, DB_ENV **dbenv, DB_TXN **txn, DB **dbh) {
+	char *dbenv_dir = tlspool_configvar (cfgfile, "dbenv_dir");
+	char *dblid_fnm = tlspool_configvar (cfgfile, "db_localid");
 	if (dbenv_dir == NULL) {
 		fprintf (stderr, "Please configure database environment directory\n");
 		return 0;
@@ -119,6 +119,7 @@ int main (int argc, char *argv []) {
 	int fd;
 	int outfile = -1;
 	int written = 0;
+	char *cfgfile = NULL;
 	//
 	// Sanity check
 	if ((argc < 4) || (argc > 5)) {
@@ -134,9 +135,10 @@ int main (int argc, char *argv []) {
 	}
 	//
 	// Initialise the modules taken from the src directory
-	parse_cfgfile (argv [1], 0);
+	;
 	//
 	// Prepare variables from arguments
+	cfgfile = argv [1];
 	localid = argv [2];
 	partstr = strtok_r (argv [3], ",", &saveptr);
 	if (partstr == NULL) {
@@ -160,7 +162,7 @@ int main (int argc, char *argv []) {
 	}
 	//
 	// Now retrieve the matching entries
-	if (!setup_management (&dbenv, &txn, &dbh)) {
+	if (!setup_management (cfgfile, &dbenv, &txn, &dbh)) {
 		exit (1);
 	}
 	if (dbh->cursor (dbh, txn, &crs, 0) != 0) {

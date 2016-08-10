@@ -8,14 +8,19 @@ tlspool_configvar \- Retrieve a TLS Pool configuration variable value
 .SH DESCRIPTION
 .PP
 .BR tlspool_configvar ()
-fetches the value of a configuration file variable as setup for the
-TLS Pool.  The configuration file can be provided in the 
-.IR cfgfile parameter
-or, if it is NULL, then first the environment variable
+fetches the value of a configuration file variable named
+.I varname
+from the configuration file for the
+TLS Pool.  The name of the configuration file can be provided in the 
+.I cfgfile
+parameter or, if it is NULL, then first the environment variable
 .BR TLSPOOL_CFGFILE
-and, failing to find that, it tries the compile-time setting
+is tried and, failing to find that, it tries the compile-time setting
 .BR TLSPOOL_DEFAULT_CONFIG_PATH .
-
+.PP
+The returned string is a duplicate, and must be freed by a call to
+.IR free ().
+.PP
 .SH "RETURN VALUE"
 The value returned is NULL when the requested variable was not
 found, but also when the configuration file did not load.  The
