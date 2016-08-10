@@ -1165,6 +1165,31 @@ intgo _wrap_Internal_prng_tlspool_03ad2d7a43d805c7(_gostring_ _swig_go_0, _gostr
 }
 
 
+_gostring_ _wrap_tlspool_configvar_tlspool_03ad2d7a43d805c7(_gostring_ _swig_go_0, _gostring_ _swig_go_1) {
+  char *arg1 = (char *) 0 ;
+  char *arg2 = (char *) 0 ;
+  char *result = 0 ;
+  _gostring_ _swig_go_result;
+  
+  
+  arg1 = (char *)malloc(_swig_go_0.n + 1);
+  memcpy(arg1, _swig_go_0.p, _swig_go_0.n);
+  arg1[_swig_go_0.n] = '\0';
+  
+  
+  arg2 = (char *)malloc(_swig_go_1.n + 1);
+  memcpy(arg2, _swig_go_1.p, _swig_go_1.n);
+  arg2[_swig_go_1.n] = '\0';
+  
+  
+  result = (char *)tlspool_configvar(arg1,arg2);
+  _swig_go_result = Swig_AllocateString((char*)result, result ? strlen((char*)result) : 0); 
+  free(arg1); 
+  free(arg2); 
+  return _swig_go_result;
+}
+
+
 intgo _wrap_PIOC_LOCAL_tlspool_03ad2d7a43d805c7() {
   int result;
   intgo _swig_go_result;

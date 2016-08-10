@@ -11,7 +11,8 @@ LICS = COPYRIGHT.MD LICENSE-DAEMON.MD LICENSE-DOCS.MD LICENSE-USERSPACE.MD \
 MAN3 = tlspool_socket tlspool_starttls \
 	tlspool_ping tlspool_prng \
 	tlspool_pin_service tlspool_localid_service \
-	tlspool_control_detach tlspool_control_reattach
+	tlspool_control_detach tlspool_control_reattach \
+	tlspool_configvar
 
 MAN8 = tlspool tlstunnel
 

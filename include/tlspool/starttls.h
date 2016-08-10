@@ -32,9 +32,11 @@ extern "C"
 
 
 #ifdef WINDOWS_PORT
+#define TLSPOOL_DEFAULT_CONFIG_PATH "/etc/tlspool.conf.windows"
 #define TLSPOOL_DEFAULT_SOCKET_PATH "\\\\.\\pipe\\tlspool"
 #define TLSPOOL_DEFAULT_PIDFILE_PATH "/var/run/tlspool.pid"
 #else
+#define TLSPOOL_DEFAULT_CONFIG_PATH "/etc/tlspool.conf"
 #define TLSPOOL_DEFAULT_SOCKET_PATH "/var/run/tlspool.sock"
 #define TLSPOOL_DEFAULT_PIDFILE_PATH "/var/run/tlspool.pid"
 #endif /* WINDOWS_PORT */
@@ -295,6 +297,22 @@ int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec
 int tlspool_prng (char *label, char *opt_ctxvalue,
 		uint16_t prng_len, uint8_t *prng_buf,
 		uint8_t *ctlkey);
+
+
+/* Fetch a configuration variable value from the configuration file.  This is not
+ * an efficient procedure, at best suited for startup of tools or daemons; it
+ * will iterate over the config file until it reads the desired value.  The value
+ * returned is allocated and should be freed by the caller using free().
+ *
+ * When cfgfile is NULL, the environment variable TLSPOOL_CONFIGFILE is
+ * tried first, followed by the default setting from the macro 
+ * TLSPOOL_DEFAULT_SOCKET_PATH as defined in <tlspool/starttls.h>.
+ *
+ * The value returned is NULL when the variable is not found, including when this
+ * is due to errors such as not being able to open the file.
+ */
+char *tlspool_configvar (char *cfgfile, char *varname);
+
 
 #ifdef __cplusplus
 }

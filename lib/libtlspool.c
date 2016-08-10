@@ -69,8 +69,12 @@ int tlspool_pid (char *opt_pidfile) {
 	unsigned long pid;
 
 	if (opt_pidfile == NULL) {
+		opt_pidfile = tlspool_configvar (NULL, "daemon_pidfile");
+	}
+	if (opt_pidfile == NULL) {
 		opt_pidfile = TLSPOOL_DEFAULT_PIDFILE_PATH;
 	}
+	assert (opt_pidfile != NULL);
 	fd = open (opt_pidfile, O_RDONLY);
 	if (fd != -1) {
 		len = read (fd, str_pid, sizeof (str_pid) -1);
@@ -108,8 +112,13 @@ pool_handle_t tlspool_open_poolhandle (char *path) {
 			unsigned int seed;
 			pid_t me;
 			if (!path) {
+				path = tlspool_configvar (NULL, "socket_name");
+			}
+			if (!path) {
 				path = TLSPOOL_DEFAULT_SOCKET_PATH;
 			}
+			assert (path != NULL);
+			fprintf (stderr, "DEBUG: Opening TLS Pool on socket path %s\n", path);
 #ifndef WINDOWS_PORT
 			if (strlen(path) + 1 > sizeof(((struct sockaddr_un *) NULL)->sun_path)) {
 				syslog(LOG_ERR, "TLS Pool path name too long for UNIX domain socket");
@@ -1209,3 +1218,107 @@ if (np_send_command (&cmd) == -1) {
 		return -1;
 	}
 }
+
+
+/* Fetch a configuration variable value from the configuration file.  This is not
+ * an efficient procedure, at best suited for startup of tools or daemons; it
+ * will iterate over the config file until it reads the desired value.  The value
+ * returned is allocated and should be freed by the caller using free().
+ *
+ * When cfgfile is NULL, the environment variable TLSPOOL_CONFIGFILE is
+ * tried first, followed by the default setting from the macro 
+ * TLSPOOL_DEFAULT_CONFIG_PATH as defined in <tlspool/starttls.h>.
+ *
+ * The value returned is NULL when the variable is not found, including when this
+ * is due to errors such as not being able to open the file.
+ */
+char *tlspool_configvar (char *cfgfile, char *varname) {
+	FILE *cf;
+	char line [514];
+	int linelen;
+	int eof = 0;
+	char *here;
+	struct cfgopt *curopt;
+	int found;
+	char *retval = NULL;
+
+	if (cfgfile == NULL) {
+		cfgfile = getenv ("TLSPOOL_CFGFILE");
+	}
+	if (cfgfile == NULL) {
+		cfgfile = TLSPOOL_DEFAULT_CONFIG_PATH;
+	}
+
+	assert (cfgfile != NULL);
+	assert (varname != NULL);
+
+	cf = fopen (cfgfile, "r");
+	if (cf == NULL) {
+		perror ("Failed to open configuration file");
+		goto cleanup;
+	}
+
+	while (!eof) {
+		if (!fgets (line, sizeof (line)-1, cf)) {
+			if (feof (cf)) {
+				eof = 1;
+				continue;
+			} else {
+				perror ("Error while reading configuration file");
+				exit (1);
+			}
+		}
+		linelen = strlen (line);
+		if (linelen == 0) {
+			eof = 1;
+			continue;
+		}
+		if (line [linelen-1] == (char) EOF) {
+			linelen--;
+			eof = 1;
+		}
+		if (line [linelen-1] != '\n') {
+			fprintf (stderr, "Configuration line too long\n");
+			goto cleanup;
+		}
+		line [--linelen] = 0;
+		if (linelen == 0) {
+			continue;
+		}
+		if (line [0] == '#') {
+			continue;
+		}
+		here = line;
+		while ((*here) && isspace (*here)) {
+			here++;
+		}
+		if (!*here) {
+			continue;
+		}
+		if (here != line) {
+			fprintf (stderr, "Configuration line starts with whitespace:\n%s\n", line);
+			goto cleanup;
+		}
+		while ((*here) && (*here != ' ')) {
+			here++;
+		}
+		if (!*here) {
+			fprintf (stderr, "Configuration line misses space after keyword:\n%s\n", line);
+			goto cleanup;
+		}
+		*here++ = '\0';
+		if (strcmp (varname, line) == 0) {
+			// Success!  We set the return value and end the loop
+			retval = here;
+			goto cleanup;
+		}
+	}
+
+cleanup:
+	if (cf != NULL) {
+		fclose (cf);
+		cf = NULL;
+	}
+	return retval;
+}
+

@@ -15,6 +15,11 @@ returns a file descriptor for the TLS Pool.  During the first call, the
 argument is used as a path to the UNIX domain socket to use; during later
 calls, the argument is ignored but the returned file descriptor is instead
 the same one as before.  A NULL value for the argument is replaced with
+the value of the
+.BR socket_name configuration
+file as returned by
+.IR tlspool_configvar()
+or, if that fails, the statically compiled value in
 .BR TLSPOOL_DEFAULT_SOCKET_PATH .
 .PP
 All of the
@@ -54,7 +59,8 @@ from various funding sources with an interest in a private and secure
 Internet that gives users control over their online presence.  This particular
 project has been sponsored in part by NCSC.
 .SH "SEE ALSO"
-.IR tlspool "(8)"
+.IR tlspool "(8)."
+.IR tlspool_configvar "(3)"
 .PP
 The configuration file option
 .I socket_name

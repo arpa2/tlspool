@@ -113,6 +113,7 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
                 uint16_t prng_len, uint8_t *prng_buf,
                 ctlkey_t ctlkey);
 
+char *tlspool_configvar (char *cfgfile, char *varname);
 
 
 // libtlspool_pinentry.c
