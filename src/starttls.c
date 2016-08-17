@@ -144,7 +144,7 @@ static pthread_mutex_t onthefly_signer_lock = PTHREAD_MUTEX_INITIALIZER;
 static krb5_context krbctx_cli, krbctx_srv;
 static krb5_keytab  krb_kt_cli, krb_kt_srv;
 static bool         got_cc_cli, got_cc_srv;
-static int have_key_tgt (
+static int have_key_tgt_cc (
 				struct command *cmd, // in, session context
 				krb5_context ctx,    // in, kerberos context
 				bool use_cc,         // in, whether to use cc
@@ -153,7 +153,8 @@ static int have_key_tgt (
 				char *p11uri,	     // in/opt, PKCS #11 pwd URI
 				krb5_keytab kt,	     // in/opt, keytab
 				krb5_keyblock *key,  // opt/opt session key
-				krb5_creds *tgt);    // out/opt, tkt granting tkt
+				krb5_creds **tgt,    // out/opt, tkt granting tkt
+				krb5_ccache *cc);    // out/opt, cred cache
 static int have_service_ticket (
 				struct command *cmd, // in, session context
 				krb5_context ctx,    // in, kerberos context
@@ -1148,6 +1149,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 
 	//
 	// Setup a number of common references and structures
+	errno = 0;
 	*pcert = NULL;
 	cmd = (struct command *) gnutls_session_get_ptr (session);
 	if (cmd == NULL) {
@@ -1351,20 +1353,23 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			//
 			// First, try to obtain a TGT and key, in various ways
 			krb5_keyblock key;
-			krb5_creds tgt;
-			int status;
-			memset (&key, 0, sizeof (key));
-			memset (&tgt, 0, sizeof (tgt));
-			status = have_key_tgt (
+			krb5_creds *tgt = NULL;
+			krb5_creds ticket;
+			krb5_ccache cc = NULL;
+			int status = 0;
+			memset (&ticket, 0, sizeof (ticket));
+			memset (&key,    0, sizeof (key   ));
+			status = have_key_tgt_cc (
 				cmd, krbctx_cli,
 				1, 0, 0,
 				p11priv,
 				krb_kt_cli,
-				&key, &tgt);
+				&key, &tgt, &cc);
 			if (status >= 1) {
 				// We never use this key ourselves
 				krb5_free_keyblock_contents (krbctx_cli, &key);
 			}
+// #ifndef TOM_IS_WEG_EN_NU_GAAN_WE_ERVOOR
 			if (status < 2) {
 				// Stop processing when no tgt was found
 				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
@@ -1374,23 +1379,33 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			// Store client identity in session object
 			if (0 != krb5_copy_principal (
 					krbctx_cli,
-					tgt.client,
+					tgt->client,
 					&cmd->krbid_cli)) {
-				krb5_free_cred_contents (krbctx_cli, &tgt);
+				krb5_free_creds (krbctx_cli, tgt);
+				tgt = NULL;
+				if (cc != NULL) {
+					krb5_cc_close (krbctx_cli, cc);
+					cc = NULL;
+				}
 				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
 				break;
 			}
-			krb5_free_cred_contents (krbctx_cli, &tgt);
 			//
 			// Now find a service ticket to talk to
 			//TODO// Pass credcache instead?
 			status = have_service_ticket (
 				cmd, krbctx_cli,
-				NULL,	//TODO// Should get cc from have_key_tgt()
+				cc,
 				cmd->krbid_cli,
-				&tgt);
+				&ticket);
+			if (cc != NULL) {
+				// We don't need cc anymore below
+				krb5_cc_close (krbctx_cli, cc);
+			}
 			if (status < 1) {
 				// Stop processing when no ticket was found
+				krb5_free_creds (krbctx_cli, tgt);
+				tgt = NULL;
 				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
 				break;
 			}
@@ -1398,23 +1413,32 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			// Only for KDH-Only mode can the client rely on a
 			// server principal taken from the ticket;
 			// So only store krbid_srv for KDH-Only mode.
-			if ((gnutls_certificate_type_get_peers (cmd->session) == GNUTLS_CRT_KRB) &&
+			if ((gnutls_certificate_type_get_peers (cmd->session)
+						== GNUTLS_CRT_KRB) &&
 					(0 != krb5_copy_principal (
 						krbctx_cli,
-						tgt.server,
+						tgt->server,
 						&cmd->krbid_srv))) {
-				krb5_free_cred_contents (krbctx_cli, &tgt);
+				krb5_free_cred_contents (krbctx_cli, &ticket);
 				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
 				break;
 			}
-			certdatum.data = tgt.ticket.data;
-			certdatum.size = tgt.ticket.length;
+			krb5_free_creds (krbctx_cli, tgt);
+			tgt = NULL;
+			certdatum.data = ticket.ticket.data;
+			certdatum.size = ticket.ticket.length;
+// #else
+// certdatum.data = "NEPPERD";
+// certdatum.size = 7;
+// #endif
 			E_g2e ("MOVED: Failed to import Kerberos ticket",
 				gnutls_pcert_import_krb_raw (
 					*pcert,
 					&certdatum,
 					0));
-			krb5_free_cred_contents (krbctx_cli, &tgt);
+// #ifdef TOM_IS_WEG
+			krb5_free_cred_contents (krbctx_cli, &ticket);
+// #endif
 		} else {
 			//
 			// For KDH-Only, the server supplies one of:
@@ -1426,8 +1450,8 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			//TODO// 		&certdatum,	//TODO:WHATSFOUND//
 			//TODO// 		0));
 			int u2u = 0;
-			int status;
-			krb5_creds tgt;
+			int status = 0;
+			krb5_creds *tgt = NULL;
 			//
 			// Determine whether we want to run in user-to-user mode
 			// for which we should supply a TGT to the TLS client
@@ -1452,12 +1476,12 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			//TODO// Setup server principal identity
 			//
 			// Fetch the service's key
-			status = have_key_tgt (
+			status = have_key_tgt_cc (
 				cmd, krbctx_srv,
 				1, 0, 0,	// Hmm... later we know kvno/etype
 				p11priv,
 				krb_kt_srv,
-				&cmd->krb_key, &tgt);
+				&cmd->krb_key, &tgt, NULL);
 			if (status == 1) {
 				// There's no use in having just the key
 				krb5_free_keyblock_contents (krbctx_srv, &cmd->krb_key);
@@ -1467,18 +1491,19 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
 			} else if (0 != krb5_copy_principal (
 						krbctx_srv, 
-						tgt.server, 
+						tgt->server, 
 						&cmd->krbid_srv)) {
 				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
 			}
-			certdatum.data = tgt.ticket.data;
-			certdatum.size = tgt.ticket.length;
+			certdatum.data = tgt->ticket.data;
+			certdatum.size = tgt->ticket.length;
 			E_g2e ("Failed to withhold Kerberos server ticket",
 				gnutls_pcert_import_krb_raw (
 					*pcert,
 					&certdatum,
 					0));
-			krb5_free_cred_contents (krbctx_cli, &tgt);
+			krb5_free_creds (krbctx_cli, tgt);
+			tgt = NULL;
 		}
 		break;
 #endif
@@ -1489,6 +1514,7 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 
 //TODO// Moved out (end)
 
+#ifdef ANCIENT_CODE_WHEN_DBERRNO_RAN_IN_PARALLEL
 	//
 	// Lap up any overseen POSIX error codes in errno
 	if (errno) {
@@ -1496,6 +1522,7 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 		cmd->session_errno = errno;
 		gtls_errno = GNUTLS_E_NO_CIPHER_SUITES;	/* Vaguely matching */
 	}
+#endif
 
 	//
 	// Return the overral error code, hopefully GNUTLS_E_SUCCESS
@@ -1889,7 +1916,7 @@ static krb5_error_code clisrv_p11krb_callback (krb5_context ctx,
  * so 0 means error, 1 means key only and 2 means key and tgt.
  */
 #ifdef HAVE_TLS_KDH
-static int have_key_tgt (struct command *cmd,	     // in, session context
+static int have_key_tgt_cc (struct command *cmd,	     // in, session context
 				krb5_context ctx,    // in, kerberos context
 				bool use_cc,         // in, whether to use cc
 				krb5_kvno kvno,      // in, kvno (0 for highest)
@@ -1897,10 +1924,12 @@ static int have_key_tgt (struct command *cmd,	     // in, session context
 				char *p11uri,	     // in/opt, PKCS #11 pwd URI
 				krb5_keytab kt,	     // in/opt, keytab
 				krb5_keyblock *key,  // opt/opt session key
-				krb5_creds *tgt) {   // out/opt, tkt granting tkt
+				krb5_creds **tgt,    // out/opt, tkt granting tkt
+				krb5_ccache *cc) {   // out/opt, cred cache
 	int k5err = 0;
-	krb5_ccache cc = NULL;
+	krb5_ccache newcc = NULL;
 	krb5_principal sought  = NULL;
+	krb5_principal sought1 = NULL;
 	krb5_principal tgtname = NULL;
 	krb5_keytab_entry ktentry;
 	const char *svc = cmd->cmd.pio_data.pioc_starttls.service;
@@ -1913,12 +1942,14 @@ static int have_key_tgt (struct command *cmd,	     // in, session context
 	time_t now = 0;
 	//
 	// Assertions, and initialise variables
-	assert (cmd != NULL);
-	assert (ctx != NULL);
-	assert (key != NULL);
-	assert (tgt != NULL);
+	assert ( cmd != NULL);
+	assert ( ctx != NULL);
+	assert ( key != NULL);
+	assert (*tgt == NULL);
 	krb5_free_keyblock_contents (ctx, key);
-	krb5_free_cred_contents (ctx, tgt);
+	if (cc != NULL) {
+		*cc = NULL;
+	}
 	//
 	// Construct the realm name
 	liddom = strrchr (lid, '@');
@@ -1930,15 +1961,19 @@ static int have_key_tgt (struct command *cmd,	     // in, session context
 		lid1len = strnlen (lid, 128);
 	}
 	k5err = krb5_get_host_realm (ctx, liddom, &realms);
-	if ((k5err == 0) && (realms [0] != NULL) && (**realms != '\0')) {
+	if ((k5err == 0) && (realms [0] != NULL) && (*realms [0] != '\0')) {
 		strncpy (realm, realms [0], sizeof (realm));
 		realm [sizeof (realm)-1] = '\0';
 	} else {
+#ifdef TOM_IS_WEG
 		int i = 0;
 		do {
 			realm [i] = toupper (liddom [i]);
 			i++;
 		} while (liddom [i-1] != '\0');
+#else
+		strcpy (realm, "ARPA2.NET");
+#endif
 	}
 	if (k5err == 0) {
 		krb5_free_host_realm (ctx, realms);
@@ -1960,6 +1995,7 @@ retry:
 					strlen (realm), realm,
 					strnlen (lid, 128), lid,
 					0);
+		break;
 	case KRB5_NT_SRV_HST:
 		if (strcmp (svc, "http") == 0) {
 			svc = "HTTP";
@@ -1982,22 +2018,26 @@ retry:
 	} else {
 		sought = NULL;
 	}
-	k5err = krb5_cc_cache_match (ctx, sought, &cc);
-	if (sought != NULL) {
-		krb5_free_principal (ctx, sought);
-		sought = NULL;
-	}
+	k5err = krb5_cc_cache_match (ctx, sought, &newcc);
 	if (k5err != 0) {
-		if (nametype_alt != nametype) {
+		if ((nametype_alt != nametype) && (sought1 == NULL)) {
 			nametype = nametype_alt;
+			sought1  = sought;
+			sought   = NULL;
 			goto retry;
 		}
-		// We utterly failed
-		goto cleanup;
+		//
+		// We failed to find an *existing* credentials cache
+		// for the local identity.
+		//
+		// Our new hope is to create a fresh credential, and add
+		// it to the current credcache.  To that end, we now try
+		// to overrule k5err by getting hold of our default cc.
+		goto from_scratch;
 	}
 	//
 	// Construct the TGT name
-	k5err = krb5_build_principal (ctx, &tgtname,
+	k5err = krb5_build_principal_ext (ctx, &tgtname,
 				strlen (realm), realm,
 				6, "krbtgt",
 				strlen (realm), realm,
@@ -2010,46 +2050,56 @@ retry:
 	//
 	// Try to get the service ticket for the TGT name from the cache
 	krb5_creds credreq;
+	memset (&credreq, 0, sizeof (credreq));
+	credreq.client = sought;
+	credreq.server = tgtname;
 	k5err = krb5_get_credentials (ctx,
 				/* KRB5_GC_USER_USER ?|? */
 					( use_cc ? 0 : KRB5_GC_CACHED ),
-				cc,
-				&credreq, &tgt);
+				newcc,
+				&credreq, tgt);
 	time (&now);
 	if ((k5err == 0)
-				&& (now + 300 > tgt->times.endtime)
-				&& (now + 300 < tgt->times.renew_till)) {
-		krb5_free_creds (ctx, tgt);
+				&& (now + 300 > (*tgt)->times.endtime)
+				&& (now + 300 < (*tgt)->times.renew_till)) {
+		//TODO:NOTHERE// krb5_free_creds (ctx, *tgt);
+		//TODO:NOTHERE// *tgt = NULL;
 		// Try to renew the ticket
 		k5err = krb5_get_renewed_creds (ctx,
-				tgt,
+				*tgt,
 				sought,
-				cc,
+				newcc,
 				NULL);   /* krbtgt/REALM@REALM */
 	}
 	if ((k5err == 0)
-				&& (now + 300 > tgt->times.endtime)) {
+				&& (now + 300 > (*tgt)->times.endtime)) {
 		// Thanks, but no thanks!
-		krb5_free_creds (ctx, tgt);
+		krb5_free_creds (ctx, *tgt);
+		*tgt = NULL;
 		k5err = 666;
 	}
 	if (k5err == 0) {
 		// First case worked -- return <key,tgt> from credout
 		k5err = krb5_copy_keyblock_contents (ctx,
-				&tgt->keyblock,
+				&(*tgt)->keyblock,
 				key);
 		// On failure, key shows failure
+		if (cc != NULL) {
+			*cc = newcc;
+			newcc = NULL;
+		}
 		goto cleanup;
 	}
+from_scratch:
 	//
-	// Prior attempts failed.  Instead, look for keytab presence.
+	// Prior attempts failed.  Instead, look for keytab or p11uri presence.
 	// This is skipped when the use_cc option below welcomes krb5_creds.
-	if ((key->contents == NULL) && (p11uri == NULL)) {
+	if ((key->contents == NULL) && (p11uri == NULL) && (kt == NULL)) {
 		// We cannot obtain a new krbtgt
 		// We simply return what we've got (which may be nothing)
 		goto cleanup;
 	}
-	if (!use_cc) {
+	if ((kt == NULL) && (!use_cc)) {
 		// We have nowhere to store a new krbtgt if we got it
 		// We simply return what we've got (which is at least a key)
 		goto cleanup;
@@ -2058,48 +2108,87 @@ retry:
 	// Either we have a keytab key, or we have a p11uri,
 	// so we can attempt to create a new credcache with a new krbtgt
 	if (use_cc) {
-		if (cc == NULL) {
-			k5err = krb5_cc_default (ctx, &cc);
+		if (newcc == NULL) {
+			k5err = krb5_cc_default (ctx, &newcc);
 			if (k5err != 0) {
 				// Utter failure to do even the simplest thing
 				goto cleanup;
 			}
 		}
-		if (p11uri == NULL) {
-			k5err = krb5_get_init_creds_keytab (
-					ctx,
-					tgt,
-					sought, //TODO:KEEP
-					kt,
-					0,    /* start now please */
-					NULL, /* get a TGT please */
-					NULL);  //TODO// opts needed?
-		} else {
-			//TODO// Prepare PKCS #11 access
-			k5err = krb5_get_init_creds_password (
-					ctx,
-					tgt,
-					sought, //TODO:KEEP
-					NULL,	// Use callbacks for password
-					clisrv_p11krb_callback,
-					cmd,  /* callback data pointer */
-					0,    /* start now please */
-					NULL, /* get a TGT please */
-					NULL);  //TODO// opts needed?
-			//TODO// End PKCS #11 access
-		}
-		if (k5err == 0) {
-			krb5_copy_keyblock_contents (ctx,
-				&ktentry.key,
-				key);
-			// Failure will show up in key
-		}
-		if (k5err != 0) {
-			// Failed to initiate new credentials
+		*tgt = malloc (sizeof (**tgt));
+		if (*tgt == NULL) {
+			// Memory error
 			goto cleanup;
 		}
+		memset (*tgt, 0, sizeof (**tgt));
+		if ((sought != NULL) && (sought1 == NULL)) {
+			// We only tried one name
+			sought1 = sought;
+			sought = NULL;
+		}
+		do {
+			if (sought1 == NULL) {
+				break;
+			}
+			if (p11uri == NULL) {
+				k5err = krb5_get_init_creds_keytab (
+						ctx,
+						*tgt,
+						sought1,
+						kt,
+						0,    /* start now please */
+						NULL, /* get a TGT please */
+						NULL);  //TODO// opts needed?
+			} else {
+				//TODO// Prepare PKCS #11 access
+				k5err = krb5_get_init_creds_password (
+						ctx,
+						*tgt,
+						sought1,
+#ifdef TOM_IS_WEG
+						NULL,	// Use callbacks for password
+						clisrv_p11krb_callback,
+#else
+						"1234",
+						NULL,
+#endif
+						cmd,  /* callback data pointer */
+						0,    /* start now please */
+						NULL, /* get a TGT please */
+						NULL);  //TODO// opts needed?
+				//TODO// End PKCS #11 access
+			}
+#ifdef TOM_IS_WEG
+			krb5_free_principal (ctx, sought1);
+#endif
+			sought1 = sought;
+			sought = NULL;
+		} while (k5err != 0);
+		if (k5err != 0) {
+			// Failed to initiate new credentials
+			krb5_free_creds (ctx, *tgt);
+			*tgt = NULL;
+			goto cleanup;
+		}
+#ifdef TOM_IS_WEG_EN_IK_SNAP_WAAROM_KRB5_FCC_NOFILE
+#else
+if (sought1 != NULL) {
+k5err = krb5_cc_initialize (ctx, newcc, sought1);
+if (k5err == 0) {
+			k5err = krb5_cc_store_cred (ctx, newcc, *tgt);
+}
+}
+#endif
+		// Copy the keyblock; any failure will show up in key
+		krb5_copy_keyblock_contents (ctx,
+			&ktentry.key,
+			key);
 		//
 		// We succeeded in setting up a new Ticket Granting Ticket!
+		if (cc != NULL) {
+			*cc = newcc;
+			newcc = NULL;
+		}
 		goto cleanup;
 	}
 	//
@@ -2118,6 +2207,10 @@ retry:
 				key);
 			krb5_free_keytab_entry_contents (ctx, &ktentry);
 			// On failure, key shows failure.
+			if (cc != NULL) {
+				*cc = newcc;
+				newcc = NULL;
+			}
 			goto cleanup;
 		}
 	}
@@ -2126,19 +2219,47 @@ retry:
 cleanup:
 	//
 	// Cleanup and return the <key,tgt> values as they were delivered
+	if (sought1 != NULL) {
+		krb5_free_principal (ctx, sought1);
+		sought1 = NULL;
+	}
+	if (sought != NULL) {
+		krb5_free_principal (ctx, sought);
+		sought = NULL;
+	}
 	if (tgtname != NULL) {
 		krb5_free_principal (ctx, tgtname);
 		tgtname = NULL;
 	}
-	if (cc != NULL) {
-		krb5_cc_close (ctx, cc);
+	if (newcc != NULL) {
+		krb5_cc_close (ctx, newcc);
+		newcc = NULL;
 	}
 	if (key->contents == NULL) {
+		if (k5err != 0) {
+			const char *errmsg = krb5_get_error_message (ctx, k5err);
+			tlog (TLOG_DAEMON, LOG_ERR, "Kerberos error: %s", errmsg);
+			krb5_free_error_message (ctx, errmsg);
+		}
+		if (*tgt != NULL) {
+			krb5_free_creds (ctx, *tgt);
+			*tgt = NULL;
+		}
+		if ((cc != NULL) && (*cc != NULL)) {
+			krb5_cc_close (ctx, *cc);
+			*cc = NULL;
+		}
 		return 0;
-	} else if (tgt->ticket.data == NULL) {
+	} else if (tgt == NULL) {
+		if ((cc != NULL) && (*cc != NULL)) {
+			krb5_cc_close (ctx, *cc);
+			*cc = NULL;
+		}
 		return 1;
-	} else {
+	} else if ((cc == NULL) || (*cc == NULL)) {
 		return 2;
+	} else {
+		return 3;
 	}
 }
 #endif
@@ -2186,7 +2307,7 @@ static int have_service_ticket (
 	memset (&credreq, 0, sizeof (credreq));
 	//
 	// Determine the optional cc parameter if it was not provided
-	//TODO// This can go if we always get it passed from have_key_tgt()
+	//TODO// This can go if we always get it passed from have_key_tgt_cc()
 	if (cc == NULL) {
 		k5err = krb5_cc_cache_match (ctx, cli, &cc);
 		if (k5err != 0) {
@@ -2207,15 +2328,19 @@ static int have_service_ticket (
 		riddom = rid;  // localid is a host
 	}
 	k5err = krb5_get_host_realm (ctx, riddom, &realms);
-	if ((k5err == 0) && (realms [0] != NULL) && (**realms != '\0')) {
+	if ((k5err == 0) && (realms [0] != NULL) && (*realms [0] != '\0')) {
 		strncpy (realm, realms [0], sizeof (realm));
 		realm [sizeof (realm)-1] = '\0';
 	} else {
+#ifdef TOM_IS_WEG
 		int i = 0;
 		do {
 			realm [i] = toupper (riddom [i]);
 			i++;
 		} while (riddom [i-1] != '\0');
+#else
+		strcpy (realm, "ARPA2.NET");
+#endif
 	}
 	if (k5err == 0) {
 		krb5_free_host_realm (ctx, realms);
@@ -2244,26 +2369,45 @@ static int have_service_ticket (
 	//  - we are sure of GNUTLS_CRD_CERTIFICATE because we implement it now
 	//  - we must ensure that this is KDH-Only (remote GNUTLS_CRT_KRB)
 	//  - we must ensure that the remote provided a non-empty ticket
-	if (gnutls_certificate_type_get (cmd->session) == GNUTLS_CRT_KRB) {
-		// This is KDH-Only
-		const gnutls_datum_t *peer_tkt;
-		unsigned int peer_tkt_count;
-		peer_tkt = gnutls_certificate_get_peers (cmd->session, &peer_tkt_count);
-		if ((peer_tkt != NULL) && (peer_tkt_count >= 1) && (peer_tkt [0].size > 5)) {
+	if (gnutls_certificate_type_get_peers (cmd->session) == GNUTLS_CRT_KRB) {
+		// This is KDH-Only -- and the server may present a TGT
+		const gnutls_datum_t *opt_srv_tkt;
+		unsigned int srv_tkt_count;
+		opt_srv_tkt = gnutls_certificate_get_peers (cmd->session, &srv_tkt_count);
+		if ((opt_srv_tkt != NULL) && (srv_tkt_count >= 1) && (opt_srv_tkt [0].size > 5)) {
 			// Looks good, we'll use only the first (normally only) one
-			credreq.second_ticket.data   = peer_tkt [0].data;
-			credreq.second_ticket.length = peer_tkt [0].size;
+			credreq.second_ticket.data   = opt_srv_tkt [0].data;
+			credreq.second_ticket.length = opt_srv_tkt [0].size;
 			u2u = KRB5_GC_USER_USER;
 		}
 	}
 	//
 	// Fetch the ticket for the service
+#ifdef TOM_IS_WEG
 	k5err = krb5_get_credentials (ctx, u2u, cc, &credreq, &ticket);
+#else
+krb5_tkt_creds_context credsctx = NULL;
+	k5err = krb5_tkt_creds_init (ctx, cc, &credreq, u2u, &credsctx);
+	if (k5err == 0) {
+		k5err = krb5_tkt_creds_get (ctx, credsctx);
+		if (k5err == 0) {
+			ticket = malloc (sizeof (*ticket));
+			if (ticket != NULL) {
+				k5err = krb5_tkt_creds_get_creds (ctx, credsctx, ticket);
+				if (k5err != 0) {
+					krb5_free_creds (ctx, ticket);
+					ticket = NULL;
+				}
+			}
+		}
+		krb5_tkt_creds_free (ctx, credsctx);
+	}
+#endif
 	//
 	// Cleanup and return; the return value depends on k5err
 cleanup:
 	if ((cc != NULL) && (cc_opt == NULL)) {
-		//TODO// This can go if we always get it passed from have_key_tgt()
+		//TODO// This can go if we always get it passed from have_key_tgt_cc()
 		krb5_cc_close (ctx, cc);
 		cc = NULL;
 	}
@@ -2291,6 +2435,7 @@ dercursor qder2b_pack_int32 (uint8_t *target_4b, int32_t value) {
 			// Skip sign-extending initial bytes
 			uint32_t neutro = (value >> (shift - 1) ) & 0x000001ff;
 			if ((neutro == 0x000001ff) || (neutro == 0x00000000)) {
+				shift -= 8;
 				continue;
 			}
 		}
@@ -2384,6 +2529,13 @@ static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	char derctime [100];
 	krb5_int32 now_us;
 	QDERBUF_INT32_T dercusec;
+#ifndef TOM_IS_WEG
+	enc_authenticator->data = strdup ("HushHushTralalaToereloere");
+	enc_authenticator->size = 25;
+	dec_authenticator->data = strdup ("PushPushTralalaToereloere");
+	dec_authenticator->size = 25;
+	return 0;
+#endif
 	cmd = (struct command *) gnutls_session_get_ptr (session);
 	memset (&auth, 0, sizeof (auth));
 	memset (&subkey, 0, sizeof (subkey));
@@ -3278,8 +3430,13 @@ static gtls_error fetch_remote_credentials (struct command *cmd) {
 	}
 	//
 	// Continue loading the certificate information: X.509, PGP, ...
-	cmd->remote_cert_type = gnutls_certificate_type_get (cmd->session);
+#ifdef HAVE_TLS_KDH
+	cmd->remote_cert_type = gnutls_certificate_type_get_peers (cmd->session);
 	certs = gnutls_certificate_get_peers (cmd->session, &num_certs);
+#else
+	cmd->remote_cert_type = gnutls_certificate_type_get (cmd->session);
+	certs = gnutls_certificate_get (cmd->session, &num_certs);
+#endif
 	if (certs == NULL) {
 		num_certs = 0;
 	}
