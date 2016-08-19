@@ -2505,8 +2505,10 @@ static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	memset (&subkey, 0, sizeof (subkey));
 	assert (cmd->krbid_cli != NULL);
 	assert (cmd->krb_key.contents != NULL);
-	static const uint8_t auth_packer [] = { DER_PACK_rfc4120_Authenticator };
-	static const uint8_t encdata_packer [] = { DER_PACK_rfc4120_EncryptedData };
+	static const uint8_t auth_packer [] = {
+			DER_PACK_rfc4120_Authenticator, DER_PACK_END };
+	static const uint8_t encdata_packer [] = {
+			DER_PACK_rfc4120_EncryptedData, DER_PACK_END };
 	//
 	// Setup secure hash in authenticator (never optional for TLS-KDH)
 	auth.cksum.cksumtype = qder2b_pack_int32 (dercksumtype, checksum_type);
@@ -2638,8 +2640,10 @@ static int srv_kdhsig_decode (gnutls_session_t session,
 	//
 	// Variables, sanity checks and initialisation
 	struct command *cmd;
-	static const uint8_t encdata_packer [] = { DER_PACK_rfc4120_EncryptedData };
-	static const uint8_t auth_packer [] = { DER_PACK_rfc4120_Authenticator };
+	static const uint8_t encdata_packer [] = {
+		DER_PACK_rfc4120_EncryptedData, DER_PACK_END };
+	static const uint8_t auth_packer [] = {
+		DER_PACK_rfc4120_Authenticator, DER_PACK_END };
 	encrypted_data_t encdata;
 	cmd = (struct command *) gnutls_session_get_ptr (session);
 	//
