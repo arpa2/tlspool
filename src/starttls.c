@@ -162,7 +162,7 @@ static int have_service_ticket (
 				krb5_context ctx,    // in, kerberos context
 				krb5_ccache cc_opt,  // in/opt, credcache
 				krb5_principal cli,  // in, client principal
-				krb5_creds *ticket); // out/opt, tkt granting tkt
+				krb5_creds **ticket);// out/opt, tkt granting tkt
 #endif
 
 
@@ -1356,10 +1356,9 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			// First, try to obtain a TGT and key, in various ways
 			krb5_keyblock key;
 			krb5_creds *tgt = NULL;
-			krb5_creds ticket;
+			krb5_creds *ticket = NULL;
 			krb5_ccache cc = NULL;
 			int status = 0;
-			memset (&ticket, 0, sizeof (ticket));
 			memset (&key,    0, sizeof (key   ));
 			status = have_key_tgt_cc (
 				cmd, krbctx_cli,
@@ -1371,7 +1370,6 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 				// We never use this key ourselves
 				krb5_free_keyblock_contents (krbctx_cli, &key);
 			}
-// #ifndef TOM_IS_WEG_EN_NU_GAAN_WE_ERVOOR
 			if (status < 2) {
 				// Stop processing when no tgt was found
 				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
@@ -1393,7 +1391,7 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 				break;
 			}
 			//
-			// Now find a service ticket to talk to
+			// Now find a service ticket to talk to, and its key
 			//TODO// Pass credcache instead?
 			status = have_service_ticket (
 				cmd, krbctx_cli,
@@ -1421,26 +1419,27 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 						krbctx_cli,
 						tgt->server,
 						&cmd->krbid_srv))) {
-				krb5_free_cred_contents (krbctx_cli, &ticket);
+				krb5_free_creds (krbctx_cli, ticket);
 				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
 				break;
 			}
 			krb5_free_creds (krbctx_cli, tgt);
 			tgt = NULL;
-			certdatum.data = ticket.ticket.data;
-			certdatum.size = ticket.ticket.length;
-// #else
-// certdatum.data = "NEPPERD";
-// certdatum.size = 7;
-// #endif
+			if (0 != krb5_copy_keyblock_contents (
+					krbctx_cli,
+					&ticket->keyblock,
+					&cmd->krb_key)) {
+				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
+				// continue, with E_g2e() skipping import
+			}
+			certdatum.data = ticket->ticket.data;
+			certdatum.size = ticket->ticket.length;
 			E_g2e ("MOVED: Failed to import Kerberos ticket",
 				gnutls_pcert_import_krb_raw (
 					*pcert,
 					&certdatum,
 					0));
-// #ifdef TOM_IS_WEG
-			krb5_free_cred_contents (krbctx_cli, &ticket);
-// #endif
+			krb5_free_creds (krbctx_cli, ticket);
 		} else {
 			//
 			// For KDH-Only, the server supplies one of:
@@ -1967,15 +1966,11 @@ static int have_key_tgt_cc (struct command *cmd,	     // in, session context
 		strncpy (realm, realms [0], sizeof (realm));
 		realm [sizeof (realm)-1] = '\0';
 	} else {
-#ifdef TOM_IS_WEG
 		int i = 0;
 		do {
 			realm [i] = toupper (liddom [i]);
 			i++;
 		} while (liddom [i-1] != '\0');
-#else
-		strcpy (realm, "ARPA2.NET");
-#endif
 	}
 	if (k5err == 0) {
 		krb5_free_host_realm (ctx, realms);
@@ -2160,9 +2155,7 @@ from_scratch:
 						NULL);  //TODO// opts needed?
 				//TODO// End PKCS #11 access
 			}
-#ifdef TOM_IS_WEG
 			krb5_free_principal (ctx, sought1);
-#endif
 			sought1 = sought;
 			sought = NULL;
 		} while (k5err != 0);
@@ -2172,18 +2165,16 @@ from_scratch:
 			*tgt = NULL;
 			goto cleanup;
 		}
-#ifdef TOM_IS_WEG_EN_IK_SNAP_WAAROM_KRB5_FCC_NOFILE
-#else
-if (sought1 != NULL) {
-k5err = krb5_cc_initialize (ctx, newcc, sought1);
-if (k5err == 0) {
-			k5err = krb5_cc_store_cred (ctx, newcc, *tgt);
-}
-}
-#endif
+		// Try to store the credential, if it was found
+		if (sought1 != NULL) {
+			k5err = krb5_cc_initialize (ctx, newcc, sought1);
+			if (k5err == 0) {
+				k5err = krb5_cc_store_cred (ctx, newcc, *tgt);
+			}
+		}
 		// Copy the keyblock; any failure will show up in key
 		krb5_copy_keyblock_contents (ctx,
-			&ktentry.key,
+			&(*tgt)->keyblock, //TODO:UNINIT// &ktentry.key,
 			key);
 		//
 		// We succeeded in setting up a new Ticket Granting Ticket!
@@ -2296,7 +2287,7 @@ static int have_service_ticket (
 				krb5_context ctx,     // in, kerberos context
 				krb5_ccache cc_opt,   // in/opt, credcache
 				krb5_principal cli,   // in, client principal
-				krb5_creds *ticket) { // out, tkt granting tkt
+				krb5_creds **ticket) {// out, tkt granting tkt
 	int k5err = 0;
 	krb5_ccache cc = cc_opt;
 	krb5_flags u2u = 0;
@@ -2307,6 +2298,7 @@ static int have_service_ticket (
 	// Sanity checks and initialisation
 	memset (&tkt_srv, 0, sizeof (tkt_srv));
 	memset (&credreq, 0, sizeof (credreq));
+	*ticket = NULL;
 	//
 	// Determine the optional cc parameter if it was not provided
 	//TODO// This can go if we always get it passed from have_key_tgt_cc()
@@ -2334,15 +2326,11 @@ static int have_service_ticket (
 		strncpy (realm, realms [0], sizeof (realm));
 		realm [sizeof (realm)-1] = '\0';
 	} else {
-#ifdef TOM_IS_WEG
 		int i = 0;
 		do {
 			realm [i] = toupper (riddom [i]);
 			i++;
 		} while (riddom [i-1] != '\0');
-#else
-		strcpy (realm, "ARPA2.NET");
-#endif
 	}
 	if (k5err == 0) {
 		krb5_free_host_realm (ctx, realms);
@@ -2385,26 +2373,7 @@ static int have_service_ticket (
 	}
 	//
 	// Fetch the ticket for the service
-#ifdef TOM_IS_WEG
-	k5err = krb5_get_credentials (ctx, u2u, cc, &credreq, &ticket);
-#else
-krb5_tkt_creds_context credsctx = NULL;
-	k5err = krb5_tkt_creds_init (ctx, cc, &credreq, u2u, &credsctx);
-	if (k5err == 0) {
-		k5err = krb5_tkt_creds_get (ctx, credsctx);
-		if (k5err == 0) {
-			ticket = malloc (sizeof (*ticket));
-			if (ticket != NULL) {
-				k5err = krb5_tkt_creds_get_creds (ctx, credsctx, ticket);
-				if (k5err != 0) {
-					krb5_free_creds (ctx, ticket);
-					ticket = NULL;
-				}
-			}
-		}
-		krb5_tkt_creds_free (ctx, credsctx);
-	}
-#endif
+	k5err = krb5_get_credentials (ctx, u2u, cc, &credreq, ticket);
 	//
 	// Cleanup and return; the return value depends on k5err
 cleanup:
@@ -2531,13 +2500,6 @@ static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	char derctime [100];
 	krb5_int32 now_us;
 	QDERBUF_INT32_T dercusec;
-#ifndef TOM_IS_WEG
-	enc_authenticator->data = strdup ("HushHushTralalaToereloere");
-	enc_authenticator->size = 25;
-	dec_authenticator->data = strdup ("PushPushTralalaToereloere");
-	dec_authenticator->size = 25;
-	return 0;
-#endif
 	cmd = (struct command *) gnutls_session_get_ptr (session);
 	memset (&auth, 0, sizeof (auth));
 	memset (&subkey, 0, sizeof (subkey));
