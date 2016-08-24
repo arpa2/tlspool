@@ -43,6 +43,8 @@ valexprun: valexprun.c ../src/validate.c
 
 testvalexp: valexprun
 	@ mkdir -p 'data-valexp-out'
+	@ [ ! -r ../.git ] && git init && echo 'Created local .git for testing' || true
+	@ [   -r    .git ] && git add data-valexp-in/* data-valexp-out/* || true
 	@ $(foreach test,$(VALEXP_TESTS),./valexprun $$(cat 'data-valexp-in/$(test)') > 'data-valexp-out/$(test)' && ) echo 'All validation expression test output was generated'
 	@ echo -n '[ #FINAL == #SIGNAL ] test: '
 	[ $(shell grep ^FINAL data-valexp-out/* | wc -l) -eq $(shell grep ^SIGNAL data-valexp-out/* | wc -l) ]
@@ -66,6 +68,9 @@ pulleybacksimu: pulleybacksimu.c
 clean:
 	rm -f $(OBJS) $(TARGETS)
 	rm -f valexp/*.gen
+	rm -rf .git
+
+anew: clean all
 
 install:
 
