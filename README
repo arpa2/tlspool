@@ -1,7 +1,7 @@
 TLSPOOL README
 ==============
 
-The tlspool package concentrates TLS-use by client and server applications.
+The tlspool package concentrates TLS usage by client and server applications.
 It gets passed a file descriptor of a socket, initiates TLS over it, and
 then makes a callback with authenticated local/remote identities in a
 request for an additional file descriptor for the plaintext side.  This
@@ -46,7 +46,7 @@ The core logic used here is (client shown, server is similar):
 			close (plainfd);
 			plainfd = -1;
 		}
-		...error reoprting...
+		...error reporting...
 	} else {
 		...continue to use plainfd...
 	}
@@ -65,8 +65,8 @@ in the tlsparams structure after this call.
 The importance of PKCS #11
 --------------------------
 
-The key material used by this daemon will be accessed over PKCS #11.  This
-requires multi-layered attacks to key material: the material is protected
+The key material used by this daemon will be accessed over PKCS #11.  Compromise
+will require multi-layered attacks to key material: the material is protected
 by a secure key store of choice, in hardware or software, and even the PIN
 for using the private keys without seeing them is stored in a separate
 program, namely the TLS Pool.  Specifically, the PIN and key material are
@@ -94,7 +94,7 @@ for usable keys to authenticate its identities to the Internet, both over
 X.509 and over OpenPGP.
 
 One final, and hardly recognised use of having a central TLS Pool and
-potentially centralised PKCS #11 repositories is the ability to sniff
+potentially centralised PKCS #11 repositories is the ability to monitor
 the network traffic for intrusion attempts.  To be able to do this in
 the presence of encrypted connections, the ability to decrypt the
 traffic must be offered to sniffers like Snort.  The decryption usually
