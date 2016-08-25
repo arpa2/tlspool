@@ -2231,7 +2231,7 @@ cleanup:
 	if (key->contents == NULL) {
 		if (k5err != 0) {
 			const char *errmsg = krb5_get_error_message (ctx, k5err);
-			tlog (TLOG_DAEMON, LOG_ERR, "Kerberos error: %s", errmsg);
+			tlog (TLOG_DAEMON, LOG_ERR, "Kerberos error in have_key_tgt_cc: %s", errmsg);
 			krb5_free_error_message (ctx, errmsg);
 		}
 		if (*tgt != NULL) {
@@ -2475,6 +2475,25 @@ done:
 }
 
 
+#ifdef HAVE_TLS_KDH
+/* TODO: Debugging function for printing (descr,ptr,len) ranges */
+static inline void prange (char *descr, uint8_t *ptr, int len) {
+	fprintf (stderr, "%s #%04d: %02x %02x %02x %02x %02x %02x %02x %02x...%02x %02x %02x %02x\n",
+			descr, len,
+			ptr [0], ptr [1], ptr [2], ptr [3],
+			ptr [4], ptr [5], ptr [6], ptr [7],
+			ptr [len-4], ptr [len-3], ptr [len-2], ptr [len-1]);
+}
+static inline void prangefull (char *descr, uint8_t *ptr, int len) {
+	fprintf (stderr, "%s #%04d:", descr, len);
+	while (len-- > 0) {
+		fprintf (stderr, " %02x", *ptr++);
+	}
+	fprintf (stderr, "\n");
+}
+#endif
+
+
 /* The callback function that retrieves a TLS-KDH "signature", which is kept
  * outside of GnuTLS.  The callback computes an authenticator encrypted to
  * the session's Kerberos key.
@@ -2512,6 +2531,8 @@ static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	//
 	// Setup secure hash in authenticator (never optional for TLS-KDH)
 	auth.cksum.cksumtype = qder2b_pack_int32 (dercksumtype, checksum_type);
+	auth.cksum.checksum.derptr = hash->data;
+	auth.cksum.checksum.derlen = hash->size;
 	//
 	// Optionally include a subkey (namely, for KDH-Only)
 	peercert = gnutls_certificate_type_get_peers (session);
@@ -2527,6 +2548,7 @@ static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 		auth.subkey.keytype = qder2b_pack_int32 (dersubkey, subkey.enctype);
 		auth.subkey.keyvalue.derptr = subkey.contents;
 		auth.subkey.keyvalue.derlen = subkey.length;
+prange ("cli_K", subkey.contents, subkey.length);
 	}
 	//
 	// Setup the client realm and principal name
@@ -2559,7 +2581,8 @@ static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	}
 	der_pack (			auth_packer,
 					(const dercursor *) &auth,
-					decptr);
+					decptr + declen);
+prangefull ("cli_A", decptr, declen);
 	size_t rawlen;
 	if (0 != krb5_c_encrypt_length (krbctx_cli,
 					cmd->krb_key.enctype,
@@ -2614,7 +2637,7 @@ static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	}
 	der_pack (			encdata_packer,
 					(const dercursor *) &encdata,
-					encptr);
+					encptr + enclen);
 	free (rawptr);
 	//
 	// Return our final verdict on the generation of the Authenticator
@@ -2622,6 +2645,8 @@ static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	dec_authenticator->size = declen;
 	enc_authenticator->data = encptr;
 	enc_authenticator->size = enclen;
+prange ("cli_D", decptr, declen);
+prange ("cli_E", encptr, enclen);
 	return 0;
 }
 #endif
@@ -2639,6 +2664,7 @@ static int srv_kdhsig_decode (gnutls_session_t session,
 			int32_t *checksum_type) {
 	//
 	// Variables, sanity checks and initialisation
+	int k5err = 0;
 	struct command *cmd;
 	static const uint8_t encdata_packer [] = {
 		DER_PACK_rfc4120_EncryptedData, DER_PACK_END };
@@ -2646,6 +2672,7 @@ static int srv_kdhsig_decode (gnutls_session_t session,
 		DER_PACK_rfc4120_Authenticator, DER_PACK_END };
 	encrypted_data_t encdata;
 	cmd = (struct command *) gnutls_session_get_ptr (session);
+prange ("srv_E", enc_authenticator->data, enc_authenticator->size);
 	//
 	// Retrieve the session key and store it in cmd->krb_key.
 	//
@@ -2667,51 +2694,57 @@ static int srv_kdhsig_decode (gnutls_session_t session,
 	krb5_ticket *tkt;
 	krbcert.data   = certs [0].data;
 	krbcert.length = certs [0].size;
+prange ("srv_C", certs [0].data, certs [0].size);
 	if (0 != krb5_decode_ticket (&krbcert, &tkt)) {
 		return GNUTLS_E_NO_CERTIFICATE_FOUND;
 	}
-	bool notfound = 0;
 	if (cmd->krb_key.contents != NULL) {
 		// user-to-user mode
-		if (0 != krb5_decrypt_tkt_part (
-					krbctx_srv, &cmd->krb_key, tkt)) {
-			notfound = 1;
-		}
-		krb5_free_keyblock_contents (krbctx_srv, &cmd->krb_key);
+		k5err = krb5_decrypt_tkt_part (
+					krbctx_srv,
+					&cmd->krb_key,
+					tkt);
+		krb5_free_keyblock_contents (
+					krbctx_srv,
+					&cmd->krb_key);
 	} else {
 		// client-to-server mode
-		if (0 != krb5_server_decrypt_ticket_keytab (
-					krbctx_srv, krb_kt_srv, tkt)) {
-			notfound = 1;
-		}
+		k5err = krb5_server_decrypt_ticket_keytab (
+					krbctx_srv,
+					krb_kt_srv,
+					tkt);
 	}
-	if (0 != krb5_copy_keyblock_contents (
+	if (k5err == 0) {
+		k5err = krb5_copy_keyblock_contents (
 					krbctx_srv,
 					tkt->enc_part2->session,
-					&cmd->krb_key)) {
-		notfound = 1;
+					&cmd->krb_key);
 	}
-	if (0 != krb5_copy_principal (	krbctx_srv,
+	if (k5err == 0) {
+		k5err = krb5_copy_principal (
+					krbctx_srv,
 					tkt->enc_part2->client,
-					&cmd->krbid_cli)) {
-		notfound = 1;
+					&cmd->krbid_cli);
 	}
-	if (cmd->krbid_srv->data != NULL) {
-		if (!krb5_principal_compare (	krbctx_srv,
-						tkt->server,
-						cmd->krbid_srv)) {
-			// Server name changed since u2u setup -- not permitted
-			notfound = 1;
-		}
-	} else {
-		if (0 != krb5_copy_principal (	krbctx_srv,
-						tkt->server,
-						&cmd->krbid_srv)) {
-			notfound = 1;
+	if (k5err == 0) {
+		if (cmd->krbid_srv != NULL) {
+			k5err = krb5_principal_compare (
+							krbctx_srv,
+							tkt->server,
+							cmd->krbid_srv);
+				// Server name changed since u2u setup => k5err
+		} else {
+			k5err = krb5_copy_principal (
+							krbctx_srv,
+							tkt->server,
+							&cmd->krbid_srv);
 		}
 	}
 	krb5_free_ticket (krbctx_srv, tkt);
-	if (notfound) {
+	if (k5err != 0) {
+		const char *errmsg = krb5_get_error_message (krbctx_srv, k5err);
+		tlog (TLOG_DAEMON, LOG_ERR, "Kerberos error in srv_kdhsig_decode: %s", errmsg);
+		krb5_free_error_message (krbctx_srv, errmsg);
 		return GNUTLS_E_NO_CERTIFICATE_FOUND;
 	}
 	//
@@ -2719,14 +2752,16 @@ static int srv_kdhsig_decode (gnutls_session_t session,
 	dercursor enctransport;
 	enctransport.derptr = enc_authenticator->data;
 	enctransport.derlen = enc_authenticator->size;
+	memset (&encdata, 0, sizeof (encdata));
 	if (0 != der_unpack (		&enctransport,
 					encdata_packer,
 					(dercursor *) &encdata,
 					1)) {
+		tlog (TLOG_DAEMON, LOG_ERR, "Failed to der_unpack(EncryptedData) in server: %s", strerror (errno));
 		return GNUTLS_E_DECRYPTION_FAILED;
 	}
 	if (encdata.kvno.derptr != NULL) {
-		return GNUTLS_E_DECRYPTION_FAILED;
+		//TODO//NOTYET//ANDWHY// return GNUTLS_E_DECRYPTION_FAILED;
 	}
 	int32_t etype = qder2b_unpack_int32 (encdata.etype);
 	//
@@ -2738,6 +2773,7 @@ static int srv_kdhsig_decode (gnutls_session_t session,
 	rawdata.enctype = etype;
 	rawdata.ciphertext.data   = encdata.cipher.derptr;
 	rawdata.ciphertext.length = encdata.cipher.derlen;
+prange ("srv_R", encdata.cipher.derptr, encdata.cipher.derlen);
 	decdata.data   = dec_authenticator->data;
 	decdata.length = dec_authenticator->size;
 	if (0 != krb5_c_decrypt (	krbctx_srv,
@@ -2749,16 +2785,20 @@ static int srv_kdhsig_decode (gnutls_session_t session,
 		return GNUTLS_E_DECRYPTION_FAILED;
 	}
 	dec_authenticator->size = decdata.length;
+prange ("srv_D", decdata.data, decdata.length);
 	//
 	// Unpack the decrypted Authenticator
 	dercursor decsyntax;
 	decsyntax.derptr = decdata.data;
 	decsyntax.derlen = decdata.length;
+prangefull ("srv_A", decdata.data, decdata.length);
 	authenticator_t auth;
+	memset (&auth, 0, sizeof (auth));
 	if (0 != der_unpack (		&decsyntax,
 					auth_packer,
 					(dercursor *) &auth,
 					1)) {
+		tlog (TLOG_DAEMON, LOG_ERR, "Failed to der_unpack(Authenticator) in server: %s", strerror (errno));
 		return GNUTLS_E_DECRYPTION_FAILED;
 	}
 	//
