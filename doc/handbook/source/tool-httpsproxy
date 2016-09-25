@@ -1,0 +1,11 @@
+# HTTPS Proxy Tool
+
+>   *An important use of TLS is for protection of HTTP connections, also known
+>   as HTTPS.  The TLS Pool comes with a simple proxy that demonstrates this
+>   use.*
+
+**TODO:** The current implementation is made with Python.  It works, but gets
+stuck at the closing of connections.  We are still unsure if this is due to
+the way we wrapped the TLS Pool into Python, or that something is logically
+wrong with our code.  Sorry.
+
