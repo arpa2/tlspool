@@ -10,7 +10,7 @@ CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS) $(UNBO
 LDFLAGS += -std=gnu11
 
 LIBS = $(GNUTLS_LIBS) $(P11KIT_LIBS) $(BDB_LIBS) $(TASN1_LIBS) $(UNBOUND_LIBS) $(QUICKDER_LIBS)
-LIBS += -lldap -lldns -lpthread
+LIBS += -lldns -lpthread
 
 ifdef WITH_SYSTEMD
 CFLAGS += -DHAVE_SYSTEMD
@@ -49,8 +49,10 @@ PKG_CONFIG ?= pkg-config
 ifdef WINVER
 CFLAGS += -D_WIN32_WINNT=0x0600 -DATTRIBUTE_UNUSED="" -I ../include/windows
 OBJS += windows/syslog.o windows/windows.o windows/getopt.o
-LIBS += -lkernel32 -ladvapi32 -lmsvcrt -lwsock32 -lws2_32
+LIBS += -lkernel32 -ladvapi32 -lmsvcrt -lwsock32 -lws2_32 -lwldap32 -lunbound
 EXE = .exe
+else
+LIBS += -lldap
 endif
 
 PKG_CONFIG ?= pkg-config

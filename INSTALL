@@ -186,6 +186,27 @@ good exchange will cry for attention in WireShark, assuming packet formatting
 errors.
 
 
+Trusting well-known CAs
+-----------------------
+
+By default, the testdata is not setup to trust any well-known CA certificate.
+We did however sample a Debian distribution of CA certificates, and installed
+it under testdata -- where it will NOT BE KEPT UP-TO-DATE.
+
+If you choose to rely on these CA's and need it for testing purposes, you can
+import them with
+
+	cd testdata
+	make anchors
+
+Once more, TRUST THIS ONLY FOR TESTING PURPOSES -- use a proper distrubution
+mechanism such as your OS or perhaps ARPA2 SteamWorks for anything that should
+withstand the pressure of an Internet whose intent is in part criminal.
+
+This is the reason why it must be installed as an explicit choice.  We made it
+really easy to install, but also won't keep the set secure.
+
+
 Running
 -------
 
@@ -260,4 +281,30 @@ modify the TLS pool behaviour in predetermined manners.
 
 The TLS pool also handles teardown in all its forms with grace; that
 is, it will detect it immediately and notify the other side.
+
+
+Language Wrappers
+-----------------
+
+The TLS Pool protocol is published and can be implemented in any language
+that prefers to work at that level.  It is important to understand that the
+format may change with future versions however, and that would cause some
+dismay related to versioning.  We promise to confine API changes to major
+versions only to make this somewhat bearable.
+
+The golden way is to instead rely on the C library, built in lib/* and
+installed for linking with a "-ltlspool" argument.  We also provide a
+.pc file for use with pkg-config.
+
+Based on this C library, we build wrappers for other languages, usually
+going through SWIG.  If you desire a library, please build it separately
+with:
+
+    make -C lib/python all install
+    make -C lib/go all install
+
+and so on.  Some of the libraries may not have been completed yet, in that
+case you will run into difficulties.  These libraries are neither built
+nor installed as part of the normal (main directory) builds!  Only the
+C library is made and/or installed by default.
 

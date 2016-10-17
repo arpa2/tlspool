@@ -4,6 +4,10 @@
 #ifndef TLSPOOL_COMMANDS_H
 #define TLSPOOL_COMMANDS_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
 #include <stdint.h>
 
@@ -101,57 +105,72 @@ enum anciltype {
  */
 
 #pragma pack(push,2)
+
+struct pioc_error {
+	int tlserrno;			// See <errno.h>
+	char message [128];
+};
+
+struct pioc_ping {
+	char YYYYMMDD_producer [8+128];	// when & who?
+	uint32_t facilities;		// PIOF_FACILITY_xxx
+};
+
+struct pioc_starttls {
+	uint32_t flags;			// PIOF_STARTTLS_xxx below
+	uint32_t local;			// Locally defined bits
+	uint8_t ipproto;		// IPPROTO_TCP, _UDP, _SCTP
+	uint16_t streamid;		// Needed for SCTP
+	char localid [128];		// Local ID or empty string
+	char remoteid [128];		// Remote ID or empty string
+	uint8_t ctlkey [TLSPOOL_CTLKEYLEN];	// Key for detach
+	uint8_t service [TLSPOOL_SERVICELEN];	// Names from IANA
+	uint32_t timeout;		// in ms, 0=default, ~0=infinite
+};
+
+struct pioc_pinentry {
+	uint32_t flags;			// PIOF_PINENTRY_xxx below
+	uint32_t attempt;		// Attempt counter -- display!
+	uint32_t timeout_us;		// Timeout in microseconds
+	char pin [128];			// Empty string means no PIN
+	char prompt [128];		// Prompt from TLS Pool
+	char token_manuf[32 + 1 + 3];	// PKCS #11 token manufacturer
+	char token_model[16 + 1 + 3];	// PKCS #11 token model
+	char token_serial[16 + 1 + 3];	// PKCS #11 token serial number
+	char token_label[32 + 1 + 3];	// PKCS #11 token label
+};
+
+struct pioc_lidentry {
+	uint32_t flags;			// PIOF_LIDENTRY_xxx below
+	uint16_t maxlevels;		// Max # iterations for concrete ID
+	uint32_t timeout;		// Regtimeout[s] or resptimeout
+	char localid [128];		// Local ID or empty string
+	char remoteid [128];		// Remote ID or empty string
+};
+
+struct pioc_control {
+	uint32_t flags;			// PIOF_CONTROL_xxx, none yet
+	uint8_t ctlkey [TLSPOOL_CTLKEYLEN]; // Control key
+	char name [128];		// A name field
+};
+
+struct pioc_prng {
+	int16_t in1_len, in2_len, prng_len;
+	uint8_t buffer [TLSPOOL_PRNGBUFLEN]; // ctlkey, in1, in2
+};
+
 struct tlspool_command {
 	uint16_t pio_reqid;	// Request->Response request identifier
 	uint16_t pio_cbid;	// Response->Request callback identifier
 	uint32_t pio_cmd;	// Command tag with semantic version
 	union pio_data {
-		struct pioc_error {
-			int tlserrno;		// See <errno.h>
-			char message [128];
-		} pioc_error;
-		struct pioc_ping {
-			char YYYYMMDD_producer [8+128];	// when & who?
-			uint32_t facilities;		// PIOF_FACILITY_xxx
-		} pioc_ping;
-		struct pioc_starttls {
-			uint32_t flags;		// PIOF_STARTTLS_xxx below
-			uint32_t local;		// Locally defined bits
-			uint8_t ipproto;	// IPPROTO_TCP, _UDP, _SCTP
-			uint16_t streamid;	// Needed for SCTP
-			char localid [128];	// Local ID or empty string
-			char remoteid [128];	// Remote ID or empty string
-			uint8_t ctlkey [TLSPOOL_CTLKEYLEN];	// Key for detach
-			uint8_t service [TLSPOOL_SERVICELEN];	// Names from IANA
-			uint32_t timeout;	// in ms, 0=default, ~0=infinite
-		} pioc_starttls;
-		struct pioc_pinentry {
-			uint32_t flags;		// PIOF_PINENTRY_xxx below
-			uint32_t attempt;	// Attempt counter -- display!
-			uint32_t timeout_us;	// Timeout in microseconds
-			char pin [128];		// Empty string means no PIN
-			char prompt [128];	// Prompt from TLS Pool
-			char token_manuf[32 + 1 + 3];	// PKCS #11 token manufacturer
-			char token_model[16 + 1 + 3];	// PKCS #11 token model
-			char token_serial[16 + 1 + 3];	// PKCS #11 token serial number
-			char token_label[32 + 1 + 3];	// PKCS #11 token label
-		} pioc_pinentry;
-		struct pioc_lidentry {
-			uint32_t flags;		// PIOF_LIDENTRY_xxx below
-			uint16_t maxlevels;	// Max # iterations for concrete ID
-			uint32_t timeout;	// Regtimeout[s] or resptimeout
-			char localid [128];	// Local ID or empty string
-			char remoteid [128];	// Remote ID or empty string
-		} pioc_lidentry;
-		struct pioc_control {
-			uint32_t flags;		// PIOF_CONTROL_xxx, none yet
-			uint8_t ctlkey [TLSPOOL_CTLKEYLEN]; // Control key
-			char name [128];	// A name field
-		} pioc_control;
-		struct pioc_prng {
-			int16_t in1_len, in2_len, prng_len;
-			uint8_t buffer [TLSPOOL_PRNGBUFLEN]; // ctlkey, in1, in2
-		} pioc_prng;
+		struct pioc_error pioc_error;
+		struct pioc_ping pioc_ping;
+		struct pioc_starttls pioc_starttls;
+                struct pioc_pinentry pioc_pinentry;
+                struct pioc_lidentry pioc_lidentry;
+		struct pioc_control pioc_control;
+		struct pioc_prng pioc_prng;
 	} pio_data;
 #ifdef WINDOWS_PORT
 	union { HANDLE hPipe; uint64_t _pad1; };
@@ -743,6 +762,9 @@ typedef struct pioc_lidentry lidentry_t;
  */
 #define PIOF_LIDENTRY_ONTHEFLY			0x00200000
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif //TLSPOOL_COMMANDS_H
 

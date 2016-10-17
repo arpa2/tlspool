@@ -54,9 +54,9 @@
 
 /* A donai is a structure holding either user@domain.name or domain.name.
  * A selector is a simple pattern that can match with a donain, by stripping
- * local components.  For instance user@domain.name or @domain.name or @.name
- * or @. to match with user@domain.name; and, for instance domain.name or
- * .name or . to match with domain.name.
+ * local components.  For instance user@domain.name or @domain.name or
+ * or user@.name or @.name or user@. or @. to match with user@domain.name;
+ * and, for instance domain.name or .name or . to match with domain.name.
  */
 
 struct userdomain {

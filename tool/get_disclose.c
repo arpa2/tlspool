@@ -45,9 +45,9 @@ const char const *usage =
 
 
 /* Setup and tear down management */
-int setup_management (DB_ENV **dbenv, DB_TXN **txn, DB **dbh_disc) {
-	char *dbenv_dir = cfg_dbenv_dir ();
-	char *dbdisc_fnm = cfg_db_disclose ();
+int setup_management (char *cfgfile, DB_ENV **dbenv, DB_TXN **txn, DB **dbh_disc) {
+	char *dbenv_dir = tlspool_configvar (cfgfile, "dbenv_dir");
+	char *dbdisc_fnm = tlspool_configvar (cfgfile, "db_disclose");
 	if (dbenv_dir == NULL) {
 		fprintf (stderr, "Please configure database environment directory\n");
 		return 0;
@@ -108,6 +108,7 @@ int main (int argc, char *argv []) {
 	DBT k_selector;
 	int nomore;
 	int fd;
+	char *cfgfile;
 	//
 	// Sanity check
 	if (argc < 3) {
@@ -116,9 +117,10 @@ int main (int argc, char *argv []) {
 	}
 	//
 	// Initialise the modules taken from the src directory
-	parse_cfgfile (argv [1], 0);
+	;
 	//
 	// Prepare variables from arguments
+	cfgfile = argv [1];
 	selector = argv [2];
 	printable = strdup (selector);	// Quick and easy malloc()
 	if (printable == NULL) {
@@ -127,7 +129,7 @@ int main (int argc, char *argv []) {
 	}
 	//
 	// Now prepare the database
-	if (!setup_management (&dbenv, &txn, &dbh_disc)) {
+	if (!setup_management (cfgfile, &dbenv, &txn, &dbh_disc)) {
 		exit (1);
 	}
 	if (dbh_disc->cursor (dbh_disc, txn, &crs, 0) != 0) {

@@ -3,11 +3,17 @@
 #ifndef TLSPOOL_STARTTLS_H
 #define TLSPOOL_STARTTLS_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
 
 #include <tlspool/commands.h>
 
 #ifdef WINDOWS_PORT
 #include <windows.h>
+#else
+#include <unistd.h>
 #endif /* WINDOWS_PORT */
 
 
@@ -26,9 +32,11 @@
 
 
 #ifdef WINDOWS_PORT
+#define TLSPOOL_DEFAULT_CONFIG_PATH "/etc/tlspool.conf.windows"
 #define TLSPOOL_DEFAULT_SOCKET_PATH "\\\\.\\pipe\\tlspool"
 #define TLSPOOL_DEFAULT_PIDFILE_PATH "/var/run/tlspool.pid"
 #else
+#define TLSPOOL_DEFAULT_CONFIG_PATH "/etc/tlspool.conf"
 #define TLSPOOL_DEFAULT_SOCKET_PATH "/var/run/tlspool.sock"
 #define TLSPOOL_DEFAULT_PIDFILE_PATH "/var/run/tlspool.pid"
 #endif /* WINDOWS_PORT */
@@ -41,8 +49,7 @@ int tlspool_pid (char *opt_pidfile);
 /* OS independent pool handle
  */
 #ifdef WINDOWS_PORT
-typedef struct
-{
+typedef struct {
 	OVERLAPPED oOverlap;
 	HANDLE hPipeInst;
 	struct tlspool_command chRequest;
@@ -168,6 +175,7 @@ static inline int tlspool_control_detach (uint8_t *ctlkey) {
 	return _tlspool_control_command (PIOC_CONTROL_DETACH_V2, ctlkey);
 }
 
+
 /* Explicitly reattach a control connection to a TLS session.  This may be
  * called on a TLS session that is detached, by any process or program that
  * presents the proper control key.
@@ -218,7 +226,6 @@ static inline int tlspool_control_reattach (uint8_t *ctlkey) {
 int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout, char * (*cb) (struct pioc_lidentry *entry, void *data), void *data);
 
 
-
 /* The library function to service PIN entry callbacks.  It registers
  * with the TLS Pool and will service callback requests until it is no
  * longer welcomed.  Of course, if another process already has a claim on
@@ -240,7 +247,8 @@ int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout,
  *
  * This function returns -1 on error, or 0 on success.
  */
-int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec, void (*cb) (struct pioc_pinentry *entry, void *data), void *data);
+int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec, void (*cb) (pinentry_t *entry, void *data), void *data);
+
 
 /* Generate a pseudo-random sequence based on session cryptographic keys.
  *
@@ -289,5 +297,26 @@ int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec
 int tlspool_prng (char *label, char *opt_ctxvalue,
 		uint16_t prng_len, uint8_t *prng_buf,
 		uint8_t *ctlkey);
+
+
+/* Fetch a configuration variable value from the configuration file.  This is not
+ * an efficient procedure, at best suited for startup of tools or daemons; it
+ * will iterate over the config file until it reads the desired value.  The value
+ * returned is allocated and should be freed by the caller using free().
+ *
+ * When cfgfile is NULL, the environment variable TLSPOOL_CONFIGFILE is
+ * tried first, followed by the default setting from the macro 
+ * TLSPOOL_DEFAULT_SOCKET_PATH as defined in <tlspool/starttls.h>.
+ *
+ * The value returned is NULL when the variable is not found, including when this
+ * is due to errors such as not being able to open the file.
+ */
+char *tlspool_configvar (char *cfgfile, char *varname);
+
+
+#ifdef __cplusplus
+}
+#endif
+
 
 #endif // TLSPOOL_STARTTLS_H

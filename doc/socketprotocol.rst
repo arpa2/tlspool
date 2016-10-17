@@ -2,6 +2,13 @@
 TLS POOL SOCKET PROTOCOL
 ------------------------
 
+    **NOTE:** The socket protocol is
+    `under evaluation`_
+    and may be substituted by a DER-based alternative.  Please use the wrapper
+    library `libtslpool` until the final decision has been made.
+
+.. _`under evaluation` : https://github.com/arpa2/tlspool/issues/42
+
 The TLS Pool concentrates interactions about TLS, and does this by offering
 service on a UNIX domain socket.  An application using the TLS Pool would
 open a connection to this socket by specifying its file name.  The same

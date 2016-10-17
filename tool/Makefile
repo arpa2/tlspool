@@ -4,7 +4,8 @@ TARGETS = testcli testsrv tlstunnel \
 	get_localid set_localid \
 	get_disclose set_disclose \
 	get_trust set_trust \
-	pgp11_genkey
+	pgp11_genkey \
+	configvar
 
 OBJS = *.o
 
@@ -19,14 +20,14 @@ PREFIX = /usr/local
 tlspool_LIB = ../lib/libtlspool.so
 tlspool_LDFLAGS = -L ../lib -ltlspool
 
-config_CFLAGS = -DCONFIG_PARSE_ONLY
-config_SRC = ../src/config.c
-
 donai_CFLAGS = -DDONAI_ONLY_TEXTPROC
 donai_SRC = ../src/donai.c
 
 pgp11genkey_CFLAGS = $(P11KIT_CFLAGS)
 pgp11genkey_LIBS = $(P11KIT_LIBS) -lcrypto
+
+configvar_CFLAGS = 
+configvar_LIBS = $(tlspool_LIB)
 
 P11KIT_CFLAGS = $(shell pkg-config --cflags p11-kit-1)
 P11KIT_LIBS   = $(shell pkg-config --libs   p11-kit-1)
@@ -60,26 +61,29 @@ lidsel: lidsel.c $(tlspool_LIB)
 pinentry: pinentry.c $(tlspool_LIB)
 	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS)
 
-get_localid: get_localid.c $(config_SRC)
-	gcc -std=gnu11 $(CFLAGS) $(config_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(config_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+get_localid: get_localid.c
+	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
 
-set_localid: set_localid.c $(config_SRC)
-	gcc -std=gnu11 $(CFLAGS) $(config_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(config_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+set_localid: set_localid.c
+	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
 
-get_disclose: get_disclose.c $(config_SRC) $(donai_SRC)
-	gcc -std=gnu11 $(CFLAGS) $(config_CFLAGS) $(donai_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(config_SRC) $(donai_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+get_disclose: get_disclose.c $(donai_SRC)
+	gcc -std=gnu11 $(CFLAGS) $(donai_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(donai_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
 
-set_disclose: set_disclose.c $(config_SRC)
-	gcc -std=gnu11 $(CFLAGS) $(config_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(config_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+set_disclose: set_disclose.c
+	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
 
-get_trust: get_trust.c $(config_SRC) $(donai_SRC)
-	gcc -std=gnu11 $(CFLAGS) $(config_CFLAGS) $(donai_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(config_SRC) $(donai_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+get_trust: get_trust.c $(donai_SRC)
+	gcc -std=gnu11 $(CFLAGS) $(donai_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(donai_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
 
-set_trust: set_trust.c $(config_SRC)
-	gcc -std=gnu11 $(CFLAGS) $(config_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(config_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+set_trust: set_trust.c
+	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
 
 pgp11_genkey: pgp11_genkey.c
 	gcc -std=gnu11 $(CFLAGS) $(pgp11genkey_CFLAGS) -o "$@" "$<" $(pgp11genkey_LIBS)
+
+configvar: configvar.c $(tlspool_LIB)
+	gcc -std=gnu11 $(CFLAGS) $(configvar_CFLAGS) -o "$@" "$<" $(configvar_LIBS)
 
 $(tlspool_LIB):
 	$(MAKE) -C ../lib `basename $(tlspool_LIB)`

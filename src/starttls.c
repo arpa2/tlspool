@@ -17,12 +17,6 @@
 #include <syslog.h>
 #include <errno.h>
 
-#include <sys/types.h>
-#include <sys/socket.h>
-
-#include <arpa/inet.h>
-#include <netinet/in.h>
-
 #include <gnutls/gnutls.h>
 #include <gnutls/pkcs11.h>
 #include <gnutls/abstract.h>
@@ -52,6 +46,7 @@ typedef DER_OVLY_rfc4120_EncryptedData encrypted_data_t;
 
 #ifdef WINDOWS_PORT
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #else
 #include <poll.h>
 #include <sys/types.h>
@@ -62,6 +57,7 @@ typedef DER_OVLY_rfc4120_EncryptedData encrypted_data_t;
 #ifndef __MINGW64__
 #include <arpa/inet.h>
 #endif
+#include <netinet/in.h>
 #endif
 
 #ifdef WINDOWS_PORT
@@ -3068,9 +3064,11 @@ static void valexp_Dd_start (void *vcmd, struct valexp *ve, char pred) {
 	case IPPROTO_UDP:
 		proto = "udp";
 		break;
+#ifndef WINDOWS_PORT
 	case IPPROTO_SCTP:
 		proto = "sctp";
 		break;
+#endif		
 	default:
 		goto setflagval;
 	}
@@ -4692,8 +4690,9 @@ if (!renegotiating) {	//TODO:TEST//
 				len++;
 			}
 			// If no usable remoteid was setup, ignore it
-			if ((len + ofs > 0) && (len < 128)) {
+			if ((len > ofs) && (len < 128)) {
 				cmd->cmd.pio_data.pioc_starttls.remoteid [sizeof (cmd->cmd.pio_data.pioc_starttls.remoteid)-1] = '\0';
+				tlog (TLOG_TLS, LOG_DEBUG, "Sending ServerNameIndication \"%.*s\"", len - ofs, str + ofs);
 				E_g2e ("Client failed to setup SNI",
 					gnutls_server_name_set (
 						session,
@@ -4874,8 +4873,17 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 		(gnutls_error_is_fatal (gtls_errno) == 0));
 	//
 	// Handshake done -- initialise remote_xxx, vfystatus, got_remoteid
-	E_g2e ("Failed to retrieve peer credentials",
-			fetch_remote_credentials (cmd));
+	if ((gtls_errno == 0) && !(cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_IGNORE_REMOTEID)) {
+		// We want to try to authenticate the peer
+		E_g2e ("Failed to retrieve peer credentials",
+				fetch_remote_credentials (cmd));
+		if (gtls_errno == GNUTLS_E_AUTH_ERROR) {
+			if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_REQUEST_REMOTEID) {
+				// We do not _require_ authentication of the peer
+				gtls_errno = 0;
+			}
+		}
+	}
 	if (gtls_errno == 0) {
 		const gnutls_datum_t *certs;
 		unsigned int num_certs;

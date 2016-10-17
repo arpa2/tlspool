@@ -33,9 +33,15 @@
 # Setting for the configuration file tlspool.conf
 # Setting of the number of RSA private key bits (radically ignoring 2^n trends)
 #
-CONFFILE=$(shell pwd)/../etc/tlspool.conf
-RSABITS=2000
-PGPRSABITS=2048
+CONFFILE ?= $(shell pwd)/../etc/tlspool.conf
+RSABITS ?= 2000
+PGPRSABITS ?= 2048
+
+#
+# The directory with tools, defaulting to ../tool in the git base
+# Note that testdata is meant for developers, so assuming git is usually the best
+#
+TOOLDIR ?= $(shell pwd)/../tool
 
 #
 # Load a few things from tlspool.conf; these are assumed present while testing
@@ -53,11 +59,11 @@ BDBENV=$(shell sed < $(CONFFILE) -n 's/^dbenv_dir //p')
 ifeq ($(P11PIN),)
 P11TOOL=p11tool --provider $(P11LIB) --login
 CERTTOOL=certtool --provider $(P11LIB)
-PGPTOOL=../tool/pgp11_genkey
+PGPTOOL=$(TOOLDIR)/pgp11_genkey
 else
 P11TOOL=GNUTLS_PIN=$(P11PIN) p11tool --provider $(P11LIB) --login
 CERTTOOL=GNUTLS_PIN=$(P11PIN) certtool --provider $(P11LIB)
-PGPTOOL=GNUTLS_PIN=$(P11PIN) ../tool/pgp11_genkey
+PGPTOOL=GNUTLS_PIN=$(P11PIN) $(TOOLDIR)/pgp11_genkey
 endif
 
 #
@@ -293,30 +299,33 @@ tlspool.env:
 	chown $(DMNUSR):$(DMNGRP) $@
 
 localid.db: tlspool.env
-	../tool/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab OpenPGP,client '$(PRIVKEY1)' tlspool-test-client-pubkey.pgp
-	../tool/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab OpenPGP,server '$(PRIVKEY2)' tlspool-test-server-pubkey.pgp
-	../tool/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab x.509,client '$(PRIVKEY3)' tlspool-test-client-cert.der
-	../tool/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab x.509,server '$(PRIVKEY4)' tlspool-test-server-cert.der
-	# ../tool/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server 'tI&' /dev/null
-	# ../tool/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server 'It&' /dev/null
-	../tool/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server '1' /dev/null
-	../tool/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server '1' /dev/null
-	../tool/set_localid $(CONFFILE) tlspool.arpa2.lab x.509,server,client '$(PRIVKEY7)' tlspool-test-webhost-cert.der
+	$(TOOLDIR)/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab OpenPGP,client '$(PRIVKEY1)' tlspool-test-client-pubkey.pgp
+	$(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab OpenPGP,server '$(PRIVKEY2)' tlspool-test-server-pubkey.pgp
+	$(TOOLDIR)/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab x.509,client '$(PRIVKEY3)' tlspool-test-client-cert.der
+	$(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab x.509,server '$(PRIVKEY4)' tlspool-test-server-cert.der
+	$(TOOLDIR)/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server 'tI&' /dev/null
+	$(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server 'It&' /dev/null
+	$(TOOLDIR)/set_localid $(CONFFILE) tlspool.arpa2.lab x.509,server,client '$(PRIVKEY7)' tlspool-test-webhost-cert.der
 	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
 
 disclose.db: tlspool.env localid.db
-	../tool/set_disclose $(CONFFILE) @.arpa2.lab testcli@tlspool.arpa2.lab testsrv@tlspool.arpa2.lab
-	../tool/set_disclose $(CONFFILE) . tlspool.arpa2.lab
+	$(TOOLDIR)/set_disclose $(CONFFILE) @.arpa2.lab testcli@tlspool.arpa2.lab testsrv@tlspool.arpa2.lab
+	$(TOOLDIR)/set_disclose $(CONFFILE) . tlspool.arpa2.lab
 	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
 
 trust.db: tlspool.env tlspool-test-ca-cert.der tlspool-test-ca-cert.keyid tlspool-test-flying-signer.der tlspool-test-flying-signer.keyid
-	../tool/set_trust $(CONFFILE) x509,client,server `cat tlspool-test-ca-cert.keyid` 1 tlspool-test-ca-cert.der
-	../tool/set_trust $(CONFFILE) x509,client,server `cat tlspool-test-flying-signer.keyid` 1 tlspool-test-flying-signer.der
+	$(TOOLDIR)/set_trust $(CONFFILE) x509,client,server `cat tlspool-test-ca-cert.keyid` 1 tlspool-test-ca-cert.der
+	$(TOOLDIR)/set_trust $(CONFFILE) x509,client,server `cat tlspool-test-flying-signer.keyid` 1 tlspool-test-flying-signer.der
 	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
 
 clean: clean-db
 	rm -f *.der *.pgp
 	rm -f *.pem *.asc
+
+anchors: trust.db
+	@$(foreach rootca,$(shell ls -1 $(shell pwd)/trust-anchors/*.pem),$(CERTTOOL) --certificate-info --infile "$(rootca)" --outder --outfile "$(rootca:.pem=.der)" && ) echo 'Converted all root CA .pem to .der'
+	@$(foreach rootca,$(shell ls -1 $(shell pwd)/trust-anchors/*.der),$(CERTTOOL) --inraw --infile "$(rootca)" -i | sed -e '1,/Public Key ID:/d' -e '/Public key.s random art:/,$$d' -e 's/[ \t]*//' > "$(rootca:.der=.keyid)" && ) echo 'Converted all root CA .der to .keyid'
+	@$(foreach rootca,$(shell ls -1 $(shell pwd)/trust-anchors/*.der),$(TOOLDIR)/set_trust $(CONFFILE) x509,client,server `cat "$(rootca:.der=.keyid)"` 1 "$(rootca)" && ) echo 'Imported  all root CA .der into trust.db'
 
 anew: clean all
 
