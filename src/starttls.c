@@ -2580,6 +2580,7 @@ prange ("cli_K", subkey.contents, subkey.length);
 	der_pack (			auth_packer,
 					(const dercursor *) &auth,
 					decptr + declen);
+	krb5_free_keyblock_contents (krbctx_cli, &subkey);
 prangefull ("cli_A", decptr, declen);
 	size_t rawlen;
 	if (0 != krb5_c_encrypt_length (krbctx_cli,
@@ -3764,9 +3765,13 @@ fprintf (stderr, "DEBUG: otfcert retrieval returned GNUTLS_E_AGAIN, so skip it\n
 #endif
 		tlog (TLOG_DB, LOG_DEBUG, "BDB entry has flags=0x%08x, so we (%04x/%04x) %s it", flags, lidrole, LID_ROLE_MASK, ok? "store": "skip ");
 		if (ok) {
+			if (cmd->lids [lidtype - LID_TYPE_MIN].data != NULL) {
+				free (cmd->lids [lidtype - LID_TYPE_MIN].data);
+			}
 			// Move the credential into the command structure
 			dbt_store (&creddata,
 				&cmd->lids [lidtype - LID_TYPE_MIN]);
+fprintf (stderr, "DEBUG: Storing cmd->lids[%d].data 0x%016x\n", lidtype-LID_TYPE_MIN, cmd->lids [lidtype-LID_TYPE_MIN].data);
 			found = 1;
 		} else {
 			// Skip the credential by freeing its data structure
@@ -5023,6 +5028,7 @@ fprintf (stderr, "DEBUG: Unregistered verun 0x%016x\n", (uint64_t) verun);
 	// Cleanup any prefetched identities
 	for (i=LID_TYPE_MIN; i<=LID_TYPE_MAX; i++) {
 		if (cmd->lids [i - LID_TYPE_MIN].data != NULL) {
+fprintf (stderr, "DEBUG: Freeing cmd->lids[%d].data 0x%016x\n", i-LID_TYPE_MIN, cmd->lids [i-LID_TYPE_MIN].data);
 			free (cmd->lids [i - LID_TYPE_MIN].data);
 		}
 	}
