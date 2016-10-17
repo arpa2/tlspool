@@ -303,8 +303,12 @@ localid.db: tlspool.env
 	$(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab OpenPGP,server '$(PRIVKEY2)' tlspool-test-server-pubkey.pgp
 	$(TOOLDIR)/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab x.509,client '$(PRIVKEY3)' tlspool-test-client-cert.der
 	$(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab x.509,server '$(PRIVKEY4)' tlspool-test-server-cert.der
-	$(TOOLDIR)/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server 'tI&' /dev/null
-	$(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server 'It&' /dev/null
+	$(TOOLDIR)/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab kerberos,client,server 'pkcs11:some;place' /dev/null
+	$(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab kerberos,client,server 'pkcs11:some;place' /dev/null
+	#REALISTIC-BUT-NOT-YET# $(TOOLDIR)/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server 'tI&' /dev/null
+	#REALISTIC-BUT-NOT-YET# $(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server 'It&' /dev/null
+	$(TOOLDIR)/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server '1' /dev/null
+	$(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server '1' /dev/null
 	$(TOOLDIR)/set_localid $(CONFFILE) tlspool.arpa2.lab x.509,server,client '$(PRIVKEY7)' tlspool-test-webhost-cert.der
 	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
 
