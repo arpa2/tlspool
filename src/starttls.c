@@ -1441,8 +1441,8 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 		} else {
 			//
 			// For KDH-Only, the server supplies one of:
-			//  - an empty ticket (0 bytes long)
-			//  - a TGT for user-to-user mode (where considered useful)
+			//  - a TGT for user-to-user mode (for p2p exchanges)
+			//  - an DER NULL to waive u2u mode
 			//TODO// E_g2e ("MOVED: Failed to import Kerberos ticket",
 			//TODO// 	gnutls_pcert_import_krb_raw (
 			//TODO// 		*pcert,
@@ -1459,10 +1459,10 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			// u2u = u2u || "shaken hands on TLS symmetry extension"
 			u2u = u2u && got_cc_srv;  // We may simply not be able!
 			//
-			// When not in user-to-user mode, deliver 0 bytes
+			// When not in user-to-user mode, deliver DER NULL
 			if (!u2u) {
-				certdatum.data = "";
-				certdatum.size = 0;
+				certdatum.data = "\x05\x00";
+				certdatum.size = 2;
 				E_g2e ("Failed to withhold Kerberos server ticket",
 					gnutls_pcert_import_krb_raw (
 						*pcert,
@@ -2573,7 +2573,7 @@ prange ("cli_K", subkey.contents, subkey.length);
 					(const dercursor *) &auth,
 					NULL	// Measure length, no output yet
 					);
-	uint8_t *decptr = malloc (declen);
+	uint8_t *decptr = gnutls_malloc (declen);
 	if (decptr == NULL) {
 		return GNUTLS_E_MEMORY_ERROR;
 	}
@@ -2586,12 +2586,12 @@ prangefull ("cli_A", decptr, declen);
 					cmd->krb_key.enctype,
 					declen,
 					&rawlen)) {
-		free (decptr);
+		gnutls_free (decptr);
 		return GNUTLS_E_ENCRYPTION_FAILED;
 	}
-	uint8_t *rawptr = malloc (rawlen);
+	uint8_t *rawptr = gnutls_malloc (rawlen);
 	if (rawptr == NULL) {
-		free (decptr);
+		gnutls_free (decptr);
 		return GNUTLS_E_MEMORY_ERROR;
 	}
 	krb5_data decdata;
@@ -2608,8 +2608,8 @@ prangefull ("cli_A", decptr, declen);
 					NULL,
 					&decdata,
 					&rawdata)) {
-		free (rawptr);
-		free (decptr);
+		gnutls_free (rawptr);
+		gnutls_free (decptr);
 		return GNUTLS_E_ENCRYPTION_FAILED;
 	}
 	//
@@ -2617,6 +2617,7 @@ prangefull ("cli_A", decptr, declen);
 	QDERBUF_INT32_T deretype;
 	QDERBUF_UINT32_T derkvno;
 	encrypted_data_t encdata;
+	memset (&encdata, 0, sizeof (encdata));
 	encdata.etype = qder2b_pack_int32 (deretype, cmd->krb_key.enctype);
 	//NOT// encdata.kvno  = qder2b_pack_int32 (derkvno,  cmd->krb_key.kvno);
 	encdata.cipher.derptr = rawdata.ciphertext.data;
@@ -2627,16 +2628,16 @@ prangefull ("cli_A", decptr, declen);
 					(const dercursor *) &encdata,
 					NULL	// Measure length, no output yet
 					);
-	uint8_t *encptr = malloc (enclen);
+	uint8_t *encptr = gnutls_malloc (enclen);
 	if (encptr == NULL) {
-		free (rawptr);
-		free (decptr);
+		gnutls_free (rawptr);
+		gnutls_free (decptr);
 		return GNUTLS_E_MEMORY_ERROR;
 	}
 	der_pack (			encdata_packer,
 					(const dercursor *) &encdata,
 					encptr + enclen);
-	free (rawptr);
+	gnutls_free (rawptr);
 	//
 	// Return our final verdict on the generation of the Authenticator
 	dec_authenticator->data = decptr;
@@ -2750,6 +2751,7 @@ prange ("srv_C", certs [0].data, certs [0].size);
 	dercursor enctransport;
 	enctransport.derptr = enc_authenticator->data;
 	enctransport.derlen = enc_authenticator->size;
+prangefull ("EncData2unpack", enctransport.derptr, enctransport.derlen);
 	memset (&encdata, 0, sizeof (encdata));
 	if (0 != der_unpack (		&enctransport,
 					encdata_packer,
@@ -3439,6 +3441,7 @@ static gtls_error fetch_remote_credentials (struct command *cmd) {
 #ifdef HAVE_TLS_KDH
 	cmd->remote_cert_type = gnutls_certificate_type_get_peers (cmd->session);
 	certs = gnutls_certificate_get_peers (cmd->session, &num_certs);
+	// Note: server's certs _may_ be DER NULL due to mutual auth in Kerberos
 #else
 	cmd->remote_cert_type = gnutls_certificate_type_get (cmd->session);
 	certs = gnutls_certificate_get (cmd->session, &num_certs);
