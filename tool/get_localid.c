@@ -30,7 +30,7 @@ const char const *usage =
 "Usage: %s tlspool.conf [user@]fqdn type [outfile.der]\n"
 " - tlspool.conf      is the configuration file for the TLS Pool\n"
 " - user@fqdn or fqdn is a network access identifier\n"
-" - type              X.509,OpenPGP,valexp,client,server,noP11,chained\n"
+" - type              X.509,OpenPGP,Kerberos,valexp,client,server,noP11,chained\n"
 " - outfile.der       optional output file for binary encoded public data\n"
 "Since the public data is stored in a binary format, it will never be printed\n"
 "on stdout; in absense of outfile.der the value is simply not output.\n";

@@ -34,6 +34,8 @@ TASN1_LIBS   = $(shell $(PKG_CONFIG) --libs   libtasn1)
 #HOWTOUSE# UNBOUND_LIBS  = $(shell $(PKG_CONFIG) --libs   libunbound)
 QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags quick-der)
 QUICKDER_LIBS   = $(shell $(PKG_CONFIG) --libs   quick-der)
+KERBEROS_CFLAGS = $(shell krb5-config --cflags)
+KERBEROS_LIBS = $(shell krb5-config --libs)
 
 ifdef WINVER
 CFLAGS += -D_WIN32_WINNT=0x0600 -DATTRIBUTE_UNUSED="" -I ../include/windows

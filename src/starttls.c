@@ -3165,9 +3165,9 @@ static void valexp_Oo_start (void *vcmd, struct valexp *ve, char pred) {
 			valflag = o2vf (online_globaldir_x509 (
 					rid,
 					raw->data, raw->size));
-#ifdef GNUTLS_CRT_KRB
+#ifdef HAVE_TLS_KDH
 		} else if (cmd->remote_cert_type == GNUTLS_CRT_KRB) {
-			// Kerberos is sufficiently "live" to always pass O
+			// Kerberos is sufficiently "live" to be pass O
 			valflag = 1;
 			goto setvalflag;
 #endif
