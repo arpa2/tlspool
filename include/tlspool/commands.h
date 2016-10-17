@@ -459,6 +459,8 @@ typedef struct pioc_lidentry lidentry_t;
 #define PIOF_STARTTLS_REMOTEROLE_SERVER		0x00000008
 #define PIOF_STARTTLS_REMOTEROLE_PEER		0x0000000c
 
+#define PIOF_STARTTLS_BOTHROLES_PEER		0x0000000f
+
 
 /* PIOF_STARTTLS_DTLS requests to setup DTLS instead of TLS.
  */

@@ -101,6 +101,15 @@ the command; this is for SoftHSMv2::
 
 	chown -R tlspool:tlspool /var/lib/softhsm/tokens/XXX
 
+To setup Kerberos authentication, you need to install the basic package,
+usually named `krb5-user` or `krb5-client`, depending on your distro.
+In `/etc/krb5.conf`, be sure to have this entry to guide the test
+domain names to our KDC::
+
+	[domain_realm]
+		# ...other entries...
+		tlspool.arpa2.lab = ARPA2.NET
+
 The following test demonstrates proper working of the TLS Pool based on
 the testdata and under the warnings above:
 

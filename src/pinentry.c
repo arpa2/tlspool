@@ -153,7 +153,7 @@ void p11cpy (char *cstr, CK_UTF8CHAR *p11str, int p11len) {
  */
 success_t pin_callback (	int attempt,
 				const char *token_url,
-				const char *token_label,
+				const char *opt_prompt,
 				char *pin,
 				size_t pin_max) {
 	struct command *cmd;
@@ -212,7 +212,10 @@ success_t pin_callback (	int attempt,
 	p11cpy (cmd->cmd.pio_data.pioc_pinentry.token_serial, toktok->serialNumber, 16);
 	p11cpy (cmd->cmd.pio_data.pioc_pinentry.token_label, toktok->label, 32);
 	cmd->cmd.pio_data.pioc_pinentry.attempt = attempt;
-	strcpy (cmd->cmd.pio_data.pioc_pinentry.prompt, "Enter PIN: ");
+	strncpy (cmd->cmd.pio_data.pioc_pinentry.prompt,
+			opt_prompt? opt_prompt: "Enter PIN: ",
+			sizeof (cmd->cmd.pio_data.pioc_pinentry.prompt)-1);
+	cmd->cmd.pio_data.pioc_pinentry.prompt [sizeof (cmd->cmd.pio_data.pioc_pinentry.prompt)-1] = '\0';
 	//
 	// Await response or timeout
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response()");

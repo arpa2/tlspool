@@ -84,6 +84,10 @@ enum VARS {
 	CFGVAR_FACILITIES_DENY,
 	CFGVAR_FACILITIES_ALLOW,
 	CFGVAR_DNSSEC_ROOTKEY,
+	CFGVAR_KRB_CLIENT_KEYTAB,
+	CFGVAR_KRB_SERVER_KEYTAB,
+	CFGVAR_KRB_CLIENT_CREDCACHE,
+	CFGVAR_KRB_SERVER_CREDCACHE,
 	//
 	CFGVAR_LENGTH,
 	CFGVAR_NONE = -1
@@ -134,6 +138,10 @@ struct cfgopt config_options [] = {
 	"deny_facilities",	cfg_setvar,	CFGVAR_FACILITIES_DENY,
 	"allow_facilities",	cfg_setvar,	CFGVAR_FACILITIES_ALLOW,
 	"dnssec_rootkey",	cfg_setvar,	CFGVAR_DNSSEC_ROOTKEY,
+	"kerberos_client_keytab",   cfg_setvar,	CFGVAR_KRB_CLIENT_KEYTAB,
+	"kerberos_server_keytab",   cfg_setvar,	CFGVAR_KRB_SERVER_KEYTAB,
+	"kerberos_client_credcache",cfg_setvar,	CFGVAR_KRB_CLIENT_CREDCACHE,
+	"kerberos_server_credcache",cfg_setvar,	CFGVAR_KRB_SERVER_CREDCACHE,
 	//
 	NULL,			NULL,		CFGVAR_NONE
 };
@@ -680,5 +688,21 @@ char *cfg_dnssec_rootkey (void) {
 	} else {
 		return "/etc/unbound/root.key";
 	}
+}
+
+char *cfg_krb_client_keytab (void) {
+	return configvars [CFGVAR_KRB_CLIENT_KEYTAB];
+}
+
+char *cfg_krb_server_keytab (void) {
+	return configvars [CFGVAR_KRB_SERVER_KEYTAB];
+}
+
+char *cfg_krb_client_credcache (void) {
+	return configvars [CFGVAR_KRB_CLIENT_CREDCACHE];
+}
+
+char *cfg_krb_server_credcache (void) {
+	return configvars [CFGVAR_KRB_SERVER_CREDCACHE];
 }
 

@@ -13,6 +13,10 @@
 
 #include <db.h>
 
+#ifdef HAVE_TLS_KDH
+#include <krb5.h>
+#endif
+
 
 #define EXPECTED_LID_TYPE_COUNT 5
 
@@ -54,6 +58,11 @@ struct command {
 	int remote_cert_type;
 	void *remote_cert [CERTS_MAX_DEPTH];
 	uint8_t remote_cert_count;
+#ifdef HAVE_TLS_KDH
+	krb5_keyblock krb_key;		// Kerberos key for encryption
+	krb5_principal krbid_cli;	// Kerberos clientID: Server || Client
+	krb5_principal krbid_srv;	// Kerberos serverID: Server || KDH-Only
+#endif
 };
 
 
@@ -120,7 +129,7 @@ void setup_pinentry (void);
 void cleanup_pinentry (void);
 void register_pinentry_command (struct command *cmd);
 success_t token_callback (const char *const label, unsigned retry);
-success_t pin_callback (int attempt, const char *token_url, const char *token_label, char *pin, size_t pin_max);
+success_t pin_callback (int attempt, const char *token_url, const char *opt_prompt, char *pin, size_t pin_max);
 void pinentry_forget_clientfd (pool_handle_t fd);
 
 /* starttls.c */
@@ -145,8 +154,10 @@ uint32_t cfg_facilities (void);
 char *cfg_tls_onthefly_signcert (void);
 char *cfg_tls_onthefly_signkey (void);
 char *cfg_dnssec_rootkey (void);
-
-
+char *cfg_krb_client_keytab (void);
+char *cfg_krb_server_keytab (void);
+char *cfg_krb_client_credcache (void);
+char *cfg_krb_server_credcache (void);
 
 
 /* error.c -- Mapping various error code systems to others.
@@ -239,6 +250,7 @@ void tlog (unsigned int logmask, int priority, char *format, ...);
 #define TLOG_COPYCAT	0x00002000
 #define TLOG_UNIXSOCK	0x00004000
 #define TLOG_DAEMON	0x00008000
+#define TLOG_KERBEROS	0x00010000
 
 
 /* The security_layer defines a value for each of the possible secure protocols.

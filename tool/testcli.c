@@ -23,7 +23,7 @@ static starttls_t tlsdata_cli = {
 	.ipproto = IPPROTO_TCP,
 	.localid = "testcli@tlspool.arpa2.lab",
 	.remoteid = "testsrv@tlspool.arpa2.lab",
-	.service = "generic_anonpre",
+	.service = "generic",
 };
 
 void sigcont_handler (int signum);

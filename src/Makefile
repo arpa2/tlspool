@@ -6,7 +6,6 @@ OBJS = daemon.o config.o manage.o service.o cache.o pinentry.o lidentry.o \
 
 CFLAGS += -pthread -I ../include -std=gnu11
 CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS) $(UNBOUND_CFLAGS) $(QUICKDER_CFLAGS)
-CFLAGS += -O0 -ggdb3
 
 LDFLAGS += -std=gnu11
 
@@ -16,6 +15,11 @@ LIBS += -lldns -lpthread
 ifdef WITH_SYSTEMD
 CFLAGS += -DHAVE_SYSTEMD
 LIBS   += -lsystemd-daemon
+endif
+
+ifndef WITHOUT_KERBEROS
+CFLAGS += -DHAVE_TLS_KDH $(KERBEROS_CFLAGS)
+LIBS += $(KERBEROS_LIBS)
 endif
 
 GNUTLS_CFLAGS = $(shell $(PKG_CONFIG) --cflags gnutls)
@@ -30,6 +34,17 @@ TASN1_LIBS   = $(shell $(PKG_CONFIG) --libs   libtasn1)
 #HOWTOUSE# UNBOUND_LIBS  = $(shell $(PKG_CONFIG) --libs   libunbound)
 QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags quick-der)
 QUICKDER_LIBS   = $(shell $(PKG_CONFIG) --libs   quick-der)
+KERBEROS_CFLAGS = $(shell krb5-config --cflags)
+KERBEROS_LIBS = $(shell krb5-config --libs)
+
+ifdef WINVER
+CFLAGS += -D_WIN32_WINNT=0x0600 -DATTRIBUTE_UNUSED="" -I ../include/windows
+OBJS += windows/syslog.o windows/windows.o windows/getopt.o
+LIBS += -lkernel32 -ladvapi32 -lmsvcrt -lwsock32 -lws2_32
+EXE = .exe
+endif
+
+PKG_CONFIG ?= pkg-config
 
 ifdef WINVER
 CFLAGS += -D_WIN32_WINNT=0x0600 -DATTRIBUTE_UNUSED="" -I ../include/windows
@@ -51,13 +66,26 @@ else
 BDB_LIBS   = -ldb # this is the default
 endif
 
+TASN1_CFLAGS = $(shell pkg-config --cflags libtasn1)
+TASN1_LIBS   = $(shell pkg-config --libs   libtasn1)
+#HOWTOUSE# UNBOUND_FLAGS = $(shell pkg-config --cflags libunbound)
+#HOWTOUSE# UNBOUBD_LIBS  = $(shell pkg-config --libs   libunbound)
+QUICKDER_CFLAGS = $(shell pkg-config --cflags quick-der)
+QUICKDER_LIBS = $(shell pkg-config --libs quick-der)
+KERBEROS_CFLAGS = $(shell krb5-config --cflags)
+KERBEROS_LIBS = $(shell krb5-config --libs)
+# CFLAGS += -DHAVE_TLS_KDH
+
 all: $(TARGETS)
 
 tlspool$(EXE): $(OBJS)
 	$(CC) $(LDFLAGS) -o "$@" $(OBJS) $(LIBS)
 
-.c.o:
+%.o: %.c
 	$(CC) -c $(CFLAGS) -o "$@" "$<"
+
+%.pre: %.c
+	$(CC) -E $(CFLAGS) -o "$@" "$<"
 
 .PHONY: clean
 clean:

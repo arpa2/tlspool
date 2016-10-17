@@ -32,7 +32,7 @@ const char const *usage =
 "Usage: %s tlspool.conf [user@]fqdn type [p11priv pubdata...]\n"
 " - tlspool.conf      is the configuration file for the TLS Pool\n"
 " - user@fqdn or fqdn is a network access identifier\n"
-" - type              X.509,OpenPGP,valexp,client,server,nop11,chained\n"
+" - type              X.509,OpenPGP,Kerberos,valexp,client,server,nop11,chained\n"
 " - p11priv           is a PKCS #11 URI string for the private key\n"
 " - pubdata           is a file name    string for the public key package\n"
 "The pairs of p11priv and pubdata replace the old content.  An empty list of\n"
@@ -48,6 +48,8 @@ struct typemap_t typemap [] = {
 	{ "X.509",	1 },
 	{ "x509",	1 },
 	{ "OpenPGP",	2 },
+	{ "Kerberos",	4 },
+	{ "krb5",	4 },
 	{ "valexp",     5 },
 	{ "cli",	256 },
 	{ "srv",	512 },

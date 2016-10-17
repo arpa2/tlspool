@@ -23,7 +23,7 @@ static starttls_t tlsdata_srv = {
 	.local = 0,
 	.ipproto = IPPROTO_TCP,
 	.localid = "testsrv@tlspool.arpa2.lab",
-	.service = "generic_anonpre",
+	.service = "generic",
 };
 static starttls_t tlsdata_now;
 
