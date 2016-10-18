@@ -59,6 +59,10 @@ typedef struct {
 } PIPEINST, *LPPIPEINST;
 typedef LPPIPEINST pool_handle_t;
 #define INVALID_POOL_HANDLE NULL
+/* windows/namedpipe.c */
+pool_handle_t open_named_pipe (LPCTSTR lpszPipename);
+int np_send_command(pool_handle_t poolfd, struct tlspool_command *cmd);
+int np_recv_command(pool_handle_t poolfd, struct tlspool_command *cmd);
 #else /* WINDOWS_PORT */
 typedef int pool_handle_t;
 #define INVALID_POOL_HANDLE -1

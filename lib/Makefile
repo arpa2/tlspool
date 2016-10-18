@@ -1,7 +1,6 @@
-ifdef WINVER
-TARGETS = libtlspool.dll libtlspool.lib
-else
 TARGETS = libtlspool.so libtlspool.a
+ifdef WINVER
+TARGETS += libtlspool.dll libtlspool.lib
 endif
 
 #
@@ -23,18 +22,13 @@ LIBS += -lpthread
 
 PREFIX ?= /usr/local
 
-ifdef WINVER
-# TODO libtlspool_lidentry and libtlspool_pinentry
-libtlspool_OBJS = libtlspool.o
-else
 libtlspool_OBJS = libtlspool.o libtlspool_lidentry.o libtlspool_pinentry.o libtlspool_configvar.o
-endif
 
 OBJS = $(libtlspool_OBJS)
 
 ifdef WINVER
 CFLAGS += -D_WIN32_WINNT=0x0600 -I ../include/windows
-libtlspool_OBJS += windows/syslog.o windows/socketpair.o
+libtlspool_OBJS += windows/syslog.o windows/socketpair.o windows/namedpipe.o
 LIBS += -lkernel32 -ladvapi32 -lmsvcrt -lwsock32 -lws2_32
 endif
 
@@ -75,13 +69,13 @@ clean:
 anew: clean all
 
 install: all
+	install libtlspool.so libtlspool.a "$(DESTDIR)$(PREFIX)/lib/"
 ifdef WINVER
 	install libtlspool.dll libtlspool.lib "$(DESTDIR)$(PREFIX)/bin/"
 	mkdir -p "$(DESTDIR)$(PREFIX)/include/tlspool"
 	install ../include/tlspool/starttls.h "$(DESTDIR)$(PREFIX)/include/tlspool"
 	install ../include/tlspool/commands.h "$(DESTDIR)$(PREFIX)/include/tlspool"	
 else	
-	install libtlspool.so libtlspool.a "$(DESTDIR)$(PREFIX)/lib/"
 	@echo '#'
 	@echo '# Python libraries not yet installed'
 	@echo '#'
@@ -91,13 +85,13 @@ endif
 	#DIY# @$(foreach w,$(WRAPPERS),$(MAKE) DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) -C '$(w)' install && ) echo Wrappers installed for $(WRAPPERS)
 
 uninstall:
+	rm -f "$(DESTDIR)$(PREFIX)/lib/libtlspool.so"
+	rm -f "$(DESTDIR)$(PREFIX)/lib/libtlspool.a"
 ifdef WINVER
 	rm -f "$(DESTDIR)$(PREFIX)/bin/libtlspool.dll"
 	rm -f "$(DESTDIR)$(PREFIX)/bin/libtlspool.lib"
 	rm -rf "$(DESTDIR)$(PREFIX)/include/tlspool/"
 else
-	rm -f "$(DESTDIR)$(PREFIX)/lib/libtlspool.so"
-	rm -f "$(DESTDIR)$(PREFIX)/lib/libtlspool.a"
 	@echo '#'
 	@echo '# Python libraries not yet removed'
 	@echo '#'

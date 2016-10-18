@@ -10,11 +10,16 @@
 #include <unistd.h>
 #include <pthread.h>
 
+
+#ifdef WINDOWS_PORT
+#include <winsock2.h>
+#else
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/select.h>
 #include <sys/resource.h>
+#endif
 
 #include <tlspool/starttls.h>
 #include <tlspool/commands.h>
@@ -22,9 +27,9 @@
 
 /* Cleanup routine */
 static void tlspool_localid_service_closepool (void *poolfdptr) {
-	int poolfd = * (int *) poolfdptr;
-	if (poolfd >= 0) {
-		close (poolfd);
+	pool_handle_t poolfd = * (pool_handle_t  *) poolfdptr;
+	if (poolfd != INVALID_POOL_HANDLE) {
+		tlspool_close_poolhandle (poolfd);
 	}
 }
 
@@ -51,11 +56,22 @@ static void tlspool_localid_service_closepool (void *poolfdptr) {
  * This function returns -1 on error, or 0 on success.
  */
 int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout, char * (*cb) (lidentry_t *entry, void *data), void *data) {
+#ifdef WINDOWS_PORT
+printf("tlspool_localid_service(%s, %d, %d, %p, %p)\n", path, regflags, responsetimeout, cb, data);
+#else
 	struct sockaddr_un sun;
-	int poolfd = -1;
+#endif
+	pool_handle_t poolfd = INVALID_POOL_HANDLE;
 	struct tlspool_command cmd;
 	char *cberr = NULL;
 
+#ifdef WINDOWS_PORT
+	poolfd = open_named_pipe ((LPCTSTR) path);
+	printf ("DEBUG: poolfd = %d\n", poolfd);
+	if (poolfd == INVALID_POOL_HANDLE) {
+		return -1;
+	}
+#else
 	/* Access the TLS Pool socket */
 	if (path == NULL) {
 		path = tlspool_configvar (NULL, "daemon_pidfile");
@@ -80,7 +96,7 @@ int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout,
 		poolfd = -1;
 		return -1;
 	}
-
+#endif
 	/* Prepare command structure */
 	memset (&cmd, 0, sizeof (cmd));	/* Do not leak old stack info */
 	cmd.pio_cbid = 0;
@@ -92,22 +108,30 @@ int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout,
 	while (1) {
 
 		/* send the request or, when looping, the callback result */
-//DEBUG// printf ("DEBUG: LIDENTRY command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.pio_cmd, cmd.pio_cbid, cmd.pio_data.pioc_lidentry.flags);
+ printf ("DEBUG: LIDENTRY command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.pio_cmd, cmd.pio_cbid, cmd.pio_data.pioc_lidentry.flags);
+#ifdef WINDOWS_PORT
+		if (np_send_command(poolfd, &cmd) == -1) {
+#else
 		if (send (poolfd, &cmd, sizeof (cmd), MSG_NOSIGNAL) == -1) {
+#endif
 			// errno inherited from send()
 			// let SIGPIPE be reported as EPIPE
-			close (poolfd);
+			tlspool_close_poolhandle (poolfd);
 			return -1;
 		}
 
 		/* receive and process the response */
+#ifdef WINDOWS_PORT
+		if (np_recv_command(poolfd, &cmd) == -1) {
+#else
 		if (recv (poolfd, &cmd, sizeof (cmd), MSG_NOSIGNAL) == -1) {
+#endif
 			// Let SIGPIPE be reported as EPIPE
 			// errno inherited from recv()
-			close (poolfd);
+			tlspool_close_poolhandle (poolfd);
 			return -1;
 		}
-//DEBUG// printf ("DEBUG: LIDENTRY callback command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.pio_cmd, cmd.pio_cbid, cmd.pio_data.pioc_lidentry.flags);
+ printf ("DEBUG: LIDENTRY callback command 0x%08lx with cbid=%d and flags 0x%08lx\n", cmd.pio_cmd, cmd.pio_cbid, cmd.pio_data.pioc_lidentry.flags);
 		switch (cmd.pio_cmd) {
 		case PIOC_LIDENTRY_CALLBACK_V2:
 			cberr = (*cb) (&cmd.pio_data.pioc_lidentry, data);
@@ -116,7 +140,7 @@ int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout,
 		case PIOC_ERROR_V2:
 			errno = cmd.pio_data.pioc_error.tlserrno;
 			syslog (LOG_INFO, "TLS Pool error to tlspool_localid_service(): %s", cmd.pio_data.pioc_error.message);
-			close (poolfd);
+			tlspool_close_poolhandle (poolfd);
 			return -1;
 		default:
 			errno = EPROTO;
@@ -132,9 +156,10 @@ int tlspool_localid_service (char *path, uint32_t regflags, int responsetimeout,
 			// bounce the error back to us so we can report it too
 		}
 	}
-
+#ifndef WINDOWS_PORT
 	/* Never end up here... */
 	pthread_cleanup_pop (1);
+#endif
 	return 0;
 }
 

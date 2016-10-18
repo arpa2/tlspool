@@ -18,7 +18,6 @@
 
 #define CERTS_MAX_DEPTH 10
 
-
 /* A simple (data*,size) construct named pool_datum_t
  */
 typedef struct pool_datum {

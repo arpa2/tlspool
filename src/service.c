@@ -505,7 +505,7 @@ BOOL ConnectToNewClient(HANDLE hPipe, LPOVERLAPPED lpo)
    return fPendingIO;
 }
 
-static int np_send_command(struct tlspool_command *cmd) {
+static int np_send_command1(struct tlspool_command *cmd) {
 	DWORD  cbToWrite, cbWritten;
 	OVERLAPPED overlapped;
 	BOOL fSuccess;
@@ -555,7 +555,7 @@ int send_command (struct command *cmd, int passfd) {
 	memset (&cmd->cmd.pio_ancil_data,
 			0,
 			sizeof (cmd->cmd.pio_ancil_data));
-	return !np_send_command(&cmd->cmd) ? 1 : 0;
+	return !np_send_command1(&cmd->cmd) ? 1 : 0;
 #else /* WINDOWS_PORT */
 	char anc [CMSG_SPACE(sizeof (int))];
 	struct iovec iov;
