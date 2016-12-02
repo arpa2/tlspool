@@ -4,6 +4,7 @@ TARGETS = testcli testsrv tlstunnel \
 	get_localid set_localid \
 	get_disclose set_disclose \
 	get_trust set_trust \
+	have_db \
 	pgp11_genkey \
 	configvar
 
@@ -77,6 +78,9 @@ get_trust: get_trust.c $(donai_SRC)
 	gcc -std=gnu11 $(CFLAGS) $(donai_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(donai_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
 
 set_trust: set_trust.c
+	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+
+have_db: have_db.c
 	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
 
 pgp11_genkey: pgp11_genkey.c
