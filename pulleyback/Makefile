@@ -12,8 +12,6 @@ LDFLAGS += -std=gnu11
 BDB_CFLAGS = 
 ifdef WINVER
 BDB_LIBS   = -ldb-6.1
-else
-BDB_LIBS   = -ldb
 endif
 
 PREFIX ?= /usr/local

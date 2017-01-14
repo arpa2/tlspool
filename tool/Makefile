@@ -27,14 +27,14 @@ donai_SRC = ../src/donai.c
 pgp11genkey_CFLAGS = $(P11KIT_CFLAGS)
 pgp11genkey_LIBS = $(P11KIT_LIBS) -lcrypto
 
-configvar_CFLAGS = 
+configvar_CFLAGS = $(tlspool_LDFLAGS)
 configvar_LIBS = $(tlspool_LIB)
 
 P11KIT_CFLAGS = $(shell pkg-config --cflags p11-kit-1)
 P11KIT_LIBS   = $(shell pkg-config --libs   p11-kit-1)
 
 BDB_CFLAGS = 
-BDB_LDFLAGS = -ldb
+BDB_LDFLAGS = $(BDB_LIBS)
 
 all: $(TARGETS)
 

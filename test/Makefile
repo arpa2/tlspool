@@ -31,7 +31,7 @@ P11KIT_CFLAGS = $(shell $(PKG_CONFIG) --cflags p11-kit-1)
 P11KIT_LIBS   = $(shell $(PKG_CONFIG) --libs   p11-kit-1)
 
 BDB_CFLAGS = 
-BDB_LDFLAGS = -ldb
+BDB_LDFLAGS = $(BDB_LIBS)
 
 QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags quick-der) -ggdb3
 QUICKDER_LIBS   = $(shell $(PKG_CONFIG) --libs   quick-der)
@@ -56,13 +56,13 @@ testvalexp: valexprun
 	@ echo All validation expression tests succeeded
 
 onlinecheck: onlinecheck.c ../src/online.c ../src/config.c ../src/pgp.c
-	gcc $(CFLAGS) $(GNUTLS_CFLAGS) $(QUICKDER_CFLAGS) $(config_CFLAGS) -o "$@" "$<" ../src/pgp.c ../src/config.c -lunbound -lldns -lldap $(GNUTLS_LIBS) $(QUICKDER_LIBS)
+	gcc $(CFLAGS) $(GNUTLS_CFLAGS) $(QUICKDER_CFLAGS) $(config_CFLAGS) -o "$@" "$<" ../src/pgp.c ../src/config.c $(UNBOUND_LIBS) $(LDNS_LIBS) $(LDAP_LIBS) $(GNUTLS_LIBS) $(QUICKDER_LIBS)
 
 testonline: onlinecheck
 	./onlinecheck ../etc/tlspool.conf | tee | grep -v 'UNEXPECTED OUTPUT FAILURE'
 
 pulleybacksimu: pulleybacksimu.c
-	@# gcc $(CFLAGS) -o "$@" "$<" ../pulleyback/api.o ../pulleyback/parse.o ../pulleyback/connect.o ../pulleyback/update.o -lquickder -ldb
+	@# gcc $(CFLAGS) -o "$@" "$<" ../pulleyback/api.o ../pulleyback/parse.o ../pulleyback/connect.o ../pulleyback/update.o -lquickder $(BDB_LDFLAGS)
 	gcc $(CFLAGS) -o "$@" "$<" ../pulleyback/pulleyback_tlspool.so
 
 clean:
