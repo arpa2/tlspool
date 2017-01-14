@@ -12,6 +12,10 @@ OBJS = *.o
 
 CFLAGS += -pthread -I ../include
 
+ifdef DEBUG
+CFLAGS += -g -O0
+endif
+
 LDFLAGS =
 
 LIBS = 
