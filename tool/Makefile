@@ -18,8 +18,16 @@ LIBS =
 
 PREFIX = /usr/local
 
+DIR := ${CURDIR}
+LIBDIR := ""
+ifndef DESTDIR
+	LIBDIR=$(DIR)/../lib/
+else
+	LIBDIR=$(DESTDIR)/lib
+endif
+
 tlspool_LIB = ../lib/libtlspool.so
-tlspool_LDFLAGS = -L ../lib -ltlspool
+tlspool_LDFLAGS = -L ../lib -ltlspool -Wl,-rpath,$(LIBDIR)
 
 donai_CFLAGS = -DDONAI_ONLY_TEXTPROC
 donai_SRC = ../src/donai.c
@@ -87,7 +95,7 @@ pgp11_genkey: pgp11_genkey.c
 	gcc -std=gnu11 $(CFLAGS) $(pgp11genkey_CFLAGS) -o "$@" "$<" $(pgp11genkey_LIBS)
 
 configvar: configvar.c $(tlspool_LIB)
-	gcc -std=gnu11 $(CFLAGS) $(configvar_CFLAGS) -o "$@" "$<" $(configvar_LIBS)
+	gcc -std=gnu11 $(CFLAGS) $(configvar_CFLAGS) -o "$@" "$<"
 
 $(tlspool_LIB):
 	$(MAKE) -C ../lib `basename $(tlspool_LIB)`
