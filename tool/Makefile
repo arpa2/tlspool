@@ -12,14 +12,26 @@ OBJS = *.o
 
 CFLAGS += -pthread -I ../include
 
+ifdef DEBUG
+CFLAGS += -g -O0
+endif
+
 LDFLAGS =
 
 LIBS = 
 
 PREFIX = /usr/local
 
+DIR := ${CURDIR}
+LIBDIR := ""
+ifndef DESTDIR
+	LIBDIR=$(DIR)/../lib/
+else
+	LIBDIR=$(DESTDIR)/lib
+endif
+
 tlspool_LIB = ../lib/libtlspool.so
-tlspool_LDFLAGS = -L ../lib -ltlspool
+tlspool_LDFLAGS = -L ../lib -ltlspool -Wl,-rpath,$(LIBDIR)
 
 donai_CFLAGS = -DDONAI_ONLY_TEXTPROC
 donai_SRC = ../src/donai.c
@@ -27,14 +39,14 @@ donai_SRC = ../src/donai.c
 pgp11genkey_CFLAGS = $(P11KIT_CFLAGS)
 pgp11genkey_LIBS = $(P11KIT_LIBS) -lcrypto
 
-configvar_CFLAGS = 
+configvar_CFLAGS = $(tlspool_LDFLAGS)
 configvar_LIBS = $(tlspool_LIB)
 
 P11KIT_CFLAGS = $(shell pkg-config --cflags p11-kit-1)
 P11KIT_LIBS   = $(shell pkg-config --libs   p11-kit-1)
 
 BDB_CFLAGS = 
-BDB_LDFLAGS = -ldb
+BDB_LDFLAGS = $(BDB_LIBS)
 
 all: $(TARGETS)
 
@@ -87,7 +99,7 @@ pgp11_genkey: pgp11_genkey.c
 	gcc -std=gnu11 $(CFLAGS) $(pgp11genkey_CFLAGS) -o "$@" "$<" $(pgp11genkey_LIBS)
 
 configvar: configvar.c $(tlspool_LIB)
-	gcc -std=gnu11 $(CFLAGS) $(configvar_CFLAGS) -o "$@" "$<" $(configvar_LIBS)
+	gcc -std=gnu11 $(CFLAGS) $(configvar_CFLAGS) -o "$@" "$<"
 
 $(tlspool_LIB):
 	$(MAKE) -C ../lib `basename $(tlspool_LIB)`
