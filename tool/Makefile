@@ -87,7 +87,7 @@ pgp11_genkey: pgp11_genkey.c
 	gcc -std=gnu11 $(CFLAGS) $(pgp11genkey_CFLAGS) -o "$@" "$<" $(pgp11genkey_LIBS)
 
 configvar: configvar.c $(tlspool_LIB)
-	gcc -std=gnu11 $(CFLAGS) $(configvar_CFLAGS) -o "$@" "$<" $(configvar_LIBS)
+	gcc -std=gnu11 $(CFLAGS) $(configvar_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS)
 
 $(tlspool_LIB):
 	$(MAKE) -C ../lib `basename $(tlspool_LIB)`
