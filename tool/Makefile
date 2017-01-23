@@ -18,7 +18,8 @@ LIBS =
 
 PREFIX = /usr/local
 
-tlspool_LIB = ../lib/libtlspool.so
+tlspool_CFLAGS =
+tlspool_LIBS = ../lib/libtlspool.so
 tlspool_LDFLAGS = -L ../lib -ltlspool
 
 donai_CFLAGS = -DDONAI_ONLY_TEXTPROC
@@ -27,8 +28,9 @@ donai_SRC = ../src/donai.c
 pgp11genkey_CFLAGS = $(P11KIT_CFLAGS)
 pgp11genkey_LIBS = $(P11KIT_LIBS) -lcrypto
 
-configvar_CFLAGS = 
-configvar_LIBS = $(tlspool_LIB)
+configvar_CFLAGS = $(tlspool_CFLAGS)
+configvar_LDFLAGS = $(tlspool_LDFLAGS)
+configvar_LIBS = $(tlspool_LIBS)
 
 P11KIT_CFLAGS = $(shell pkg-config --cflags p11-kit-1)
 P11KIT_LIBS   = $(shell pkg-config --libs   p11-kit-1)
@@ -38,28 +40,28 @@ BDB_LDFLAGS = -ldb
 
 all: $(TARGETS)
 
-testcli: testcli.c $(tlspool_LIB)
+testcli: testcli.c $(tlspool_LIBS)
 	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS)
 
-testsrv: testsrv.c $(tlspool_LIB)
+testsrv: testsrv.c $(tlspool_LIBS)
 	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS)
 
-testpeer: testpeer.c $(tlspool_LIB)
+testpeer: testpeer.c $(tlspool_LIBS)
 	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS)
 	@echo '#'
 	@echo '# You cannot use testpeer yet'
 	@echo '#'
 
-tlstunnel: tlstunnel.c tlstunnel-chat.c $(tlspool_LIB)
+tlstunnel: tlstunnel.c tlstunnel-chat.c $(tlspool_LIBS)
 	gcc -std=gnu11 $(CFLAGS) -o "$@" tlstunnel.c tlstunnel-chat.c $(tlspool_LDFLAGS)
 
-pingpool: pingpool.c $(tlspool_LIB)
+pingpool: pingpool.c $(tlspool_LIBS)
 	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS)
 
-lidsel: lidsel.c $(tlspool_LIB)
+lidsel: lidsel.c $(tlspool_LIBS)
 	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS)
 
-pinentry: pinentry.c $(tlspool_LIB)
+pinentry: pinentry.c $(tlspool_LIBS)
 	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS)
 
 get_localid: get_localid.c
@@ -86,11 +88,11 @@ have_db: have_db.c
 pgp11_genkey: pgp11_genkey.c
 	gcc -std=gnu11 $(CFLAGS) $(pgp11genkey_CFLAGS) -o "$@" "$<" $(pgp11genkey_LIBS)
 
-configvar: configvar.c $(tlspool_LIB)
-	gcc -std=gnu11 $(CFLAGS) $(configvar_CFLAGS) -o "$@" "$<" $(configvar_LIBS)
+configvar: configvar.c $(configvar_LIBS)
+	gcc -std=gnu11 $(CFLAGS) $(configvar_CFLAGS) $(configvar_LDFLAGS) $(configvar_CFLAGS) -o "$@" "$<" $(configvar_LIBS)
 
-$(tlspool_LIB):
-	$(MAKE) -C ../lib `basename $(tlspool_LIB)`
+$(tlspool_LIBS):
+	$(MAKE) -C ../lib `basename $(tlspool_LIBS)`
 
 .c.o:
 	gcc -std=gnu11 -c $(CFLAGS) -o "$@" "$<"
