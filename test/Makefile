@@ -1,6 +1,6 @@
 
 TARGETS_OFFLINE = valexprun testvalexp pulleybacksimu
-TARGETS = $(TARGETS_OFFLINE) onlinecheck testonline
+TARGETS = $(TARGETS_OFFLINE) onlinecheck testonline pulleybacksimu
 
 PKG_CONFIG ?= pkg-config
 
@@ -69,6 +69,8 @@ clean:
 	rm -f $(OBJS) $(TARGETS)
 	rm -f valexp/*.gen
 	rm -rf .git
+
+anew: clean all
 
 anew: clean all
 
