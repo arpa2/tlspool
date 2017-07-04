@@ -87,13 +87,23 @@ static int have_txn (struct pulleyback_tlspool *self) {
 		}
 		self->txn_state = TXN_ACTIVE;
 		return 1;
+	case TXN_ABORT:
 	case TXN_ACTIVE:
 		return 1;
 	case TXN_SUCCESS:
-	case TXN_ABORT:
 		// You cannot have_txn() after _prepare()
 		assert ((self->txn_state == TXN_NONE) || (self->txn_state == TXN_ACTIVE));
 		return 0;
+	}
+}
+
+/* Internal method to process a negative "ok" value by switching to TXN_ABORT
+ */
+static int check_txn (struct pulleyback_tlspool *self, int ok) {
+	if (ok != 1) {
+		if (self->txn_state == TXN_ACTIVE) {
+			self->txn_state = TXN_ABORT;
+		}
 	}
 }
 
@@ -103,6 +113,7 @@ int pulleyback_add (void *pbh, uint8_t **forkdata) {
 	ok = ok && have_txn (self);
 	ok = ok && (self->txn_state == TXN_ACTIVE);
 	ok = ok && self->update (self, forkdata, 0);
+	check_txn (self, ok);
 	return ok;
 }
 
@@ -112,6 +123,7 @@ int pulleyback_del (void *pbh, uint8_t **forkdata) {
 	ok = ok && have_txn (self);
 	ok = ok && (self->txn_state == TXN_ACTIVE);
 	ok = ok && self->update (self, forkdata, 1);
+	check_txn (self, ok);
 	return ok;
 }
 
@@ -123,6 +135,7 @@ int pulleyback_reset (void *pbh) {
 	ok = ok && have_txn (self);
 	ok = ok && (self->txn_state == TXN_ACTIVE);
 	ok = ok && (0 == self->db->truncate (self->db, self->txn, &count, 0));
+	check_txn (self, ok);
 	return ok;
 }
 
@@ -192,9 +205,13 @@ int pulleyback_commit (void *pbh) {
 		self->txn_state = TXN_NONE;
 		break;
 	case TXN_ABORT:
-		// Preparation fails, then the call should havae been _rollback()
+		// Preparation fails, then the call should have been _rollback()
 		assert (self->txn_state != TXN_ABORT);
 		ok = ok && 0;
+		// Since there actually is a transaction, roll it back
+		ok = ok && (0 == self->txn->abort (self->txn));
+		self->txn = NULL;
+		self->txn_state = TXN_NONE;
 		break;
 	}
 	return ok;
