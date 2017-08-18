@@ -49,7 +49,7 @@ static int check_flag (struct pulleyback_tlspool *self, der_t *data, enum mutexg
 	if (dyntype != MXG_NONE) {
 		for (i = 0; self->args [i] != MXG_NONE; i++) {
 			if (self->args [i] == dyntype) {
-				rv = parse_dynamic_argument (data [i], dyntype);
+				rv = parse_dynamic_argument ((char *)(data [i]), dyntype);
 				return (rv == MXG_NONE) ? 0 : (rv == mxg);
 			}
 		}
@@ -68,7 +68,7 @@ static int check_flag (struct pulleyback_tlspool *self, der_t *data, enum mutexg
 static const uint8_t *fetch_value (struct pulleyback_tlspool *self, enum mutexgroup mxg, der_t *data) {
 	int mxi;
 	if ((mxg == MXG_VALEXP) && (self->valexp != NULL)) {
-		return self->valexp;
+		return (uint8_t *)(self->valexp);
 	}
 	for (mxi=0; self->args [mxi] != MXG_NONE; mxi++) {
 		if (self->args [mxi] == mxg) {
@@ -197,7 +197,13 @@ int update_disclose (struct pulleyback_tlspool *self, uint8_t **data, int rm) {
 		// Perhaps length is too small, or DER formatting error
 		return 0;
 	}
-printf ("Updating disclose.db (%s): %.*s -> %.*s\n", rm?"DEL":"ADD", rid.derlen, rid.derptr, lid.derlen, lid.derptr);
+	printf ("Updating disclose.db (%s): %.*s -> %.*s\n",
+		rm ? "DEL" : "ADD",
+		 (int)rid.derlen,
+		 rid.derptr,
+		 (int)lid.derlen,
+		 lid.derptr
+	);
 	return update_db (self, &rid, &lid, -1, NULL, rm);
 }
 
