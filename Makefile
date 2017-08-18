@@ -1,5 +1,5 @@
-DESTDIR ?= 
-PREFIX ?= /usr/local/ 
+DESTDIR ?=
+PREFIX ?= /usr/local/
 BUILDDIRS=src lib tool pulleyback doc test
 
 .PHONEY: all install clean distclean
@@ -27,3 +27,14 @@ anew: clean all
 distclean: clean
 	$(MAKE) -C testdata clean-pkcs11 clean-cert clean-pgp clean-db
 
+cmake-build:
+	$(MAKE) -f Makefile.cmake all
+
+cmake-clean:
+	$(MAKE) -f Makefile.cmake clean
+
+cmake-install:
+	($MAKE) -f Makefile.cmake install
+
+cmake-uninstall:
+	$(MAKE) -f Makefile.cmake uninstall
