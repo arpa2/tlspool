@@ -1459,7 +1459,8 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			//
 			// When not in user-to-user mode, deliver DER NULL
 			if (!u2u) {
-				certdatum.data = "\x05\x00";
+				static unsigned char der_null_data[] = "\x05\x00";
+				certdatum.data = der_null_data;
 				certdatum.size = 2;
 				E_g2e ("Failed to withhold Kerberos server ticket",
 					gnutls_pcert_import_krb_raw (
