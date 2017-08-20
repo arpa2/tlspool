@@ -862,7 +862,7 @@ fprintf (stderr, "DEBUG: gtls_errno==%d after failing to open file for onthefly_
 					GNUTLS_E_FILE_ERROR);
 			} else {
 				gnutls_datum_t cd = {
-					.data = crt,
+					.data = (unsigned char *)(&crt[0]),
 					.size = len
 				};
 fprintf (stderr, "DEBUG: gtls_errno==%d before importing onthefly_issuercrt\n", gtls_errno);
@@ -1136,7 +1136,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 	char *rolestr;
 	char sni [sizeof (cmd->cmd.pio_data.pioc_starttls.localid)];
 	size_t snilen = sizeof (sni);
-	int snitype;
+	unsigned int snitype;
 	int ok;
 	uint32_t flags;
 	char *p11priv;
