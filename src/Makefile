@@ -34,8 +34,8 @@ TASN1_LIBS   = $(shell $(PKG_CONFIG) --libs   libtasn1)
 #HOWTOUSE# UNBOUND_LIBS  = $(shell $(PKG_CONFIG) --libs   libunbound)
 UNBOUND_CFLAGS =
 UNBOUND_LIBS = -lunbound
-QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags quick-der)
-QUICKDER_LIBS   = $(shell $(PKG_CONFIG) --libs   quick-der)
+QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags Quick-DER)
+QUICKDER_LIBS   = $(shell $(PKG_CONFIG) --libs   Quick-DER)
 KERBEROS_CFLAGS = $(shell krb5-config --cflags)
 KERBEROS_LIBS = $(shell krb5-config --libs)
 
@@ -61,7 +61,7 @@ PKG_CONFIG ?= pkg-config
 
 SBIN ?= sbin
 
-BDB_CFLAGS = 
+BDB_CFLAGS =
 ifdef WINVER
 BDB_LIBS   = -ldb-6.1
 else
@@ -72,8 +72,8 @@ TASN1_CFLAGS = $(shell pkg-config --cflags libtasn1)
 TASN1_LIBS   = $(shell pkg-config --libs   libtasn1)
 #HOWTOUSE# UNBOUND_FLAGS = $(shell pkg-config --cflags libunbound)
 #HOWTOUSE# UNBOUBD_LIBS  = $(shell pkg-config --libs   libunbound)
-QUICKDER_CFLAGS = $(shell pkg-config --cflags quick-der)
-QUICKDER_LIBS = $(shell pkg-config --libs quick-der)
+QUICKDER_CFLAGS = $(shell pkg-config --cflags Quick-DER)
+QUICKDER_LIBS = $(shell pkg-config --libs Quick-DER)
 KERBEROS_CFLAGS = $(shell krb5-config --cflags)
 KERBEROS_LIBS = $(shell krb5-config --libs)
 # CFLAGS += -DHAVE_TLS_KDH
