@@ -5,7 +5,7 @@ OBJS = daemon.o config.o manage.o service.o cache.o pinentry.o lidentry.o \
 	validate.o online.o pgp.o trust.o
 
 CFLAGS += -pthread -I ../include -std=gnu11
-CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS) $(UNBOUND_CFLAGS) $(QUICKDER_CFLAGS)
+CFLAGS += $(BDB_CFLAGS) $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(TASN1_CFLAGS) $(UNBOUND_CFLAGS) $(QUICKDER_CFLAGS)
 
 LDFLAGS += -std=gnu11
 
@@ -61,7 +61,7 @@ PKG_CONFIG ?= pkg-config
 
 SBIN ?= sbin
 
-BDB_CFLAGS =
+BDB_CFLAGS ?=
 ifdef WINVER
 BDB_LIBS   = -ldb-6.1
 else
