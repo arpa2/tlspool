@@ -706,7 +706,7 @@ int gnutls_token_callback (void *const userdata,
 		return GNUTLS_E_PKCS11_TOKEN_ERROR;
 	}
 }
- 
+
 
 /*
  * Implement the GnuTLS function for PIN callback.  This function calls
@@ -1487,8 +1487,8 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 			if (status < 2) {
 				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
 			} else if (0 != krb5_copy_principal (
-						krbctx_srv, 
-						tgt->server, 
+						krbctx_srv,
+						tgt->server,
 						&cmd->krbid_srv)) {
 				gtls_errno = GNUTLS_E_NO_CERTIFICATE_FOUND;
 			}
@@ -1803,7 +1803,7 @@ static int setup_starttls_kerberos (void) {
 
 
 /* Cleanup Kerberos resources.  This must be an idempotent function, because
- * it is called when Kerberos panics as well as when 
+ * it is called when Kerberos panics as well as when
  */
 #ifdef HAVE_TLS_KDH
 static void cleanup_starttls_kerberos (void) {
@@ -2881,7 +2881,7 @@ static void valexp_1_start (void *vcmd, struct valexp *ve, char pred) {
 /* valexp_I_start -- validation function for the GnuTLS backend.
  * This function ensures that the remote peer provides an identity.
  * TODO: We should compare the hostname as well, or compare if in remoteid
- * TODO: We may need to support more than just X509/PGP certificates 
+ * TODO: We may need to support more than just X509/PGP certificates
  */
 static void valexp_I_start (void *vcmd, struct valexp *ve, char pred) {
 	struct command *cmd = (struct command *) vcmd;
@@ -3068,7 +3068,7 @@ static void valexp_Dd_start (void *vcmd, struct valexp *ve, char pred) {
 	case IPPROTO_SCTP:
 		proto = "sctp";
 		break;
-#endif		
+#endif
 	default:
 		goto setflagval;
 	}
@@ -3942,7 +3942,7 @@ fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), 
 	E_g2e ("Failed to reconfigure GnuTLS as a server",
 		configure_session (cmd,
 			session,
-			srv_creds, srv_credcount, 
+			srv_creds, srv_credcount,
 			cmd->anonpre & ANONPRE_SERVER));
 fprintf (stderr, "DEBUG: Got gtls_errno = %d at %d\n", gtls_errno, __LINE__);
 
@@ -4711,7 +4711,7 @@ fprintf (stderr, "DEBUG: Configuring client credentials\n");
 			configure_session (cmd,
 				session,
 				anonpost? NULL: cli_creds,
-				anonpost?    0: cli_credcount, 
+				anonpost?    0: cli_credcount,
 				cmd->anonpre & ANONPRE_CLIENT));
 	}
 	//
@@ -4739,7 +4739,7 @@ fprintf (stderr, "DEBUG: Configuring server credentials (because it is not a cli
 				configure_session (cmd,
 					session,
 					anonpost? NULL: srv_creds,
-					anonpost?    0: srv_credcount, 
+					anonpost?    0: srv_credcount,
 					cmd->anonpre & ANONPRE_SERVER));
 		}
 #endif
@@ -4941,7 +4941,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 			//TODO:ELSEWHERE// E_g2e ("Failed to reconfigure GnuTLS without anonymous precursor",
 				//TODO:ELSEWHERE// configure_session (cmd,
 					//TODO:ELSEWHERE// session,
-					//TODO:ELSEWHERE// NULL, 0, 
+					//TODO:ELSEWHERE// NULL, 0,
 					//TODO:ELSEWHERE// 0));
 			// We do not want to use ANON-DH if the flag
 			// ANONPRE_EXTEND_MASTER_SECRET is set for the protocol
@@ -5305,7 +5305,7 @@ fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
 
 
 /*
- * The starttls function responds to an application's request to 
+ * The starttls function responds to an application's request to
  * setup TLS for a given file descriptor, and return a file descriptor
  * with the unencrypted view when done.  The main thing done here is to
  * spark off a new thread that handles the operations.
@@ -5455,7 +5455,7 @@ gtls_error certificate_onthefly (struct command *cmd) {
 		cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].data = NULL;
 		cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].size = 0;
 	}
-	
+
 	//
 	// Create an empty certificate
 	E_g2e ("Failed to initialise on-the-fly certificate",
