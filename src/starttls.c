@@ -131,7 +131,7 @@ static struct credinfo srv_creds [EXPECTED_SRV_CREDCOUNT];
 static struct credinfo cli_creds [EXPECTED_CLI_CREDCOUNT];
 static int srv_credcount = 0;
 static int cli_credcount = 0;
-static const char const *onthefly_p11uri = "pkcs11:manufacturer=ARPA2.net;token=TLS+Pool+internal;object=on-the-fly+signer;type=private;serial=1";
+static const char onthefly_p11uri[] = "pkcs11:manufacturer=ARPA2.net;token=TLS+Pool+internal;object=on-the-fly+signer;type=private;serial=1";
 static unsigned long long onthefly_serial;  //TODO: Fill with now * 1000
 static gnutls_x509_crt_t onthefly_issuercrt = NULL;
 static gnutls_privkey_t onthefly_issuerkey = NULL;
