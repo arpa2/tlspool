@@ -5555,7 +5555,7 @@ gtls_error certificate_onthefly (struct command *cmd) {
 			// This is as expected, now .size will have been set
 			gtls_errno = GNUTLS_E_SUCCESS;
 		} else {
-			if (gtls_errno = GNUTLS_E_SUCCESS) {
+			if (gtls_errno == GNUTLS_E_SUCCESS) {
 				// Something must be wrong if we receive OK
 				gtls_errno = GNUTLS_E_INVALID_REQUEST;
 			}
