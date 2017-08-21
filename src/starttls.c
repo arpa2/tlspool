@@ -4267,6 +4267,10 @@ static void cleanup_starttls_credentials (void) {
 		case GNUTLS_CRD_SRP:
 			gnutls_srp_free_server_credentials (crd->cred);
 			break;
+		case GNUTLS_CRD_PSK:
+		case GNUTLS_CRD_IA:
+			//TODO: not handled
+			break;
 		//TODO// case GNUTLS_CRD_KDH:
 		//TODO// 	gnutls_kdh_free_server_credentials (crd->cred);
 		//TODO// 	break;
@@ -4284,6 +4288,10 @@ static void cleanup_starttls_credentials (void) {
 			break;
 		case GNUTLS_CRD_SRP:
 			gnutls_srp_free_client_credentials (crd->cred);
+			break;
+		case GNUTLS_CRD_PSK:
+		case GNUTLS_CRD_IA:
+			//TODO: not handled
 			break;
 		//TODO// case GNUTLS_CRD_KDH:
 		//TODO// 	gnutls_kdh_free_client_credentials (crd->cred);
