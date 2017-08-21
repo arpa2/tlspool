@@ -3772,7 +3772,7 @@ fprintf (stderr, "DEBUG: otfcert retrieval returned GNUTLS_E_AGAIN, so skip it\n
 			// Move the credential into the command structure
 			dbt_store (&creddata,
 				&cmd->lids [lidtype - LID_TYPE_MIN]);
-fprintf (stderr, "DEBUG: Storing cmd->lids[%d].data 0x%016x\n", lidtype-LID_TYPE_MIN, cmd->lids [lidtype-LID_TYPE_MIN].data);
+fprintf (stderr, "DEBUG: Storing cmd->lids[%d].data %p\n", lidtype-LID_TYPE_MIN, cmd->lids [lidtype-LID_TYPE_MIN].data);
 			found = 1;
 		} else {
 			// Skip the credential by freeing its data structure
@@ -4428,7 +4428,7 @@ fprintf (stderr, "DEBUG: Got a request to renegotiate existing TLS connection\n"
 		//
 		// First find the ctlkeynode_tls
 		ckn = (struct ctlkeynode_tls *) ctlkey_find (cmd->cmd.pio_data.pioc_starttls.ctlkey, security_tls, cmd->clientfd);
-fprintf (stderr, "DEBUG: Got ckn == 0x%0x\n", (intptr_t) ckn);
+fprintf (stderr, "DEBUG: Got ckn == %p\n", (void *) ckn);
 		if (ckn == NULL) {
 			tlog (TLOG_UNIXSOCK, LOG_ERR, "Failed to find TLS connection for renegotiation by its ctlkey");
 			send_error (replycmd, ESRCH, "Cannot find TLS connection for renegotiation");
@@ -4478,7 +4478,7 @@ fprintf (stderr, "DEBUG: pthread_join returned %d\n", errno);
 	// that TLS has in this respect.  Maybe we'll capture it one giant loop
 	// at some point, but for now that does not seem to add any relief.
 	renegotiate:
-fprintf (stderr, "DEBUG: Renegotiating = %d, anonpost = %d, plainfd = %d, cryptfd = %d, flags = 0x%x, session = 0x%x, got_session = %d, lid = \"%s\", rid = \"%s\"\n", renegotiating, anonpost, plainfd, cryptfd, cmd->cmd.pio_data.pioc_starttls.flags, session, got_session, cmd->cmd.pio_data.pioc_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid);
+fprintf (stderr, "DEBUG: Renegotiating = %d, anonpost = %d, plainfd = %d, cryptfd = %d, flags = 0x%x, session = %p, got_session = %d, lid = \"%s\", rid = \"%s\"\n", renegotiating, anonpost, plainfd, cryptfd, cmd->cmd.pio_data.pioc_starttls.flags, session, got_session, cmd->cmd.pio_data.pioc_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid);
 
 	//
 	// If this is server renegotiating, send a request to that end
@@ -4563,7 +4563,7 @@ fprintf (stderr, "DEBUG: Client-side invocation flagged as wrong; compensated er
 			close (plainfd);
 			plainfd = -1;
 		}
-fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
+fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__);
 		if (ckn != NULL) {	/* TODO: CHECK NEEDED? */
 			if (ctlkey_unregister (ckn->regent.ctlkey)) {
 				free (ckn);
@@ -4634,7 +4634,7 @@ fprintf (stderr, "DEBUG: anonpre_determination, comparing [%d] %s to %s, found c
 			close (plainfd);
 			plainfd = -1;
 		}
-fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
+fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__);
 		if (ckn != NULL) { /* TODO: CHECK NEEDED? */
 			if (ctlkey_unregister (ckn->regent.ctlkey)) {
 				free (ckn);
@@ -4808,7 +4808,7 @@ if (renegotiating) {
 			send_error (replycmd, EIO, "Failed to prepare for TLS");
 		}
 		if (got_session) {
-fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
+fprintf (stderr, "gnutls_deinit (%p) at %d\n", (void *)session, __LINE__);
 			gnutls_deinit (session);
 			got_session = 0;
 		}
@@ -4817,7 +4817,7 @@ fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
 			close (plainfd);
 			plainfd = -1;
 		}
-fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
+fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__);
 		if (ckn != NULL) {	/* TODO: CHECK NEEDED? */
 			if (ctlkey_unregister (ckn->regent.ctlkey)) {
 				free (ckn);
@@ -4991,7 +4991,7 @@ fprintf (stderr, "DEBUG: Prior to valexp, gtls_errno = %d\n", gtls_errno);
 		// Setup for validation expression runthrough
 		cmd->valexp_result = -1;
 		if ((cmd->trust_valexp != NULL) && (0 != strcmp (cmd->trust_valexp, "1"))) {
-fprintf (stderr, "DEBUG: Trust valexp \"%s\" @ 0x%016x\n", cmd->trust_valexp, (uint64_t) cmd->trust_valexp);
+fprintf (stderr, "DEBUG: Trust valexp \"%s\" @ %p\n", cmd->trust_valexp, (void *) cmd->trust_valexp);
 			valexp_conj [valexp_conj_count++] = cmd->trust_valexp;
 		}
 		if (cmd->lids [LID_TYPE_VALEXP - LID_TYPE_MIN].data != NULL) {
@@ -5006,7 +5006,7 @@ fprintf (stderr, "DEBUG: Trust valexp \"%s\" @ 0x%016x\n", cmd->trust_valexp, (u
 				&lid_valexp,
 				&ignored.data,
 				&ignored.size);
-fprintf (stderr, "DEBUG: LocalID valexp \"%s\" @ 0x%016x (ok=%d)\n", lid_valexp, (uint64_t) lid_valexp, ok);
+fprintf (stderr, "DEBUG: LocalID valexp \"%s\" @ %p (ok=%d)\n", lid_valexp, (void *) lid_valexp, ok);
 			if (ok && (lid_valexp != NULL)) {
 				valexp_conj [valexp_conj_count++] = lid_valexp;
 			} else {
@@ -5021,7 +5021,7 @@ fprintf (stderr, "DEBUG: Number of valexp is %d, gtls_errno=%d\n", valexp_conj_c
 				valexp_conj,
 				have_starttls_validation (),
 				(void *) cmd);
-fprintf (stderr, "DEBUG: Registered to verun = 0x%016x\n", (uint64_t) verun);
+fprintf (stderr, "DEBUG: Registered to verun = %p\n", (void *) verun);
 			if (verun == NULL) {
 				gtls_errno = GNUTLS_E_AUTH_ERROR;
 			}
@@ -5039,7 +5039,7 @@ fprintf (stderr, "DEBUG: valexp returns NEGATIVE result\n");
 			}
 else fprintf (stderr, "DEBUG: valexp returns POSITIVE result\n");
 			valexp_unregister (verun);
-fprintf (stderr, "DEBUG: Unregistered verun 0x%016x\n", (uint64_t) verun);
+fprintf (stderr, "DEBUG: Unregistered verun %p\n", (void *) verun);
 		}
 	}
 
@@ -5047,7 +5047,7 @@ fprintf (stderr, "DEBUG: Unregistered verun 0x%016x\n", (uint64_t) verun);
 	// Cleanup any prefetched identities
 	for (i=LID_TYPE_MIN; i<=LID_TYPE_MAX; i++) {
 		if (cmd->lids [i - LID_TYPE_MIN].data != NULL) {
-fprintf (stderr, "DEBUG: Freeing cmd->lids[%d].data 0x%016x\n", i-LID_TYPE_MIN, cmd->lids [i-LID_TYPE_MIN].data);
+fprintf (stderr, "DEBUG: Freeing cmd->lids[%d].data %p\n", i-LID_TYPE_MIN, (void *)(cmd->lids [i-LID_TYPE_MIN].data));
 			free (cmd->lids [i - LID_TYPE_MIN].data);
 		}
 	}
@@ -5123,7 +5123,7 @@ fprintf (stderr, "DEBUG: Freeing cmd->lids[%d].data 0x%016x\n", i-LID_TYPE_MIN, 
 			free (preauth);
 		}
 		if (got_session) {
-fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
+fprintf (stderr, "gnutls_deinit (%p) at %d\n", (void *)session, __LINE__);
 			gnutls_deinit (session);
 			got_session = 0;
 		}
@@ -5132,7 +5132,7 @@ fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
 			close (plainfd);
 			plainfd = -1;
 		}
-fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
+fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__);
 		if (ckn != NULL) {	/* TODO: CHECK NEEDED? */
 			if (ctlkey_unregister (ckn->regent.ctlkey)) {
 				free (ckn);
@@ -5163,12 +5163,12 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 				free (preauth);
 			}
 			if (got_session) {
-fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
+fprintf (stderr, "gnutls_deinit (%p) at %d\n", (void *)session, __LINE__);
 				gnutls_deinit (session);
 				got_session = 0;
 			}
 			close (cryptfd);
-fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
+fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__);
 			if (ckn) {	/* TODO: CHECK NEEDED? PRACTICE=>YES */
 				if (ctlkey_unregister (ckn->regent.ctlkey)) {
 					free (ckn);
@@ -5191,12 +5191,12 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 			free (preauth);
 		}
 		if (got_session) {
-fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
+fprintf (stderr, "gnutls_deinit (%p) at %d\n", (void *)session, __LINE__);
 			gnutls_deinit (session);
 			got_session = 0;
 		}
 		close (cryptfd);
-fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
+fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__);
 		if (ckn != NULL) {	/* TODO: CHECK NEEDED? */
 			if (ctlkey_unregister (ckn->regent.ctlkey)) {
 				free (ckn);
@@ -5286,7 +5286,7 @@ fprintf (stderr, "DEBUG: Goto renegotiate with cmd.lid = \"%s\" and orig_cmd.lid
 			// already have been freed if the ctlfd was closed
 			// and the connection could not continue detached
 			// (such as after forking it).
-fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
+fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__);
 			if (ctlkey_unregister (orig_starttls.ctlkey)) {
 				free (ckn);
 			}
@@ -5304,7 +5304,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=0x%x at %d\n", ckn, __LINE__);
 	close (cryptfd);
 	cleanup_any_remote_credentials (cmd);
 	if (got_session) {
-fprintf (stderr, "gnutls_deinit (0x%x) at %d\n", session, __LINE__);
+fprintf (stderr, "gnutls_deinit (%p) at %d\n", (void *)session, __LINE__);
 		gnutls_deinit (session);
 		got_session = 0;
 	}
