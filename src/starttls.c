@@ -3658,7 +3658,7 @@ gtls_error fetch_local_credentials (struct command *cmd) {
 fprintf (stderr, "DEBUG: otfcert retrieval returned %d\n", gtls_errno);
 			return gtls_errno;
 		} else {
-fprintf (stderr, "DEBUG: otfcert retrieval returned GNUTLS_E_AGAIN, so skip it\n", gtls_errno);
+fprintf (stderr, "DEBUG: otfcert retrieval returned GNUTLS_E_AGAIN, so skip it\n");
 			gtls_errno = GNUTLS_E_SUCCESS;  // Attempt failed, ignore
 		}
 	}
