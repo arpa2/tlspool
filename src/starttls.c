@@ -1623,7 +1623,7 @@ gnutls_pcert_st *load_certificate_chain (uint32_t flags, unsigned int *chainlen,
 		long nextlen;
 		// Note: Accept BER because the outside SEQUENCE is not signed
 		certlen = asn1_get_length_ber (
-			((char *) certdatum->data) + 1,
+			(certdatum->data) + 1,
 			certdatum->size,
 			&lenlen);
 		certlen += 1 + lenlen;
@@ -1637,11 +1637,11 @@ gnutls_pcert_st *load_certificate_chain (uint32_t flags, unsigned int *chainlen,
 			*chainlen = 0;
 			return NULL;
 		}
-		nextdatum.data = ((char *) certdatum->data) + certlen;
-		nextdatum.size =           certdatum->size  - certlen;
+		nextdatum.data = (certdatum->data) + certlen;
+		nextdatum.size =  certdatum->size  - certlen;
 		certdatum->size = certlen;
 		nextlen = asn1_get_length_ber (
-			((char *) nextdatum.data) + 1,
+			nextdatum.data + 1,
 			nextdatum.size,
 			&lenlen);
 		nextlen += 1 + lenlen;
