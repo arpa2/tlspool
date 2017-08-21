@@ -3446,7 +3446,7 @@ static gtls_error fetch_remote_credentials (struct command *cmd) {
 	// Note: server's certs _may_ be DER NULL due to mutual auth in Kerberos
 #else
 	cmd->remote_cert_type = gnutls_certificate_type_get (cmd->session);
-	certs = gnutls_certificate_get (cmd->session, &num_certs);
+	certs = gnutls_certificate_get_peers (cmd->session, &num_certs);
 #endif
 	if (certs == NULL) {
 		num_certs = 0;
