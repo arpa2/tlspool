@@ -5058,6 +5058,7 @@ fprintf (stderr, "DEBUG: Freeing cmd->lids[%d].data %p\n", i-LID_TYPE_MIN, (void
 		free (cmd->trust_valexp);
 		cmd->trust_valexp = NULL;
 	}
+#ifdef HAVE_TLS_KDH
 	//
 	// Cleanup any Kerberos session key -- it served its purpose
 	if (cmd->krb_key.contents != NULL) {
@@ -5075,6 +5076,7 @@ fprintf (stderr, "DEBUG: Freeing cmd->lids[%d].data %p\n", i-LID_TYPE_MIN, (void
 		krb5_free_principal (krbctx_srv, cmd->krbid_cli);
 		cmd->krbid_cli = NULL;
 	}
+#endif
 
 #if 0
 /* This is not proper.  gnutls_certificate_set_key() suggests that these are
