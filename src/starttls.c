@@ -4593,7 +4593,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__
 		while (anonpre_regjmp > 0) {
 			anonpre_regjmp = anonpre_regjmp >> 1;
 			cmp = strncasecmp (anonpre_registry [anonpre_regidx].service,
-				cmd->cmd.pio_data.pioc_starttls.service,
+				(const char *)cmd->cmd.pio_data.pioc_starttls.service,
 				TLSPOOL_SERVICELEN);
 fprintf (stderr, "DEBUG: anonpre_determination, comparing [%d] %s to %s, found cmp==%d\n", anonpre_regidx, anonpre_registry [anonpre_regidx].service, cmd->cmd.pio_data.pioc_starttls.service, cmp);
 			if (cmp == 0) {
@@ -5374,13 +5374,13 @@ void starttls_prng (struct command *cmd) {
 		if (strlen (pf) != in1len) {
 			continue;
 		}
-		if (strcmp (pf, in1) != 0) {
+		if (strcmp (pf, (const char *)in1) != 0) {
 			continue;
 		}
 	}
 	if (*prefixes == NULL) {
 		// RFC 5705 defines a private-use prefix "EXPERIMENTAL"
-		if ((in1len <= 12) || (strncmp (in1, "EXPERIMENTAL", 12) != 0)) {
+		if ((in1len <= 12) || (strncmp ((const char *)in1, "EXPERIMENTAL", 12) != 0)) {
 			err = 1;
 		}
 	}
@@ -5408,9 +5408,10 @@ void starttls_prng (struct command *cmd) {
 	errno = 0;
 	E_g2e ("GnuTLS PRNG based on session master key failed",
 		gnutls_prf_rfc5705 (ckn->session,
-			in1len, in1,
-			(in2len >= 0)? in2len: 0, (in2len >= 0) ? in2: NULL,
-			prnglen, prng->buffer));
+			in1len, (const char *)in1,
+			(in2len >= 0)? in2len: 0,
+			(const char *)((in2len >= 0) ? in2: NULL),
+			prnglen, (char *)prng->buffer));
 	err = err || (errno != 0);
 	//
 	// Wipe temporary data / buffers for security reasons
@@ -5507,7 +5508,7 @@ gtls_error certificate_onthefly (struct command *cmd) {
 	//TODO:      gnutls_x509_crt_set_key_usage
 	//TODO:SKIP? gnutls_x509_crt_set_ca_status
 	for (i=0; i < svcusage_registry_size; i++) {
-		if (strcmp (svcusage_registry [i].service, cmd->cmd.pio_data.pioc_starttls.service) == 0) {
+		if (strcmp (svcusage_registry [i].service, (const char *)(cmd->cmd.pio_data.pioc_starttls.service)) == 0) {
 			const char **walker;
 			E_g2e ("Failed to setup basic key usage during on-the-fly certificate creation",
 				gnutls_x509_crt_set_key_usage (otfcert, svcusage_registry [i].usage));
@@ -5577,7 +5578,7 @@ gtls_error certificate_onthefly (struct command *cmd) {
 		cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].data = ptr;
 		* (uint32_t *) ptr = htonl (LID_TYPE_X509 | LID_ROLE_BOTH);
 		ptr += 4;
-		strcpy (ptr, onthefly_p11uri);
+		strcpy ((char *)ptr, onthefly_p11uri);
 		ptr += strlen (onthefly_p11uri) + 1;
 		restsz = cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].size - 4 - strlen (onthefly_p11uri) - 1;
 		E_g2e ("Failed to export on-the-fly certificate as a credential",
