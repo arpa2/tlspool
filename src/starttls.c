@@ -1525,7 +1525,7 @@ fprintf (stderr, "DEBUG: Missing certificate for local ID %s and remote ID %s\n"
 	//
 	// Return the overral error code, hopefully GNUTLS_E_SUCCESS
 	tlog (TLOG_TLS, LOG_DEBUG, "Returning %d / %s from clisrv_cert_retrieve()", gtls_errno, gnutls_strerror (gtls_errno));
-fprintf (stderr, "DEBUG: clisrv_cert_retrieve() sets *pcert to 0x%xl (length %d)... {pubkey = 0x%lx, cert= {data = 0x%lx, size=%ld}, type=%ld}\n", (long) *pcert, *pcert_length, (long) (*pcert)->pubkey, (long) (*pcert)->cert.data, (long) (*pcert)->cert.size, (long) (*pcert)->type);
+fprintf (stderr, "DEBUG: clisrv_cert_retrieve() sets *pcert to 0x%lx (length %d)... {pubkey = 0x%lx, cert= {data = 0x%lx, size=%ld}, type=%ld}\n", (long) *pcert, *pcert_length, (long) (*pcert)->pubkey, (long) (*pcert)->cert.data, (long) (*pcert)->cert.size, (long) (*pcert)->type);
 	return gtls_errno;
 }
 
