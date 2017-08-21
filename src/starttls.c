@@ -3915,7 +3915,7 @@ static int srv_clienthello (gnutls_session_t session, unsigned int htype, unsign
 	int gtls_errno = GNUTLS_E_SUCCESS;
 	char sni [sizeof (cmd->cmd.pio_data.pioc_starttls.remoteid)]; // static
 	size_t snilen = sizeof (sni);
-	int snitype;
+	unsigned int snitype;
 	char *lid;
 
 tlog (LOG_DAEMON, LOG_INFO, "Invoked %sprocessor for Client Hello, htype=%d, incoming=%d\n",
