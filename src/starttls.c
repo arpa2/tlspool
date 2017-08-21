@@ -5582,7 +5582,7 @@ gtls_error certificate_onthefly (struct command *cmd) {
 		restsz = cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].size - 4 - strlen (onthefly_p11uri) - 1;
 		E_g2e ("Failed to export on-the-fly certificate as a credential",
 			gnutls_x509_crt_export (otfcert, GNUTLS_X509_FMT_DER, ptr, &restsz));
-char *pembuf [10000];
+char pembuf [10000];
 size_t pemlen = sizeof (pembuf) - 1;
 int exporterror = gnutls_x509_crt_export (otfcert, GNUTLS_X509_FMT_PEM, pembuf, &pemlen);
 if (exporterror == 0) {
