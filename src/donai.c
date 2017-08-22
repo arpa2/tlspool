@@ -58,7 +58,7 @@ int dbcred_flags (DBT *creddata, uint32_t *flags) {
  *  - a (data,size) structure for the public credential, also when LID_CHAINED
  * The function returns non-zero on success (zero indicates syntax error).
  */
-int dbcred_interpret (pool_datum_t *creddata, uint32_t *flags, char **p11priv, uint8_t **pubdata, int *pubdatalen) {
+int dbcred_interpret (pool_datum_t *creddata, uint32_t *flags, char **p11priv, uint8_t **pubdata, unsigned int *pubdatalen) {
 	int p11privlen;
 	if (creddata->size <= 4) {
 		return 0;

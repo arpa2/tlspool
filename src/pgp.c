@@ -50,7 +50,7 @@ bool pgp_initcursor_radix64 (pgpcursor_t crs, char *data, uint32_t len) {
 		return 0;
 	}
 	// Setup initial data
-	crs->ptr = data;
+	crs->ptr = (uint8_t *)data;
 	crs->ofs = 0;
 	crs->r64ofs = r64ofs;
 	// Count the characters of radix64; look for '-' and '=' endings

@@ -35,6 +35,7 @@
 static char valexp_varchars [] = "LlIiFfAaTtDdRrEeOoGgPpUuSsCc";
 static int valexp_char_bitnum [128];
 typedef uint32_t valexpreqs_t;
+
 #define VALEXP_CHARBIT(c)  (valexp_char_bitnum [(c)])
 #define VALEXP_CHARKNOWN(c) (((c) >= 0) && ((c) < 128) && (VALEXP_CHARBIT((c)) >= 0))
 #define VALEXP_OPERAND(c) (((c) == '0') || ((c) == '1') || (VALEXP_CHARKNOWN((c))))
@@ -111,14 +112,11 @@ struct valexp {
  * unhandy valexp_varchars to a direct char-to-bitnum map.
  */
 void setup_validate (void) {
-	int i;
-	for (i=0; i < 128; i++) {
+	for (unsigned int i=0; i < 128; i++) {
 		valexp_char_bitnum [i] = -1;
 	}
-	i = 0;
-	while (valexp_varchars [i]) {
-		assert (i < 32);
-		valexp_char_bitnum [valexp_varchars [i]] = i++;
+	for (unsigned int i=0; (i < 32) && valexp_varchars[i]; ++i) {
+		valexp_char_bitnum [valexp_varchars [i]] = i;
 	}
 }
 
@@ -182,7 +180,7 @@ void cleanup_validate (void) {
  * that it should not be made to work on constant strings, but it can
  * be made to work on the same (global/static) variables repeatedly or
  * even concurrently; it is designed to be idempotent and re-entrant.
- * 
+ *
  * On success, the function fills the parsed value with the number
  * of characters that were parsed (in a range of 0 up to vallen)
  * starting from the end of the expression -- since it is reverse
@@ -205,7 +203,7 @@ static int count_cases (char *valexpstr, int vallen, int invert, int *parsed) {
 		return -1;
 	}
 	vallen--;
-	opcp = &valexpstr [vallen];
+	opcp = (uint8_t *)(&valexpstr [vallen]);
 	opc = *opcp;
 	switch (opc) {
 	case '&':
@@ -296,7 +294,7 @@ static int count_cases (char *valexpstr, int vallen, int invert, int *parsed) {
 			return 1;
 		}
 	default:
-		if (VALEXP_OPERAND (valexpstr [vallen])) {
+		if (VALEXP_OPERAND ((uint8_t)(valexpstr [vallen]))) {
 			*parsed = 1;
 			return 1;
 		} else {
@@ -528,7 +526,7 @@ static int explicit_interleave (struct valexp_case *accu,   int acculen,
  * has two & operands.  Inversion applied to ? is passed inward.  After
  * having been inverted if needed, the ? operator is translated into the
  * normal sum and product operators.
- * 
+ *
  * The most complex operation is the interleaving caused by products; all
  * combinations of the operand cases must be combined to form the outcome
  * cases, and the individual constraints must be combined to form a more
@@ -567,7 +565,7 @@ static int explicit_interleave (struct valexp_case *accu,   int acculen,
  * A sum initiates the remaining space by setting it all to zero, to signify
  * TRUE.  It then applies its first operand, and learns about the end point.
  * Then it clears the remaining space after this end point, and applies the
- * second operand starting in its beginning.  Both cases are started with 
+ * second operand starting in its beginning.  Both cases are started with
  * run length 1.  The sum operation returns as its number of cases the sum
  * of the number of cases from its operands.
  *
@@ -715,7 +713,7 @@ static int expand_cases_rec (char *valexpstr, int vallen, int invert, int *parse
 		// Post: #0;#1;#2;???=run[runlen];???[tbc];???
 		case0p = count_cases (valexpstr, vallen, 0, &pars0);
 		case0n = count_cases (valexpstr, vallen, 1, &pars0);
-		if (stacktop & (zero_1st | zero_2nd) == (zero_1st & zero_2nd)) {
+		if ((stacktop & (zero_1st | zero_2nd)) == (zero_1st | zero_2nd)) {
 			// Note, need &pars1 below when zero_2nd is false
 			case1 = 0;
 		} else {
@@ -874,7 +872,7 @@ static int expand_cases_rec (char *valexpstr, int vallen, int invert, int *parse
 				0, &pars0,
 				ve, offset, runlen * case1, 0 /*TODO:REALLY0?*/));
 		}
-		// 
+		//
 		// Interleave i-[case0n] into #1
 		// Pre:  #0 = run*t*i+[sz0]
 		//	 #1 = run*e[runlen*case2<sz1]
@@ -947,7 +945,7 @@ int valexp_handling_index (char flag) {
 fprintf (stderr, "DEBUG: Returning from valexp_handling_index() with special-value flag 0\n");
 		return strlen (valexp_varchars);
 	}
-	assert (VALEXP_CHARKNOWN (flag));
+	assert (VALEXP_CHARKNOWN ((uint8_t)flag));
 fprintf (stderr, "DEBUG: Returning from valexp_handling_index() for flag '%c' with character bit value %d\n", flag, VALEXP_CHARBIT (flag));
 	return VALEXP_CHARBIT (flag);
 }
@@ -1128,7 +1126,7 @@ void valexp_setpredicate (struct valexp *ve, char predicate, bool value) {
 #ifdef DEBUG
 	assert (pthread_equal (ve->registering_thread, pthread_self ()));
 #endif
-	if (!VALEXP_CHARKNOWN (predicate)) {
+	if (!VALEXP_CHARKNOWN ((uint8_t)predicate)) {
 		// Nice try... ignore (but think twice about trusting that caller)
 		return;
 	}

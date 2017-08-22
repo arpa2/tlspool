@@ -5,7 +5,7 @@ OBJS = daemon.o config.o manage.o service.o cache.o pinentry.o lidentry.o \
 	validate.o online.o pgp.o trust.o
 
 CFLAGS += -pthread -I ../include -std=gnu11
-CFLAGS += $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(BDB_CFLAGS) $(TASN1_CFLAGS) $(UNBOUND_CFLAGS) $(QUICKDER_CFLAGS)
+CFLAGS += $(BDB_CFLAGS) $(GNUTLS_CFLAGS) $(P11KIT_CFLAGS) $(TASN1_CFLAGS) $(UNBOUND_CFLAGS) $(QUICKDER_CFLAGS)
 
 LDFLAGS += -std=gnu11
 
@@ -34,10 +34,11 @@ TASN1_LIBS   = $(shell $(PKG_CONFIG) --libs   libtasn1)
 #HOWTOUSE# UNBOUND_LIBS  = $(shell $(PKG_CONFIG) --libs   libunbound)
 UNBOUND_CFLAGS =
 UNBOUND_LIBS = -lunbound
-QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags quick-der)
-QUICKDER_LIBS   = $(shell $(PKG_CONFIG) --libs   quick-der)
+QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags Quick-DER)
+QUICKDER_LIBS   = $(shell $(PKG_CONFIG) --libs   Quick-DER)
 KERBEROS_CFLAGS = $(shell krb5-config --cflags)
 KERBEROS_LIBS = $(shell krb5-config --libs)
+# CFLAGS += -DHAVE_TLS_KDH
 
 ifdef WINVER
 CFLAGS += -D_WIN32_WINNT=0x0600 -DATTRIBUTE_UNUSED="" -I ../include/windows
@@ -61,22 +62,12 @@ PKG_CONFIG ?= pkg-config
 
 SBIN ?= sbin
 
-BDB_CFLAGS = 
+BDB_CFLAGS ?=
 ifdef WINVER
 BDB_LIBS   = -ldb-6.1
 else
 BDB_LIBS   = -ldb # this is the default
 endif
-
-TASN1_CFLAGS = $(shell pkg-config --cflags libtasn1)
-TASN1_LIBS   = $(shell pkg-config --libs   libtasn1)
-#HOWTOUSE# UNBOUND_FLAGS = $(shell pkg-config --cflags libunbound)
-#HOWTOUSE# UNBOUBD_LIBS  = $(shell pkg-config --libs   libunbound)
-QUICKDER_CFLAGS = $(shell pkg-config --cflags quick-der)
-QUICKDER_LIBS = $(shell pkg-config --libs quick-der)
-KERBEROS_CFLAGS = $(shell krb5-config --cflags)
-KERBEROS_LIBS = $(shell krb5-config --libs)
-# CFLAGS += -DHAVE_TLS_KDH
 
 all: $(TARGETS)
 
