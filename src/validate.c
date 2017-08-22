@@ -35,6 +35,7 @@
 static char valexp_varchars [] = "LlIiFfAaTtDdRrEeOoGgPpUuSsCc";
 static int valexp_char_bitnum [128];
 typedef uint32_t valexpreqs_t;
+
 #define VALEXP_CHARBIT(c)  (valexp_char_bitnum [(c)])
 #define VALEXP_CHARKNOWN(c) (((c) >= 0) && ((c) < 128) && (VALEXP_CHARBIT((c)) >= 0))
 #define VALEXP_OPERAND(c) (((c) == '0') || ((c) == '1') || (VALEXP_CHARKNOWN((c))))
@@ -202,7 +203,7 @@ static int count_cases (char *valexpstr, int vallen, int invert, int *parsed) {
 		return -1;
 	}
 	vallen--;
-	opcp = &valexpstr [vallen];
+	opcp = (uint8_t *)(&valexpstr [vallen]);
 	opc = *opcp;
 	switch (opc) {
 	case '&':
@@ -293,7 +294,7 @@ static int count_cases (char *valexpstr, int vallen, int invert, int *parsed) {
 			return 1;
 		}
 	default:
-		if (VALEXP_OPERAND (valexpstr [vallen])) {
+		if (VALEXP_OPERAND ((uint8_t)(valexpstr [vallen]))) {
 			*parsed = 1;
 			return 1;
 		} else {
@@ -944,7 +945,7 @@ int valexp_handling_index (char flag) {
 fprintf (stderr, "DEBUG: Returning from valexp_handling_index() with special-value flag 0\n");
 		return strlen (valexp_varchars);
 	}
-	assert (VALEXP_CHARKNOWN (flag));
+	assert (VALEXP_CHARKNOWN ((uint8_t)flag));
 fprintf (stderr, "DEBUG: Returning from valexp_handling_index() for flag '%c' with character bit value %d\n", flag, VALEXP_CHARBIT (flag));
 	return VALEXP_CHARBIT (flag);
 }
@@ -1125,7 +1126,7 @@ void valexp_setpredicate (struct valexp *ve, char predicate, bool value) {
 #ifdef DEBUG
 	assert (pthread_equal (ve->registering_thread, pthread_self ()));
 #endif
-	if (!VALEXP_CHARKNOWN (predicate)) {
+	if (!VALEXP_CHARKNOWN ((uint8_t)predicate)) {
 		// Nice try... ignore (but think twice about trusting that caller)
 		return;
 	}
