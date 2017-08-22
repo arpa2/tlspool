@@ -712,7 +712,7 @@ static int expand_cases_rec (char *valexpstr, int vallen, int invert, int *parse
 		// Post: #0;#1;#2;???=run[runlen];???[tbc];???
 		case0p = count_cases (valexpstr, vallen, 0, &pars0);
 		case0n = count_cases (valexpstr, vallen, 1, &pars0);
-		if (stacktop & (zero_1st | zero_2nd) == (zero_1st & zero_2nd)) {
+		if ((stacktop & (zero_1st | zero_2nd)) == (zero_1st | zero_2nd)) {
 			// Note, need &pars1 below when zero_2nd is false
 			case1 = 0;
 		} else {
