@@ -1069,7 +1069,7 @@ static int ldap_getattr_first (crsval_t crs, online_data_t dta, val_t hdl, char 
 static int ldap_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 	assert (dta->ldap != NULL);
 	assert (dta->ldap_attr != NULL);
-	void *cursor;
+	struct berelement *cursor;
 	char *atnm;
 	struct berval **atvs;
 	int i;
@@ -1100,7 +1100,7 @@ printf ("LDAP attribute comparison match is %d\n", match);
 static int ldap_pgpkeycmp_eval (online_data_t dta, val_t hdl, char *param) {
 	assert (dta->ldap != NULL);
 	assert (dta->ldap_attr != NULL);
-	void *cursor;
+	struct berelement *cursor;
 	char *atnm;
 	struct berval **atvs;
 	int i;
