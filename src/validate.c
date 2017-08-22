@@ -182,7 +182,7 @@ void cleanup_validate (void) {
  * that it should not be made to work on constant strings, but it can
  * be made to work on the same (global/static) variables repeatedly or
  * even concurrently; it is designed to be idempotent and re-entrant.
- * 
+ *
  * On success, the function fills the parsed value with the number
  * of characters that were parsed (in a range of 0 up to vallen)
  * starting from the end of the expression -- since it is reverse
@@ -528,7 +528,7 @@ static int explicit_interleave (struct valexp_case *accu,   int acculen,
  * has two & operands.  Inversion applied to ? is passed inward.  After
  * having been inverted if needed, the ? operator is translated into the
  * normal sum and product operators.
- * 
+ *
  * The most complex operation is the interleaving caused by products; all
  * combinations of the operand cases must be combined to form the outcome
  * cases, and the individual constraints must be combined to form a more
@@ -567,7 +567,7 @@ static int explicit_interleave (struct valexp_case *accu,   int acculen,
  * A sum initiates the remaining space by setting it all to zero, to signify
  * TRUE.  It then applies its first operand, and learns about the end point.
  * Then it clears the remaining space after this end point, and applies the
- * second operand starting in its beginning.  Both cases are started with 
+ * second operand starting in its beginning.  Both cases are started with
  * run length 1.  The sum operation returns as its number of cases the sum
  * of the number of cases from its operands.
  *
@@ -874,7 +874,7 @@ static int expand_cases_rec (char *valexpstr, int vallen, int invert, int *parse
 				0, &pars0,
 				ve, offset, runlen * case1, 0 /*TODO:REALLY0?*/));
 		}
-		// 
+		//
 		// Interleave i-[case0n] into #1
 		// Pre:  #0 = run*t*i+[sz0]
 		//	 #1 = run*e[runlen*case2<sz1]
