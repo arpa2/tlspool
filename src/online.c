@@ -336,7 +336,7 @@ int strncatesc (char *dst, int dstlen, char *src, char srcend, char *escme) {
 		retval += esc ? 3 : 1;
 		if (retval <= dstlen) {
 			if (esc) {
-				sprintf (dst, "\\02x", *src++);
+				sprintf (dst, "\\%02x", *src++);
 				dst += 3;
 			} else {
 				*dst++ = *src++;
