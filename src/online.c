@@ -316,7 +316,7 @@ int online_run_profile (online_profile_t *prf,
  * The return value is the number of characters added; this may be more than
  * the dstlen, but then the copy hasn't been executed.
  */
-int strncatesc (char *dst, int dstlen, char *src, char srcend, char *escme) {
+int strncatesc (char *dst, int dstlen, const char *src, char srcend, const char *escme) {
 	int retval = 0;
 	int esc;
 	char *stacked = NULL;
