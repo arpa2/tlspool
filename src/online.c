@@ -538,7 +538,7 @@ printf ("DNS IP query type is neither A nor AAAA\n");
 		return ONLINE_INVALID;
 	}
 	// Deliver the response (dta->dnsip_addrfam has already been set)
-	dta->dnsip_addr = dta->dnsip->data [dta->dnsip_next++];
+	dta->dnsip_addr = (uint8_t *)(dta->dnsip->data [dta->dnsip_next++]);
 	return ONLINE_SUCCESS;
 }
 static int dns_ip_first (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
@@ -601,7 +601,7 @@ static void dns_srv_clean (crsval_t crs, online_data_t dta, val_t hdl) {
 }
 static int dns_srv_next (crsval_t crs, online_data_t dta, val_t hdl) {
 	int retval;
-	uint8_t *data;
+	char *data;
 	int len;
 	ldns_rdf *server_rdf;
 	// Load the next element and return if it is non-existent
@@ -715,7 +715,7 @@ static int dns_tlsa_next (crsval_t crs, online_data_t dta, val_t hdl) {
 	uint8_t *data;
 	int len;
 	// Load the next element and return if it is non-existent
-	data = dta->dnstlsa->data [dta->dnstlsa_next];
+	data = (uint8_t *)(dta->dnstlsa->data [dta->dnstlsa_next]);
 	if (data == NULL) {
 		return ONLINE_NOTFOUND;
 	}
