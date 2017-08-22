@@ -111,14 +111,11 @@ struct valexp {
  * unhandy valexp_varchars to a direct char-to-bitnum map.
  */
 void setup_validate (void) {
-	int i;
-	for (i=0; i < 128; i++) {
+	for (unsigned int i=0; i < 128; i++) {
 		valexp_char_bitnum [i] = -1;
 	}
-	i = 0;
-	while (valexp_varchars [i]) {
-		assert (i < 32);
-		valexp_char_bitnum [valexp_varchars [i]] = i++;
+	for (unsigned int i=0; (i < 32) && valexp_varchars[i]; ++i) {
+		valexp_char_bitnum [valexp_varchars [i]] = i;
 	}
 }
 
