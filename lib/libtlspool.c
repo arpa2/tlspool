@@ -65,8 +65,6 @@ int tlspool_pid (char *opt_pidfile) {
 	int fd;
 	char str_pid [256];
 	char *endptr;
-	size_t len;
-	unsigned long pid;
 
 	if (opt_pidfile == NULL) {
 		opt_pidfile = tlspool_configvar (NULL, "daemon_pidfile");
@@ -77,15 +75,15 @@ int tlspool_pid (char *opt_pidfile) {
 	assert (opt_pidfile != NULL);
 	fd = open (opt_pidfile, O_RDONLY);
 	if (fd != -1) {
-		len = read (fd, str_pid, sizeof (str_pid) -1);
+		size_t len = read (fd, str_pid, sizeof (str_pid) -1);
 		close (fd);
 		if ((len > 0) && (len < sizeof (str_pid))) {
 			str_pid [len] = '\0';
-			pid = strtoul (str_pid, &endptr, 10);
+			/* pid_t */ unsigned long pid = strtoul (str_pid, &endptr, 10);
 			while ((endptr != NULL) && (isspace (*endptr))) {
 				endptr++;
 			}
-			if ((pid >= 0) && (pid <= INT_MAX) && (!*endptr)) {
+			if ((pid <= INT_MAX) && (!*endptr)) {
 				return (int) pid;
 			}
 		}
@@ -699,7 +697,7 @@ static int socket_dup_protocol_info(int fd, int pid, LPWSAPROTOCOL_INFOW lpProto
 		return -1;
 	} else {
 		return 0;
-	}	
+	}
 }
 #endif
 
