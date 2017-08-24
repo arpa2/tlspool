@@ -5,9 +5,10 @@ project(tlspool C)
 
 include(MacroEnsureOutOfSourceBuild)
 include(MacroGitVersionInfo)
-include(GNUInstallDirs)
 
+include(CTest)
 include(FeatureSummary)
+include(GNUInstallDirs)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -27,7 +28,7 @@ find_package(Libldns REQUIRED)  # Local
 find_package(LibTASN1 REQUIRED)  # Local
 find_package(OpenLDAP REQUIRED)  # Local
 find_package(P11-Kit REQUIRED)  # Local
-find_package(Quick-DER 1.2 REQUIRED)  # Config
+find_package(Quick-DER 1.2.3 REQUIRED)  # Config
 find_package(Unbound REQUIRED)  # Local
 
 # TODO: look for Kerberos
@@ -51,4 +52,6 @@ add_subdirectory(lib)
 add_subdirectory(tool)
 add_subdirectory(pulleyback)
 add_subdirectory(doc)
-# add_subdirectory(test)
+if(BUILD_TESTING)
+    add_subdirectory(test)
+endif()
