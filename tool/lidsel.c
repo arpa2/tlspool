@@ -102,7 +102,7 @@ printf ("DEBUG: lidsel.c lidcb() returns after processing database entry\n");
 		}
 	} while (error);
 	d->dblidctr = 0;
-printf ("DEBUG: lidsel.c lidcb() returns after setting localid to %s and flags to 0x%08lx\n", entry->localid, entry->flags);
+printf ("DEBUG: lidsel.c lidcb() returns after setting localid to %s and flags to 0x%08x\n", entry->localid, entry->flags);
 	return NULL;
 }
 

@@ -23,7 +23,7 @@
 #include <tlspool/internal.h>
 
 
-const char const *usage =
+const char usage[] =
 "Usage: %s tlspool.conf selector [[user@]domain...]\n"
 " - tlspool.conf      is the configuration file for the TLS Pool\n"
 " - selector              is a matcher for remote peer identities\n"

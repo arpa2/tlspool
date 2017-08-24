@@ -9,12 +9,13 @@ TARGETS = testcli testsrv tlstunnel \
 	configvar
 
 OBJS = *.o
+COMMON_OBJ = runterminal.o
 
 CFLAGS += -pthread -I ../include
 
 LDFLAGS =
 
-LIBS = 
+LIBS =
 
 PREFIX = /usr/local
 
@@ -35,19 +36,19 @@ configvar_LIBS = $(tlspool_LIBS)
 P11KIT_CFLAGS = $(shell pkg-config --cflags p11-kit-1)
 P11KIT_LIBS   = $(shell pkg-config --libs   p11-kit-1)
 
-BDB_CFLAGS = 
+BDB_CFLAGS =
 BDB_LDFLAGS = -ldb
 
 all: $(TARGETS)
 
-testcli: testcli.c $(tlspool_LIBS)
-	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS)
+testcli: testcli.c $(tlspool_LIBS) $(COMMON_OBJ)
+	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(COMMON_OBJ) $(tlspool_LDFLAGS)
 
-testsrv: testsrv.c $(tlspool_LIBS)
-	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS)
+testsrv: testsrv.c $(tlspool_LIBS) $(COMMON_OBJ)
+	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(COMMON_OBJ) $(tlspool_LDFLAGS)
 
-testpeer: testpeer.c $(tlspool_LIBS)
-	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS)
+testpeer: testpeer.c $(tlspool_LIBS) $(COMMON_OBJ)
+	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(COMMON_OBJ) $(tlspool_LDFLAGS)
 	@echo '#'
 	@echo '# You cannot use testpeer yet'
 	@echo '#'

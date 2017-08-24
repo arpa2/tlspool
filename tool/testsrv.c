@@ -16,6 +16,7 @@
 
 #include <tlspool/starttls.h>
 
+#include "runterminal.h"
 
 static starttls_t tlsdata_srv = {
 	.flags = PIOF_STARTTLS_LOCALROLE_SERVER
@@ -36,73 +37,11 @@ static struct sigaction sigcont_action = {
 
 static int sigcont = 0;
 
-void runterminal (int chanio) {
-	struct pollfd inout [2];
-	ssize_t sz;
-	char buf [512];
-	inout [0].fd = 0;
-	inout [1].fd = chanio;
-	inout [0].events = inout [1].events = POLLIN;
-	while (1) {
-		if (sigcont) {
-			sigcont = 0;
-			printf ("Received SIGCONT, will now initiate TLS handshake renegotiation\n");
-			tlsdata_now.flags = PIOF_STARTTLS_LOCALROLE_SERVER
-					| PIOF_STARTTLS_REMOTEROLE_CLIENT
-					| PIOF_STARTTLS_RENEGOTIATE;
-			strcpy (tlsdata_now.localid, "testsrv@tlspool.arpa2.lab");
-			if (-1 == tlspool_starttls (-1, &tlsdata_now, NULL, NULL)) {
-				printf ("TLS handshake renegotiation failed, terminating\n");
-				break;
-			}
-			printf ("TLS handshake renegotiation completed successfully\n");
-		}
-		if (poll (inout, 2, -1) == -1) {
-			if (sigcont) {
-				continue;
-			} else {
-				break;
-			}
-		}
-		if ((inout [0].revents | inout [1].revents) & ~POLLIN) {
-			break;
-		}
-		if (inout [0].revents & POLLIN) {
-			sz = read (0, buf, sizeof (buf));
-			printf ("Read %d bytes, sigcont==%d (should be 0 for proper operation)\n", sz, sigcont);
-			if (sz == -1) {
-				break;
-			} else if (sz == 0) {
-				errno = 0;
-				break;
-			} else if (send (chanio, buf, sz, MSG_DONTWAIT) != sz) {
-				break;
-			} else {
-				printf ("Sent %d bytes\n", sz);
-			}
-		}
-		if (inout [1].revents & POLLIN) {
-			sz = recv (chanio, buf, sizeof (buf), MSG_DONTWAIT);
-			printf ("Received %d bytes, sigcont==%d (should be 0 for proper operation)\n", sz, sigcont);
-			if (sz == -1) {
-				break;
-			} else if (sz == 0) {
-				errno = 0;
-				break;
-			} else if (write (1, buf, sz) != sz) {
-				break;
-			} else {
-				printf ("Printed %d bytes\n", sz);
-			}
-		}
-	}
-}
-
 void sigcont_handler (int signum) {
 	sigcont = 1;
 }
 
-int main (int argc, char *argv) {
+int main (int argc, char **argv) {
 	int sox, cnx;
 	int plainfd;
 	struct sockaddr_in6 sin6;
@@ -139,7 +78,7 @@ reconnect:
 		perror ("Socket failed to listen on testsrv");
 		exit (1);
 	}
-	while (cnx = accept (sox, NULL, 0)) {
+	while ((cnx = accept (sox, NULL, 0))) {
 		if (cnx == -1) {
 			perror ("Failed to accept incoming connection");
 			continue;
@@ -181,7 +120,11 @@ reconnect:
 			printf ("SIGCONT will trigger renegotiation of the TLS handshake during a connection\n");
 		}
 		printf ("DEBUG: Local plainfd = %d\n", plainfd);
-		runterminal (plainfd);
+		runterminal (plainfd, &sigcont, &tlsdata_now,
+			PIOF_STARTTLS_LOCALROLE_SERVER | PIOF_STARTTLS_REMOTEROLE_CLIENT | PIOF_STARTTLS_RENEGOTIATE,
+			"testsrv@tlspool.arpa2.lab",
+			NULL
+		);
 		printf ("DEBUG: Client connection terminated\n");
 		close (plainfd);
 		if (pthread_sigmask (SIG_BLOCK, &sigcontset, NULL))  {

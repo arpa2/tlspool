@@ -28,7 +28,7 @@
 #include <tlspool/internal.h>
 
 
-const char const *usage =
+const char usage[] =
 "Usage: %s tlspool.conf [user@]fqdn type [p11priv pubdata...]\n"
 " - tlspool.conf      is the configuration file for the TLS Pool\n"
 " - user@fqdn or fqdn is a network access identifier\n"
@@ -194,7 +194,7 @@ int main (int argc, char *argv []) {
 		}
 		e_flags = ntohl (* (uint32_t *) e_value.data);
 		e_p11uri = (char *) & ((uint32_t *) e_value.data) [1];
-		e_bindata = e_p11uri + strnlen (e_p11uri, e_value.size - 4) + 1;
+		e_bindata = (uint8_t *)(e_p11uri + strnlen (e_p11uri, e_value.size - 4) + 1);
 		e_binlen = e_value.size - 4 - strnlen (e_p11uri, e_value.size - 4) - 1;
 		if (e_binlen <= 0) {
 			fprintf (stderr, "Error retrieving binary data;\n");

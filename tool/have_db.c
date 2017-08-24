@@ -27,7 +27,7 @@
 #include <tlspool/internal.h>
 
 
-const char const *usage =
+const char usage[] =
 "Usage: %s tlspool.conf\n"
 " - tlspool.conf      is the configuration file for the TLS Pool\n"
 "When this utility closes without error, then the databases for the TLS Pool\n"
