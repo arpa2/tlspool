@@ -42,7 +42,7 @@ PYTHON_CFLAGS = $(shell python-config --cflags)
 PYTHON_LIBS = $(shell python-config --libs)
 
 PERL_CFLAGS = -I/usr/lib/perl/5.14.2/CORE
-PERL_LIBS = 
+PERL_LIBS =
 
 TCL_CFLAGS = -I/usr/include/tcl8.5
 TCL_LIBS =
@@ -79,8 +79,9 @@ ifdef WINVER
 	install libtlspool.dll libtlspool.lib "$(DESTDIR)$(PREFIX)/bin/"
 	mkdir -p "$(DESTDIR)$(PREFIX)/include/tlspool"
 	install ../include/tlspool/starttls.h "$(DESTDIR)$(PREFIX)/include/tlspool"
-	install ../include/tlspool/commands.h "$(DESTDIR)$(PREFIX)/include/tlspool"	
-else	
+	install ../include/tlspool/commands.h "$(DESTDIR)$(PREFIX)/include/tlspool"
+else
+	install -d  "$(DESTDIR)$(PREFIX)/lib/"
 	install libtlspool.so libtlspool.a "$(DESTDIR)$(PREFIX)/lib/"
 	@echo '#'
 	@echo '# Python libraries not yet installed'

@@ -36,8 +36,12 @@ configvar_LIBS = $(tlspool_LIBS)
 P11KIT_CFLAGS = $(shell pkg-config --cflags p11-kit-1)
 P11KIT_LIBS   = $(shell pkg-config --libs   p11-kit-1)
 
-BDB_CFLAGS =
-BDB_LDFLAGS = -ldb
+BDB_CFLAGS ?=
+ifdef WINVER
+BDB_LIBS   = -ldb-6.1
+else
+BDB_LIBS   ?= -ldb # this is the default
+endif
 
 all: $(TARGETS)
 
@@ -66,25 +70,25 @@ pinentry: pinentry.c $(tlspool_LIBS)
 	gcc -std=gnu11 $(CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS)
 
 get_localid: get_localid.c
-	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LIBS)
 
 set_localid: set_localid.c
-	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LIBS)
 
 get_disclose: get_disclose.c $(donai_SRC)
-	gcc -std=gnu11 $(CFLAGS) $(donai_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(donai_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+	gcc -std=gnu11 $(CFLAGS) $(donai_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(donai_SRC) $(tlspool_LDFLAGS) $(BDB_LIBS)
 
 set_disclose: set_disclose.c
-	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LIBS)
 
 get_trust: get_trust.c $(donai_SRC)
-	gcc -std=gnu11 $(CFLAGS) $(donai_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(donai_SRC) $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+	gcc -std=gnu11 $(CFLAGS) $(donai_CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(donai_SRC) $(tlspool_LDFLAGS) $(BDB_LIBS)
 
 set_trust: set_trust.c
-	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LIBS)
 
 have_db: have_db.c
-	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LDFLAGS)
+	gcc -std=gnu11 $(CFLAGS) $(BDB_CFLAGS) -o "$@" "$<" $(tlspool_LDFLAGS) $(BDB_LIBS)
 
 pgp11_genkey: pgp11_genkey.c
 	gcc -std=gnu11 $(CFLAGS) $(pgp11genkey_CFLAGS) -o "$@" "$<" $(pgp11genkey_LIBS)

@@ -9,15 +9,15 @@ OBJS = *.o
 CFLAGS += -pthread -I ../include
 
 # Hey... this is testing code, so c'mon let's DEBUG
-CFLAGS += -DDEBUG -O0
+CFLAGS += -DDEBUG -O0 -std=c99
 
 LDFLAGS =
 
-LIBS = 
+LIBS =
 
 PREFIX = /usr/local
 
-valexprun_CFLAGS = -ggdb3
+valexprun_CFLAGS = -ggdb3 $(BDB_CFLAGS)
 valexprun_LIBS =
 
 config_CFLAGS = -DCONFIG_PARSE_ONLY
@@ -30,11 +30,15 @@ GNUTLS_LIBS   = $(shell $(PKG_CONFIG) --libs   gnutls)
 P11KIT_CFLAGS = $(shell $(PKG_CONFIG) --cflags p11-kit-1)
 P11KIT_LIBS   = $(shell $(PKG_CONFIG) --libs   p11-kit-1)
 
-BDB_CFLAGS = 
-BDB_LDFLAGS = -ldb
+BDB_CFLAGS ?=
+ifdef WINVER
+BDB_LIBS   = -ldb-6.1
+else
+BDB_LIBS   ?= -ldb # this is the default
+endif
 
-QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags quick-der) -ggdb3
-QUICKDER_LIBS   = $(shell $(PKG_CONFIG) --libs   quick-der)
+QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags Quick-DER) -ggdb3
+QUICKDER_LIBS   = $(shell $(PKG_CONFIG) --libs   Quick-DER)
 
 all: $(TARGETS)
 
@@ -56,14 +60,14 @@ testvalexp: valexprun
 	@ echo All validation expression tests succeeded
 
 onlinecheck: onlinecheck.c ../src/online.c ../src/config.c ../src/pgp.c
-	gcc $(CFLAGS) $(GNUTLS_CFLAGS) $(QUICKDER_CFLAGS) $(config_CFLAGS) -o "$@" "$<" ../src/pgp.c ../src/config.c -lunbound -lldns -lldap $(GNUTLS_LIBS) $(QUICKDER_LIBS)
+	gcc $(CFLAGS) $(BDB_CFLAGS) $(GNUTLS_CFLAGS) $(QUICKDER_CFLAGS) $(config_CFLAGS) -o "$@" "$<" ../src/pgp.c ../src/config.c -lunbound -lldns -lldap $(GNUTLS_LIBS) $(QUICKDER_LIBS)
 
 testonline: onlinecheck
 	./onlinecheck ../etc/tlspool.conf | tee | grep -v 'UNEXPECTED OUTPUT FAILURE'
 
 pulleybacksimu: pulleybacksimu.c
 	@# gcc $(CFLAGS) -o "$@" "$<" ../pulleyback/api.o ../pulleyback/parse.o ../pulleyback/connect.o ../pulleyback/update.o -lquickder -ldb
-	gcc $(CFLAGS) -o "$@" "$<" ../pulleyback/pulleyback_tlspool.so
+	gcc $(CFLAGS) -o "$@" "$<" $(QUICKDER_LIBS) ../pulleyback/pulleyback_tlspool.so
 
 clean:
 	rm -f $(OBJS) $(TARGETS)
