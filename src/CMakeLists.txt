@@ -47,3 +47,7 @@ target_link_libraries(tlspool
     ${pthread_LIBRARIES}
 )
 
+install(
+    TARGETS tlspool
+    DESTINATION ${CMAKE_INSTALL_SBINDIR}
+)

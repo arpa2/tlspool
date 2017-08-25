@@ -7,8 +7,17 @@ project(tlspool-pulleyback C)
 
 add_definitions(-fPIC)  # Compile flag
 
+# TODO: this should get some kind of support in SteamWorks so we can get
+#       consistent install paths, and the PREFIX property is set right.
+
 include_directories(${BDB_INCLUDE_DIR} ${Quick-DER_INCLUDE_DIRS})
 add_library(pulleyback_tlspool SHARED
     api.c connect.c parse.c update.c
     )
+set_target_properties(pulleyback_tlspool PROPERTIES PREFIX "")  # no "lib"
 target_link_libraries(pulleyback_tlspool ${BDB_LIBRARY} ${Quick-DER_LIBRARIES})
+
+install(
+    TARGETS pulleyback_tlspool
+    LIBRARY DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/steamworks/pulleyback/
+)

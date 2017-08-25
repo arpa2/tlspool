@@ -19,3 +19,12 @@ add_library(tlspool_static STATIC $<TARGET_OBJECTS:_libtlspool>)
 set_target_properties(tlspool_static PROPERTIES
     OUTPUT_NAME tlspool
 )
+
+install(
+    TARGETS tlspool_shared
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+install(
+    TARGETS tlspool_static
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)

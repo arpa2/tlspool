@@ -51,3 +51,24 @@ target_link_libraries(pgp11_genkey ${P11-Kit_LIBRARY} crypto)
 
 add_executable(configvar configvar.c)
 target_link_libraries(configvar tlspool_shared ${pthread_LIBRARIES})
+
+install(
+    TARGETS
+        configvar
+        get_disclose
+        get_localid
+        get_trust
+        have_db
+        lidsel
+        pgp11_genkey
+        pinentry
+        pingpool
+        set_disclose
+        set_localid
+        set_trust
+        testcli
+        testsrv
+        # testpeer # doesn't work yet?
+        tlstunnel
+    DESTINATION ${CMAKE_INSTALL_SBINDIR}
+)
