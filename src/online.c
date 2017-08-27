@@ -316,7 +316,7 @@ int online_run_profile (online_profile_t *prf,
  * The return value is the number of characters added; this may be more than
  * the dstlen, but then the copy hasn't been executed.
  */
-int strncatesc (char *dst, int dstlen, char *src, char srcend, char *escme) {
+int strncatesc (char *dst, int dstlen, const char *src, char srcend, const char *escme) {
 	int retval = 0;
 	int esc;
 	char *stacked = NULL;
@@ -336,7 +336,7 @@ int strncatesc (char *dst, int dstlen, char *src, char srcend, char *escme) {
 		retval += esc ? 3 : 1;
 		if (retval <= dstlen) {
 			if (esc) {
-				sprintf (dst, "\\02x", *src++);
+				sprintf (dst, "\\%02x", *src++);
 				dst += 3;
 			} else {
 				*dst++ = *src++;
@@ -538,7 +538,7 @@ printf ("DNS IP query type is neither A nor AAAA\n");
 		return ONLINE_INVALID;
 	}
 	// Deliver the response (dta->dnsip_addrfam has already been set)
-	dta->dnsip_addr = dta->dnsip->data [dta->dnsip_next++];
+	dta->dnsip_addr = (uint8_t *)(dta->dnsip->data [dta->dnsip_next++]);
 	return ONLINE_SUCCESS;
 }
 static int dns_ip_first (crsval_t crs, online_data_t dta, val_t hdl, char *param) {
@@ -601,7 +601,7 @@ static void dns_srv_clean (crsval_t crs, online_data_t dta, val_t hdl) {
 }
 static int dns_srv_next (crsval_t crs, online_data_t dta, val_t hdl) {
 	int retval;
-	uint8_t *data;
+	char *data;
 	int len;
 	ldns_rdf *server_rdf;
 	// Load the next element and return if it is non-existent
@@ -715,7 +715,7 @@ static int dns_tlsa_next (crsval_t crs, online_data_t dta, val_t hdl) {
 	uint8_t *data;
 	int len;
 	// Load the next element and return if it is non-existent
-	data = dta->dnstlsa->data [dta->dnstlsa_next];
+	data = (uint8_t *)(dta->dnstlsa->data [dta->dnstlsa_next]);
 	if (data == NULL) {
 		return ONLINE_NOTFOUND;
 	}
@@ -1069,7 +1069,7 @@ static int ldap_getattr_first (crsval_t crs, online_data_t dta, val_t hdl, char 
 static int ldap_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 	assert (dta->ldap != NULL);
 	assert (dta->ldap_attr != NULL);
-	void *cursor;
+	struct berelement *cursor;
 	char *atnm;
 	struct berval **atvs;
 	int i;
@@ -1100,7 +1100,7 @@ printf ("LDAP attribute comparison match is %d\n", match);
 static int ldap_pgpkeycmp_eval (online_data_t dta, val_t hdl, char *param) {
 	assert (dta->ldap != NULL);
 	assert (dta->ldap_attr != NULL);
-	void *cursor;
+	struct berelement *cursor;
 	char *atnm;
 	struct berval **atvs;
 	int i;

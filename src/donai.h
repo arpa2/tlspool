@@ -195,7 +195,7 @@ int dbcred_iterate_next (DBC *opt_crs_disclose, DBC *crs_localid, DBT *opt_discp
  *  - a (data,size) structure for the public credential
  * The function returns non-zero on success (zero indicates syntax error).
  */
-int dbcred_interpret (pool_datum_t *creddata, uint32_t *flags, char **p11priv, uint8_t **pubdata, int *pubdatalen);
+int dbcred_interpret (pool_datum_t *creddata, uint32_t *flags, char **p11priv, uint8_t **pubdata, unsigned int *pubdatalen);
 
 
 /* Iterate over selector values that would generalise the donai.  The

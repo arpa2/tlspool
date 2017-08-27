@@ -54,7 +54,7 @@ int trust_interpret (DBT *trustentry, uint32_t *flags, char **valexp, uint8_t **
 		// No room for the flags and mininal valexplen 1 + NUL
 		return TAD_STATUS_INVALID;
 	}
-	valexplen = strnlen (trustentry__data + 4, trustentry->size - 4);
+	valexplen = strnlen ((const char *)(trustentry__data + 4), trustentry->size - 4);
 	if (valexplen == 0) {
 		// Empty string is a syntax error
 		return TAD_STATUS_INVALID;
@@ -64,7 +64,7 @@ int trust_interpret (DBT *trustentry, uint32_t *flags, char **valexp, uint8_t **
 		return TAD_STATUS_INVALID;
 	}
 	*flags = ntohl (* (uint32_t *) trustentry__data);
-	*valexp = trustentry__data + 4;
+	*valexp = (char *)(trustentry__data + 4);
 	*trustdata    = trustentry__data + 4 + valexplen + 1;
 	*trustdatalen = trustentry->size - 4 - valexplen - 1;
 	return TAD_STATUS_SUCCESS;

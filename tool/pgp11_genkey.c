@@ -84,7 +84,7 @@ unsigned int add_userid_pkt (uint8_t *buf, unsigned int pos, char *userid, CK_SE
 	hashtag [3] = txtlen >> 8;
 	hashtag [4] = txtlen & 0xff;
 	if ((ckr = fun->C_SignUpdate (hsm, hashtag, 5)) != CKR_OK) {
-		fprintf (stderr, "%08x: Failed to append UserID hashtag to signature\n", ckr);
+		fprintf (stderr, "%08lx: Failed to append UserID hashtag to signature\n", ckr);
 		exit (1);
 	}
 	if (sha) {
@@ -102,7 +102,7 @@ unsigned int add_userid_pkt (uint8_t *buf, unsigned int pos, char *userid, CK_SE
 	memcpy (buf + pos, userid, txtlen);
 	pos += txtlen;
 	if ((ckr = fun->C_SignUpdate (hsm, buf + pos - txtlen, txtlen)) != CKR_OK) {
-		fprintf (stderr, "%08x: Failed to attach UserID text to signature\n", ckr);
+		fprintf (stderr, "%08lx: Failed to attach UserID text to signature\n", ckr);
 		exit (1);
 	}
 	if (sha) {
@@ -149,7 +149,7 @@ unsigned int add_pubkey_rsa_pkt (uint8_t *buf, unsigned int pos, uint8_t *modulu
 	hashtag [1] = keylen >> 8;
 	hashtag [2] = keylen & 0xff;
 	if ((ckr = fun->C_SignUpdate (hsm, hashtag, 3)) != CKR_OK) {
-		fprintf (stderr, "%08x: Failed to append public key hashtag to signature\n", ckr);
+		fprintf (stderr, "%08lx: Failed to append public key hashtag to signature\n", ckr);
 		exit (1);
 	}
 	if (sha) {
@@ -190,7 +190,7 @@ unsigned int add_pubkey_rsa_pkt (uint8_t *buf, unsigned int pos, uint8_t *modulu
 	memcpy (buf + pos, pubexp,  pubexp_len );
 	pos += pubexp_len;
 	if ((ckr = fun->C_SignUpdate (hsm, buf + pos - keylen, keylen)) != CKR_OK) {
-		fprintf (stderr, "%08x: Failed to append public key data to signatures\n", ckr);
+		fprintf (stderr, "%08lx: Failed to append public key data to signatures\n", ckr);
 		exit (1);
 	}
 	if (sha) {
@@ -205,7 +205,7 @@ unsigned int add_pubkey_rsa_pkt (uint8_t *buf, unsigned int pos, uint8_t *modulu
 
 /* Append a sha256rsa signature with the given packet tag.  The signature
  * and its length in bytes are provided.
- * 
+ *
  * If buf is NULL, only the length calculations are performed.
  *
  * The HSM context is assumed to have collected the bytes that need to
@@ -249,7 +249,7 @@ unsigned int add_signature_sha256rsa_pkt (uint8_t *buf, unsigned int pos, int si
 	buf [pos++] = 27;
 	buf [pos++] = (sigtype == 0x18)? 0x0c: 0x23;	/* With signing 0x02 */
 	if ((ckr = fun->C_SignUpdate (hsm, buf + startpos, pos - startpos)) != CKR_OK) {
-		fprintf (stderr, "%08x: Failed to append signed subpackets to signature\n", ckr);
+		fprintf (stderr, "%08lx: Failed to append signed subpackets to signature\n", ckr);
 		exit (1);
 	}
 	SHA256_Update (sha, buf + startpos, pos - startpos);
@@ -260,7 +260,7 @@ unsigned int add_signature_sha256rsa_pkt (uint8_t *buf, unsigned int pos, int si
 	hashtrail [4] = 0;
 	hashtrail [5] = pos - startpos;
 	if ((ckr = fun->C_SignUpdate (hsm, hashtrail, 6)) != CKR_OK) {
-		fprintf (stderr, "%08x: Failed to append signature trailer to signature\n", ckr);
+		fprintf (stderr, "%08lx: Failed to append signature trailer to signature\n", ckr);
 		exit (1);
 	}
 	SHA256_Update (sha, hashtrail, 6);
@@ -276,12 +276,12 @@ unsigned int add_signature_sha256rsa_pkt (uint8_t *buf, unsigned int pos, int si
 	buf [pos++] = (p11siglen * 8) >> 8;
 	buf [pos++] = (p11siglen * 8) & 0xff;
 	printf ("DEBUG: signature packet after header is %d\n", pos - startpos);
-	printf ("DEBUG: p11siglen  pre-sign is %d\n", p11siglen);
+	printf ("DEBUG: p11siglen  pre-sign is %lu\n", p11siglen);
 	if ((ckr = fun->C_SignFinal (hsm, buf + pos, &p11siglen)) != CKR_OK) {
-		fprintf (stderr, "%08x: Failed to retrieve signature\n", ckr);
+		fprintf (stderr, "%08lx: Failed to retrieve signature\n", ckr);
 		exit (1);
 	}
-	printf ("DEBUG: p11siglen post-sign is %d\n", p11siglen);
+	printf ("DEBUG: p11siglen post-sign is %lu\n", p11siglen);
 	printf ("DEBUG: p11sig is %02x %02x...%02x %02x\n", buf [pos], buf [pos+1], buf [pos+p11siglen-2], buf [pos+p11siglen-1]);
 	mask = 0x80;
 	while (mask && ((buf [pos] & mask) == 0x00)) {
@@ -316,7 +316,7 @@ unsigned int construct_pubkey_rsa_packet (uint8_t *buf, uint8_t fpr [20], uint8_
 	SHA256_CTX sha, keysha;
 	if (buf) {
 		if ((ckr = fun->C_SignInit (hsm, &sigmech, privkey)) != CKR_OK) {
-			fprintf (stderr, "%08x: Failed to initiate UserID signing on %d\n", ckr, privkey);
+			fprintf (stderr, "%08lx: Failed to initiate UserID signing on %ld\n", ckr, privkey);
 			exit (1);
 		}
 		SHA256_Init (&sha);
@@ -334,7 +334,7 @@ unsigned int construct_pubkey_rsa_packet (uint8_t *buf, uint8_t fpr [20], uint8_
 	printf ("DEBUG: add_pubkey_rsa_pkt at %d\n", pos);
 	if (buf) {
 		if ((ckr = fun->C_SignInit (hsm, &sigmech, privkey)) != CKR_OK) {
-			fprintf (stderr, "%08x: Failed to initiate UserID signing on %d\n", ckr, privkey);
+			fprintf (stderr, "%08lx: Failed to initiate UserID signing on %ld\n", ckr, privkey);
 			exit (1);
 		}
 		SHA256_Init (&sha);
@@ -351,7 +351,7 @@ unsigned int construct_pubkey_rsa_packet (uint8_t *buf, uint8_t fpr [20], uint8_
 
 /* Allocate and fill an OpenPGP signature "file", holding the PGP public
  * key info and a userID containing the email address and optional name.
- * 
+ *
  * The "file" is returned in file, its length in file_len.
  *
  * The structure returned must be freed with free() when done.
@@ -368,19 +368,19 @@ void pubkey_file (uint8_t **file, unsigned int *file_len, uint8_t fingerprint [2
 		{ CKA_PUBLIC_EXPONENT, &pubexp,  sizeof (pubexp ) }
 	};
 	if ((ckr = fun->C_GetAttributeValue (hsm, privkey, template, 3)) != CKR_OK) {
-		fprintf (stderr, "%08x: Failed to obtain public key attributes for private key %d\n", ckr, privkey);
+		fprintf (stderr, "%08lx: Failed to obtain public key attributes for private key %ld\n", ckr, privkey);
 		exit (1);
 	}
 	if (template [0].ulValueLen != sizeof (keytype)) {
-		fprintf (stderr, "Key type of funny size: %d not %d\n", template [0].ulValueLen, sizeof (keytype));
+		fprintf (stderr, "Key type of funny size: %lu not %lu\n", template [0].ulValueLen, sizeof (keytype));
 		exit (1);
 	}
 	if (template [1].ulValueLen != sizeof (modulus)) {
-		fprintf (stderr, "Modulus of funny size: %d not %d\n", template [1].ulValueLen, sizeof (modulus));
+		fprintf (stderr, "Modulus of funny size: %lu not %lu\n", template [1].ulValueLen, sizeof (modulus));
 		exit (1);
 	}
-	if (template [2].ulValueLen != sizeof (pubexp )) {
-		fprintf (stderr, "Public exponent of funny size: %d not %d\n", template [2].ulValueLen, sizeof (pubexp ));
+	if (template [2].ulValueLen != sizeof (pubexp)) {
+		fprintf (stderr, "Public exponent of funny size: %lu not %lu\n", template [2].ulValueLen, sizeof (pubexp ));
 		exit (1);
 	}
 	if (keytype != CKK_RSA) {
@@ -474,14 +474,14 @@ int main (int argc, char *argv []) {
 	//
 	fun = p11_kit_module_load (p11lib, 0);
 	if (fun == NULL) {
-		fprintf (stderr, "%08x: Failed to load and initialise PKCS #11 provider library\n", ckr);
+		fprintf (stderr, "%08lx: Failed to load and initialise PKCS #11 provider library\n", ckr);
 		exit (1);
 	}
 	if ((ckr = fun->C_Initialize (NULL_PTR)) != CKR_OK) {
-		fprintf (stderr, "%08x: Failed to initialise PKCS #11 library\n");
+		fprintf (stderr, "%08lx: Failed to initialise PKCS #11 library\n", ckr);
 	}
 	if ((ckr = fun->C_GetSlotList (CK_TRUE, NULL_PTR, &numslots)) != CKR_OK) {
-		fprintf (stderr, "%08x: Failed to find the number of PKCS #11 slots\n", ckr);
+		fprintf (stderr, "%08lx: Failed to find the number of PKCS #11 slots\n", ckr);
 		exit (1);
 	}
 	if (numslots == 0) {
@@ -489,17 +489,17 @@ int main (int argc, char *argv []) {
 		exit (1);
 	}
 	if ((slots = calloc (sizeof (CK_SLOT_ID), numslots)) == NULL) {
-		fprintf (stderr, "Failed to allocate room for %d PKCS #11 slots\n", numslots);
+		fprintf (stderr, "Failed to allocate room for %lu PKCS #11 slots\n", numslots);
 		exit (1);
 	}
 	if ((ckr = fun->C_GetSlotList (CK_TRUE, slots, &numslots)) != CKR_OK) {
-		fprintf (stderr, "%08x: Failed to find the identities of %d PKCS #11 slots\n", ckr);
+		fprintf (stderr, "%08lx: Failed to find the identities of %lu PKCS #11 slots\n", ckr, numslots);
 		exit (1);
 	}
 	found = 0;
 	for (slotctr=0; slotctr<numslots; slotctr++) {
 		if ((ckr = fun->C_GetTokenInfo (slots [slotctr], &tokeninfo)) != CKR_OK) {
-			fprintf (stderr, "%08x: Failed to obtain information on token %d of %d\n", ckr, slotctr, numslots);
+			fprintf (stderr, "%08lx: Failed to obtain information on token %d of %lu\n", ckr, slotctr, numslots);
 			exit (1);
 		}
 		if (p11_kit_uri_match_token_info (p11kituri, &tokeninfo)) {
@@ -515,7 +515,7 @@ int main (int argc, char *argv []) {
 		exit (1);
 	}
 	if ((ckr = fun->C_OpenSession (matching_slot, CKF_SERIAL_SESSION | CKF_RW_SESSION, NULL_PTR, NULL_PTR, &session)) != CKR_OK) {
-		fprintf (stderr, "%08x: Failed to open PKCS #11 write session\n", ckr);
+		fprintf (stderr, "%08lx: Failed to open PKCS #11 write session\n", ckr);
 		exit (1);
 	}
 	pin = getenv ("GNUTLS_PIN");
@@ -526,8 +526,8 @@ int main (int argc, char *argv []) {
 		fprintf (stderr, "Bailing out in lieu of PIN\n");
 		exit (1);
 	}
-	if ((ckr = fun->C_Login (session, CKU_USER, pin, strlen (pin))) != CKR_OK) {
-		fprintf (stderr, "%08x: Failed to login to PKCS #11 session\n", ckr);
+	if ((ckr = fun->C_Login (session, CKU_USER, (unsigned char *)pin, strlen (pin))) != CKR_OK) {
+		fprintf (stderr, "%08lx: Failed to login to PKCS #11 session\n", ckr);
 		exit (1);
 	}
 

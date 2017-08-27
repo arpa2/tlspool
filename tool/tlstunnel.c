@@ -198,7 +198,7 @@ int chat (int plainfd) {
  * There currently is no support for iterators with DoNAI selectors, but
  * this is a logical extension (this function would recurse).
  */
-int fmtcpy (char *dst, char *src, size_t dstsz, starttls_t *tlsdata) {
+int fmtcpy (char *dst, const char *src, size_t dstsz, starttls_t *tlsdata) {
 	while (src && *src) {
 		size_t len;
 		char *perc = strchr (src, '%');
@@ -298,8 +298,9 @@ int connect_remote (starttls_t *curtlsdata, void *vlai) {
 			if (sai->sa_family == AF_UNIX) {
 				memset (&sun, 0, sizeof (sun));
 				sun.sun_family = AF_UNIX;
-				if (fmtcpy (sun.sun_path, ((struct sockaddr_un *) sai)->sun_path, sizeof (sun.sun_path), curtlsdata) != 0) {
-					fprintf (stderr, "Formatted socket path too long or badly formatted: %s\n");
+				const char *src_path = ((struct sockaddr_un *) sai)->sun_path;
+				if (fmtcpy (sun.sun_path, src_path, sizeof (sun.sun_path), curtlsdata) != 0) {
+					fprintf (stderr, "Formatted socket path too long or badly formatted: %s\n", src_path);
 					close (sox);
 					continue;
 				}
@@ -403,7 +404,7 @@ int main (int argc, char *argv []) {
 	struct addrinfo hint;
 	struct addrinfo *localaddrinfo = NULL;
 	struct addrinfo *addrwalk = NULL;
-	fd_set bindings, rselect; 
+	fd_set bindings, rselect;
 	int maxbound;
 	int sox = -1;
 	int argc_skip;
@@ -516,7 +517,7 @@ int main (int argc, char *argv []) {
 				fprintf (stderr, "Service names should not exceed a length of %d characters (and be IANA-defined)\n", TLSPOOL_SERVICELEN - 1);
 				exit (1);
 			}
-			strcpy (tlsdata.service, optarg);
+			strcpy ((char *)(&tlsdata.service[0]), optarg);
 			break;
 		case 'l':
 			/* -l xxx for local  address xxx */

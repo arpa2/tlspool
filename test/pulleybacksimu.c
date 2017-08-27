@@ -96,9 +96,9 @@ char *test0 [] = { "pulleyback_tlspool", "config=../etc/tlspool.conf", "type=dis
 char *test1 [] = { "pulleyback_tlspool", "config=../etc/tlspool.conf", "type=disclose", "args=remoteid,localid", NULL };
 char *test2 [] = { "pulleyback_tlspool", "config=../etc/tlspool.conf", "type=localid", "args=localid,pkcs11,cred", "subtype=x509,client", NULL };
 
-uint8_t *args0 [2] = { "\x0c\x1clocalid@pulleyback.arpa2.lab", "\x0c\x1dremoteid@pulleyback.arpa2.lab" };
-uint8_t *args1 [2] = { "\x0c\x1dremoteid@pulleyback.arpa2.lab", "\x0c\x1clocalid@pulleyback.arpa2.lab" };
-uint8_t *args2 [3] = { "\x0c\x1clocalid@pulleyback.arpa2.lab", "\x0c\x24pkcs11:manuf=OpenFortress;serial=123", "\x0c\x1a-----LIKE A PGP KEY-----\r\n" };
+uint8_t *args0 [2] = { (uint8_t*)"\x0c\x1clocalid@pulleyback.arpa2.lab", (uint8_t*)"\x0c\x1dremoteid@pulleyback.arpa2.lab" };
+uint8_t *args1 [2] = { (uint8_t*)"\x0c\x1dremoteid@pulleyback.arpa2.lab", (uint8_t*)"\x0c\x1clocalid@pulleyback.arpa2.lab" };
+uint8_t *args2 [3] = { (uint8_t*)"\x0c\x1clocalid@pulleyback.arpa2.lab", (uint8_t*)"\x0c\x24pkcs11:manuf=OpenFortress;serial=123", (uint8_t*)"\x0c\x1a-----LIKE A PGP KEY-----\r\n" };
 
 char **tests [] = { test0, test1, test2, NULL };
 uint8_t **argss [] = { args0, args1, args2, NULL };

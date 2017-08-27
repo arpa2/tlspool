@@ -13,7 +13,7 @@ int main (int argc, char *argv []) {
 	int argi;
 	int exitval = 0;
 	if (argc < 2) {
-		fprintf (stderr, "Usage: %s [-c tlspool.conf] configvar...\n");
+		fprintf (stderr, "Usage: %s [-c tlspool.conf] configvar...\n", argv [0]);
 		exit (1);
 	} else if ((argc > 2) && (0 == strcmp (argv [1], "-c"))) {
 		cfgfile = argv [2];
