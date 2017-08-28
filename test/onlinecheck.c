@@ -15,6 +15,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include <tlspool/internal.h>
+
 #define tlog(...)
 
 #include "../src/online.c"
@@ -102,7 +104,7 @@ int main (int argc, char *argv []) {
 
 	// First load the configuration to get a reference to the DNSSEC root key
 	if (argc != 2) {
-		printf ("Please supply just a configuration file");
+		printf ("Usage: onlinecheck <configfile>\n\nPlease supply just a configuration file.\n");
 		exit (1);
 	} else {
 		parse_cfgfile (argv [1], 0);

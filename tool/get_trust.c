@@ -26,7 +26,7 @@
 #include <tlspool/internal.h>
 
 
-const char const *usage =
+const char usage[] =
 "Usage: %s tlspool.conf flags aabbccdd [outfile.bin]\n"
 " - tlspool.conf is the configuration file for the TLS Pool\n"
 " - flags        selection of x509,pgp,revoke,pinned,client,server,notroot\n"
@@ -204,7 +204,7 @@ int main (int argc, char *argv []) {
 		}
 		e_flags = ntohl (* (uint32_t *) e_value.data);
 		e_valexp = (char *) & ((uint32_t *) e_value.data) [1];
-		e_bindata = e_valexp + strnlen (e_valexp, e_value.size - 4) + 1;
+		e_bindata = (uint8_t *)(e_valexp + strnlen (e_valexp, e_value.size - 4) + 1);
 		e_binlen = e_value.size - 4 - strnlen (e_valexp, e_value.size - 4) - 1;
 		if (e_binlen <= 0) {
 			fprintf (stderr, "Error retrieving binary data\n");

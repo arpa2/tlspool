@@ -66,7 +66,7 @@ BDB_CFLAGS ?=
 ifdef WINVER
 BDB_LIBS   = -ldb-6.1
 else
-BDB_LIBS   = -ldb # this is the default
+BDB_LIBS   ?= -ldb # this is the default
 endif
 
 all: $(TARGETS)
@@ -87,6 +87,7 @@ clean:
 anew: clean all
 
 install: all
+	install -d "$(DESTDIR)/$(PREFIX)/$(SBIN)/"
 	install $(TARGETS) "$(DESTDIR)/$(PREFIX)/$(SBIN)/"
 
 uninstall:

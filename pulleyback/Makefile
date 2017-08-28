@@ -9,11 +9,11 @@ CFLAGS += -fPIC -I . -I ../include -std=gnu11
 
 LDFLAGS += -std=gnu11
 
-BDB_CFLAGS = 
+BDB_CFLAGS ?=
 ifdef WINVER
 BDB_LIBS   = -ldb-6.1
 else
-BDB_LIBS   = -ldb
+BDB_LIBS   ?= -ldb
 endif
 
 PREFIX ?= /usr/local
@@ -24,8 +24,8 @@ OBJS = $(pulleyback_tlspool_OBJS)
 
 PKG_CONFIG ?= pkg-config
 
-QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags quick-der)
-QUICKDER_LIBS = $(shell $(PKG_CONFIG) --libs quick-der)
+QUICKDER_CFLAGS = $(shell $(PKG_CONFIG) --cflags Quick-DER)
+QUICKDER_LIBS = $(shell $(PKG_CONFIG) --libs Quick-DER)
 
 ifdef WINVER
 CFLAGS += -D_WIN32_WINNT=0x0600 -I ../include/windows
@@ -53,7 +53,7 @@ install: all
 ifdef WINVER
 	mkdir -p "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback"
 	install pulleyback_tlspool.dll "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback"
-else	
+else
 	mkdir -p "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback"
 	install pulleyback_tlspool.so "$(DESTDIR)$(PREFIX)/share/steamworks/pulleyback"
 endif

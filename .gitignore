@@ -3,3 +3,6 @@
 lib*.so
 lib*.a
 *.db
+build
+.kdev4
+tlspool.kdev4

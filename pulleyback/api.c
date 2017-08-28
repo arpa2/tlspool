@@ -99,7 +99,7 @@ static int have_txn (struct pulleyback_tlspool *self) {
 
 /* Internal method to process a negative "ok" value by switching to TXN_ABORT
  */
-static int check_txn (struct pulleyback_tlspool *self, int ok) {
+static void check_txn (struct pulleyback_tlspool *self, int ok) {
 	if (ok != 1) {
 		if (self->txn_state == TXN_ACTIVE) {
 			self->txn_state = TXN_ABORT;
