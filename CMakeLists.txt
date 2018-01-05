@@ -32,20 +32,21 @@ macro_ensure_out_of_source_build(
     "Do not build TLSPool in the source directory.")
 get_version_from_git(TLSPool 0.20.0)
 
-# Finding dependencies; the ones marked "Local" have a CMake
-# module included with TLSPool under cmake/, the ones marked
-# "Module" use a module shipped with CMake, the ones marked
-# "Config" use the CMake config module shipped by that package.
-find_package(BDB REQUIRED)  # Local
-find_package(GnuTLS REQUIRED)  # Module
-find_package(GnuTLSDane)  # Local, optional
-find_package(KERBEROS REQUIRED)  # Local
-find_package(Libldns REQUIRED)  # Local
-find_package(LibTASN1 REQUIRED)  # Local
-find_package(OpenLDAP REQUIRED)  # Local
-find_package(P11-Kit REQUIRED)  # Local
-find_package(Quick-DER 1.2.3 REQUIRED)  # Config
-find_package(Unbound REQUIRED)  # Local
+# Finding dependencies, find-modules provided by:
+# - "ARPA" is shipped with ARPA2CM
+# - "Module" is shipped with CMake itself
+# - "Config" is shipped with that software package
+#
+find_package(BDB REQUIRED)         # ARPA
+find_package(GnuTLS REQUIRED)      # Module
+find_package(GnuTLSDane REQUIRED)  # ARPA
+find_package(KERBEROS REQUIRED)    # Local
+find_package(Libldns REQUIRED)     # ARPA
+find_package(LibTASN1 REQUIRED)    # ARPA
+find_package(OpenLDAP REQUIRED)    # ARPA
+find_package(P11-Kit REQUIRED)     # ARPA
+find_package(Quick-DER 1.2.4 REQUIRED NO_MODULE)  # Config
+find_package(Unbound REQUIRED)     # ARPA
 
 # TODO: look for TLS-KDH
 
