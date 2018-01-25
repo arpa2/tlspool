@@ -14,7 +14,10 @@ Runtime dependencies are:
  * p11-kit >= 0.22.1 for PKCS #11 URI handling
  * libdb >= 4.0 for key->value lookup with BerkeleyDB transactions/replication
  * libtasn1 for parsing of BER and DER data structures
- * NOT-YET: libldns for DNS lookups
+ * libldns for DNS lookups
+ * libunbound for more DNS lookups
+ * Quick-DER >= 1.2.3 for DER manipulation
+ * libkrb5 for Kerberos support
  * NOT-YET: libldap for LDAP lookups
  * NOT-YET: libmemcached for caching of intermediate results
  * NOT-YET: libradius to do additional authn / authz [/acct]
@@ -26,6 +29,16 @@ TODO: We should probably consider build variations to avoid requiring all
 these dependencies when only a bit is kwown to be required.  That's the
 sort of maturity that this project has not reached yet.
 
+
+Build Packages
+--------------
+
+As a **sugestion** only, here are packages you should have installed
+before trying to build TLSPOOL.
+
+ - Debian
+   - libdb-dev libldns-dev libunbound-dev libkrb5-dev
+   - libgnutls-dev (you'll need one with DANE support)
 
 First-time build
 ----------------
