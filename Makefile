@@ -1,40 +1,47 @@
-DESTDIR ?=
-PREFIX ?= /usr/local/
-BUILDDIRS=src lib tool pulleyback doc test
+# TLSPool Makefile-for-building-with-CMake
+#
+# This Makefile is just a stub: it invokes CMake, which in turn
+# generates Makefiles, and then uses those to make the project.
+#
+# Useful Make parameters at this level are:
+#	PREFIX=/usr/local
+#
+# For anything else, do this:
+#
+#	make configure                 # Basic configure
+#	( cd build ; ccmake )          # CMake GUI for build configuration
+#	( cd build ; make install )    # Build and install
+#
+PREFIX ?= /usr/local
 
-.PHONEY: all install clean distclean
+all: compile
 
-all:
-	@$(foreach dir,$(BUILDDIRS),$(MAKE) DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) -C '$(dir)' all && ) echo Built all
-	@echo '#'
-	@echo '# NOTE: You may need to "make testdata" for some tool/* programs'
-	@echo '#'
+build-dir:
+	@mkdir -p build
 
-install: all
-	@$(foreach dir,$(BUILDDIRS),$(MAKE) DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) -C '$(dir)' install && ) echo Installed
+configure: _configure build-dir build/CMakeCache.txt
 
-uninstall:
-	@$(foreach dir,$(BUILDDIRS),$(MAKE) DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) -C '$(dir)' uninstall && ) echo Uninstalled
+_configure:
+	@rm -f build/CMakeCache.txt
+
+build/CMakeCache.txt:
+	( cd build && cmake .. -DCMAKE_INSTALL_PREFIX=$(PREFIX) )
+
+compile: build-dir build/CMakeCache.txt
+	( cd build && $(MAKE) )
+
+install: build-dir
+	( cd build && $(MAKE) install )
+
+test: build-dir
+	( cd build && $(MAKE) test )
+
+uninstall: build-dir
+	( cd build && $(MAKE) uninstall )
 
 clean:
-	@$(foreach dir,$(BUILDDIRS),$(MAKE) DESTDIR=$(DESTDIR) PREFIX=$(PREFIX) -C '$(dir)' clean && ) echo Cleaned
-	@echo '#'
-	@echo '# NOTE: Kept key material, use "make distclean" if you REALLY want to clean it'
-	@echo '#'
+	rm -rf build/
 
-anew: clean all
+package: compile
+	( cd build && $(MAKE) package )
 
-distclean: clean
-	$(MAKE) -C testdata clean-pkcs11 clean-cert clean-pgp clean-db
-
-cmake-build:
-	$(MAKE) -f Makefile.cmake all
-
-cmake-clean:
-	$(MAKE) -f Makefile.cmake clean
-
-cmake-install:
-	($MAKE) -f Makefile.cmake install
-
-cmake-uninstall:
-	$(MAKE) -f Makefile.cmake uninstall
