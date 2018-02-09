@@ -37,7 +37,7 @@ static int valexp_char_bitnum [128];
 typedef uint32_t valexpreqs_t;
 
 #define VALEXP_CHARBIT(c)  (valexp_char_bitnum [(c)])
-#define VALEXP_CHARKNOWN(c) (((c) >= 0) && ((c) < 128) && (VALEXP_CHARBIT((c)) >= 0))
+#define VALEXP_CHARKNOWN(c) (((c) >= 0) && ((c) <= 127) && (VALEXP_CHARBIT((c)) >= 0))
 #define VALEXP_OPERAND(c) (((c) == '0') || ((c) == '1') || (VALEXP_CHARKNOWN((c))))
 #define VALEXP_SETBIT(b,w)   ((w) |=   (1 << (b)))
 #define VALEXP_RESETBIT(b,w) ((w) &= ~ (1 << (b)))
