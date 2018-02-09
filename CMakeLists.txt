@@ -30,7 +30,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 macro_ensure_out_of_source_build(
     "Do not build TLSPool in the source directory.")
-get_version_from_git(TLSPool 0.20.0)
+get_version_from_git(TLSPool 0.20)
 
 # Finding dependencies, find-modules provided by:
 # - "ARPA" is shipped with ARPA2CM
