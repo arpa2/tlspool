@@ -23,7 +23,8 @@ get_version_from_git(TLSPool 0.20.0)
 # "Config" use the CMake config module shipped by that package.
 find_package(BDB REQUIRED)  # Local
 find_package(GnuTLS REQUIRED)  # Module
-find_package(GnuTLSDane)  # Local
+find_package(GnuTLSDane)  # Local, optional
+find_package(KERBEROS REQUIRED)  # Local
 find_package(Libldns REQUIRED)  # Local
 find_package(LibTASN1 REQUIRED)  # Local
 find_package(OpenLDAP REQUIRED)  # Local
@@ -31,7 +32,6 @@ find_package(P11-Kit REQUIRED)  # Local
 find_package(Quick-DER 1.2.3 REQUIRED)  # Config
 find_package(Unbound REQUIRED)  # Local
 
-# TODO: look for Kerberos
 # TODO: look for TLS-KDH
 
 if(GnuTLSDane_FOUND)
