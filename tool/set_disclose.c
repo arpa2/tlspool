@@ -178,7 +178,7 @@ int main (int argc, char *argv []) {
 	nomore = crs->get (crs, &k_selector, &e_value, DB_SET);
 	while (nomore == 0) {
 		printf ("Removing local identity %.*s\n",
-				e_value.size, e_value.data);
+				e_value.size, (const char *)e_value.data);
 		if (crs->del (crs, 0) != 0) {
 			fprintf (stderr, "Failed to delete record\n");
 			crs->close (crs);
@@ -198,7 +198,7 @@ int main (int argc, char *argv []) {
 		k_localid.data = argv [argi];
 		k_localid.size = strlen (argv [argi]);
 		printf ("Adding local identity %.*s\n",
-				k_localid.size, k_localid.data);
+				k_localid.size, (const char *)k_localid.data);
 		if (dbh_disc->put (dbh_disc, txn, &k_selector, &k_localid, 0) != 0) {
 			fprintf (stderr, "Failed to write record\n");
 			crs->close (crs);

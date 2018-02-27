@@ -174,7 +174,7 @@ int main (int argc, char *argv []) {
 	k_selector.size = printable_len;
 	nomore = crs->get (crs, &k_selector, &k_localid, DB_SET);
 	while (nomore == 0) {
-		printf (" - %.*s\n", k_localid.size, k_localid.data);
+		printf (" - %.*s\n", k_localid.size, (const char *)k_localid.data);
 		nomore = crs->get (crs, &k_selector, &k_localid, DB_NEXT_DUP);
 	}
 	crs->close (crs);
