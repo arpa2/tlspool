@@ -43,6 +43,7 @@ target_link_libraries(tlspool
     ${LibTASN1_LIBRARIES}
     ${OpenLDAP_LIBRARIES}
     ${P11-Kit_LIBRARIES}
+    ${Quick-DER_LIBRARIES}
     ${Unbound_LIBRARIES}
     ${pthread_LIBRARIES}
 )

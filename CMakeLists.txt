@@ -3,6 +3,21 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_SOURCE_DIR}/cmake)
 
 project(tlspool C)
 
+include (FeatureSummary)
+find_package (ARPA2CM 0.5 QUIET NO_MODULE)
+set_package_properties (ARPA2CM PROPERTIES
+    DESCRIPTION "CMake modules for ARPA2 projects"
+    TYPE REQUIRED
+    URL "https://github.com/arpa2/arpa2cm/"
+    PURPOSE "Required for the CMake build system for ${PROJECT}"
+)
+if (ARPA2CM_FOUND)
+    set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${ARPA2CM_MODULE_PATH})
+else()
+    feature_summary (WHAT ALL)
+    message (FATAL_ERROR "ARPA2CM is required.")
+endif()
+
 include(MacroEnsureOutOfSourceBuild)
 include(MacroGitVersionInfo)
 
@@ -15,24 +30,30 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 macro_ensure_out_of_source_build(
     "Do not build TLSPool in the source directory.")
-get_version_from_git(TLSPool 0.20.0)
+get_version_from_git(TLSPool 0.20)
 
-# Finding dependencies; the ones marked "Local" have a CMake
-# module included with TLSPool under cmake/, the ones marked
-# "Module" use a module shipped with CMake, the ones marked
-# "Config" use the CMake config module shipped by that package.
-find_package(BDB REQUIRED)  # Local
-find_package(GnuTLS REQUIRED)  # Module
-find_package(GnuTLSDane REQUIRED)  # Local
-find_package(Libldns REQUIRED)  # Local
-find_package(LibTASN1 REQUIRED)  # Local
-find_package(OpenLDAP REQUIRED)  # Local
-find_package(P11-Kit REQUIRED)  # Local
-find_package(Quick-DER 1.2.3 REQUIRED)  # Config
-find_package(Unbound REQUIRED)  # Local
+# Finding dependencies, find-modules provided by:
+# - "ARPA" is shipped with ARPA2CM
+# - "Module" is shipped with CMake itself
+# - "Config" is shipped with that software package
+#
+find_package(BDB REQUIRED)         # ARPA
+find_package(GnuTLS REQUIRED)      # Module
+find_package(GnuTLSDane REQUIRED)  # ARPA
+find_package(KERBEROS REQUIRED)    # Local
+find_package(Libldns REQUIRED)     # ARPA
+find_package(LibTASN1 REQUIRED)    # ARPA
+find_package(OpenLDAP REQUIRED)    # ARPA
+find_package(P11-Kit REQUIRED)     # ARPA
+find_package(Quick-DER 1.2.4 REQUIRED NO_MODULE)  # Config
+find_package(Unbound REQUIRED)     # ARPA
 
-# TODO: look for Kerberos
 # TODO: look for TLS-KDH
+
+if(GnuTLSDane_FOUND)
+    add_definitions(-DHAVE_GNUTLS_DANE)
+endif()
+
 
 feature_summary(WHAT ALL VAR _features)
 message(STATUS ${_features})

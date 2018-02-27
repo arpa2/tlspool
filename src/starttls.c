@@ -20,7 +20,9 @@
 #include <gnutls/gnutls.h>
 #include <gnutls/pkcs11.h>
 #include <gnutls/abstract.h>
+#ifdef HAVE_GNUTLS_DANE
 #include <gnutls/dane.h>
+#endif
 
 #include <p11-kit/pkcs11.h>
 
@@ -3046,7 +3048,6 @@ setflagval:
 static void valexp_Dd_start (void *vcmd, struct valexp *ve, char pred) {
 	struct command *cmd = (struct command *) vcmd;
 	int flagval = 0;
-	dane_state_t stat;
 	unsigned int vfystat;
 	char *host;
 	char *proto;
@@ -3089,7 +3090,9 @@ static void valexp_Dd_start (void *vcmd, struct valexp *ve, char pred) {
 		port = ntohs (((struct sockaddr_in6 *) &peername)->sin6_port);
 		goto setflagval;
 	}
+#ifdef HAVE_GNUTLS_DANE
 	//TODO// We might use online.c code instead?
+    dane_state_t stat;
 	if (dane_state_init (&stat, /*TODO:*/ 0) != GNUTLS_E_SUCCESS) {
 		goto setflagval;
 	}
@@ -3108,6 +3111,7 @@ static void valexp_Dd_start (void *vcmd, struct valexp *ve, char pred) {
 		flagval = ((vfystat & ~DANE_VERIFY_UNKNOWN_DANE_INFO) == 0);
 	}
 	dane_state_deinit (stat);
+#endif
 setflagval:
 	valexp_setpredicate (ve, pred, flagval);
 }
