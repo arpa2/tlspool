@@ -73,43 +73,43 @@ endif
 PRIVKEY1=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj1label/!d' -e 's/^[ \t]*URL: //')
 ifeq ($(PRIVKEY1),)
 PRIVKEYGEN += privkey1
-PRIVKEY1=$(P11URI);id=%30%31;label=obj1label;type=private
+PRIVKEY1=$(P11URI);id=%30%31;object=obj1label;type=private
 endif
 
 PRIVKEY2=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj2label/!d' -e 's/^[ \t]*URL: //')
 ifeq ($(PRIVKEY2),)
 PRIVKEYGEN += privkey2
-PRIVKEY2=$(P11URI);id=%30%32;label=obj2label;type=private
+PRIVKEY2=$(P11URI);id=%30%32;object=obj2label;type=private
 endif
 
 PRIVKEY3=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj3label/!d' -e 's/^[ \t]*URL: //')
 ifeq ($(PRIVKEY3),)
 PRIVKEYGEN += privkey3
-PRIVKEY3=$(P11URI);id=%30%33;label=obj3label;type=private
+PRIVKEY3=$(P11URI);id=%30%33;object=obj3label;type=private
 endif
 
 PRIVKEY4=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj4label/!d' -e 's/^[ \t]*URL: //')
 ifeq ($(PRIVKEY4),)
 PRIVKEYGEN += privkey4
-PRIVKEY4=$(P11URI);id=%30%34;label=obj4label;type=private
+PRIVKEY4=$(P11URI);id=%30%34;object=obj4label;type=private
 endif
 
 PRIVKEY5=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj5label/!d' -e 's/^[ \t]*URL: //')
 ifeq ($(PRIVKEY5),)
 PRIVKEYGEN += privkey5
-PRIVKEY5=$(P11URI);id=%30%35;label=obj5label;type=private
+PRIVKEY5=$(P11URI);id=%30%35;object=obj5label;type=private
 endif
 
 PRIVKEY6=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj6label/!d' -e 's/^[ \t]*URL: //')
 ifeq ($(PRIVKEY6),)
 PRIVKEYGEN += privkey6
-PRIVKEY6=$(P11URI);id=%30%36;label=obj6label;type=private
+PRIVKEY6=$(P11URI);id=%30%36;object=obj6label;type=private
 endif
 
 PRIVKEY7=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj7label/!d' -e 's/^[ \t]*URL: //')
 ifeq ($(PRIVKEY7),)
 PRIVKEYGEN += privkey7
-PRIVKEY7=$(P11URI);id=%30%37;label=obj7label;type=private
+PRIVKEY7=$(P11URI);id=%30%37;object=obj7label;type=private
 endif
 
 
@@ -278,7 +278,7 @@ tlspool-test-webhost-cert.der: tlspool-test-webhost-cert.template
 
 # Turn a .der into a .keyid
 %.keyid: %.der
-	$(CERTTOOL) --inraw --infile $< -i | sed -e '1,/Public Key ID:/d' -e '/Public key.s random art:/,$$d' -e 's/[ \t]*//' > $@
+	$(CERTTOOL) --inraw --infile $< -i | sed -e '1,/Public Key ID:/d' -e '/Public key.s random art:/,$$d' -e 's/[ \t]*//' | sed -n -e 's/^sha1://' -e '/^[^:]*$$/p' > $@
 
 #
 # SRP credentials are loaded from fixed paths ../testdata/tlspool-test-srp.* for now
