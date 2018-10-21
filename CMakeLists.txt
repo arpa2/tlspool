@@ -58,6 +58,11 @@ endif()
 feature_summary(WHAT ALL VAR _features)
 message(STATUS ${_features})
 
+option(EXPERIMENTAL_SRP_SUPPORT "Enable support for SRP based on relative file names" OFF)
+if (EXPERIMENTAL_SRP_SUPPORT)
+    add_definitions(-DEXPERIMENTAL_SRP)
+endif()
+
 # These are compile flags, not definitions, but it happens to work.
 add_definitions(-fPIC -pthread)
 # Pretend we looked for pthread libraries, so that we can write

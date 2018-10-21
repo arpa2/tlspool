@@ -127,8 +127,13 @@ struct credinfo {
 	void *cred;
 };
 
-#define EXPECTED_SRV_CREDCOUNT 3
-#define EXPECTED_CLI_CREDCOUNT 3
+#ifdef EXPERIMENTAL_SRP
+#  define EXPECTED_SRV_CREDCOUNT 3
+#  define EXPECTED_CLI_CREDCOUNT 3
+#else
+#  define EXPECTED_SRV_CREDCOUNT 2
+#  define EXPECTED_CLI_CREDCOUNT 2
+#endif
 static struct credinfo srv_creds [EXPECTED_SRV_CREDCOUNT];
 static struct credinfo cli_creds [EXPECTED_CLI_CREDCOUNT];
 static int srv_credcount = 0;
@@ -819,9 +824,11 @@ void setup_starttls (void) {
 			"+ECDHE-KRB:" // +ECDHE-KRB-RSA:+ECDHE-KRB-ECDSA:"
 			"+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:"
 			"+CTYPE-SRV-KRB:+CTYPE-SRV-X.509:+CTYPE-SRV-OPENPGP:"
-			"+CTYPE-CLI-KRB:+CTYPE-CLI-X.509:+CTYPE-CLI-OPENPGP:"
-			"+SRP:+SRP-RSA:+SRP-DSS",
-			NULL));
+			"+CTYPE-CLI-KRB:+CTYPE-CLI-X.509:+CTYPE-CLI-OPENPGP"
+#ifdef EXPERIMENTAL_SRP
+			":+SRP:+SRP-RSA:+SRP-DSS"
+#endif
+			,NULL));
 #else
 	E_g2e ("Failed to setup NORMAL priority cache",
 		gnutls_priority_init (&priority_normal,
@@ -830,9 +837,11 @@ void setup_starttls (void) {
 			"+COMP-NULL:+CIPHER-ALL:+CURVE-ALL:+SIGN-ALL:+MAC-ALL:"
 			"+ANON-ECDH:"
 			"+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:"
-			"+CTYPE-X.509:+CTYPE-OPENPGP:"
-			"+SRP:+SRP-RSA:+SRP-DSS",
-			NULL));
+			"+CTYPE-X.509:+CTYPE-OPENPGP"
+#ifdef EXPERIMENTAL_SRP
+			":+SRP:+SRP-RSA:+SRP-DSS"
+#endif
+			,NULL));
 #endif
 	//
 	// Try to setup on-the-fly signing key / certificate and gen a certkey
@@ -3860,9 +3869,11 @@ static int configure_session (struct command *cmd,
 			"+CTYPE-SRV-KRB:+CTYPE-SRV-X.509:+CTYPE-SRV-OPENPGP:"
 			"%cCTYPE-CLI-KRB:"
 			"%cCTYPE-CLI-X.509:"
-			"%cCTYPE-CLI-OPENPGP:"
-			"%cSRP:%cSRP-RSA:%cSRP-DSS",
-			anonpre_ok				?'+':'-',
+			"%cCTYPE-CLI-OPENPGP"
+#ifdef EXPERIMENTAL_SRP
+			":%cSRP:%cSRP-RSA:%cSRP-DSS"
+#endif
+			,anonpre_ok				?'+':'-',
 			1 /* lidtpsup (cmd, LID_TYPE_KRB5)*/		?'+':'-',
 			1 /*lidtpsup (cmd, LID_TYPE_X509)*/		?'+':'-',
 			1 /*lidtpsup (cmd, LID_TYPE_PGP)*/		?'+':'-',
@@ -3883,9 +3894,11 @@ static int configure_session (struct command *cmd,
 			"%cANON-ECDH:"
 			"+ECDHE-RSA:+DHE-RSA:+ECDHE-ECDSA:+DHE-DSS:+RSA:" //TODO//
 			"%cCTYPE-X.509:"
-			"%cCTYPE-OPENPGP:"
-			"%cSRP:%cSRP-RSA:%cSRP-DSS",
-			anonpre_ok				?'+':'-',
+			"%cCTYPE-OPENPGP"
+#ifdef EXPERIMENTAL_SRP
+			":%cSRP:%cSRP-RSA:%cSRP-DSS"
+#endif
+			,anonpre_ok				?'+':'-',
 			1		?'+':'-',
 			1		?'+':'-',
 			//TODO// Temporarily patched out SRP
@@ -4161,6 +4174,7 @@ static int setup_starttls_credentials (void) {
 	//
 	// Construct server credentials for SRP authentication
 	gtls_errno = gtls_errno_stack0;	// Don't pop, just forget last failures
+#ifdef EXPERIMENTAL_SRP
 	E_g2e ("Failed to allocate SRP server credentials",
 		gnutls_srp_allocate_server_credentials (
 			&srv_srpcred));
@@ -4178,10 +4192,12 @@ static int setup_starttls_credentials (void) {
 		gnutls_srp_free_server_credentials (srv_srpcred);
 		srv_srpcred = NULL;
 	}
+#endif
 
 	//
 	// Construct client credentials for SRP authentication
 	gtls_errno = gtls_errno_stack0;	// Don't pop, just forget last failures
+#ifdef EXPERIMENTAL_SRP
 	E_g2e ("Failed to allocate SRP client credentials",
 		gnutls_srp_allocate_client_credentials (
 			&cli_srpcred));
@@ -4197,6 +4213,7 @@ static int setup_starttls_credentials (void) {
 		gnutls_srp_free_client_credentials (cli_srpcred);
 		cli_srpcred = NULL;
 	}
+#endif
 
 	//
 	// Construct server credentials for KDH authentication
@@ -4268,9 +4285,11 @@ static void cleanup_starttls_credentials (void) {
 		case GNUTLS_CRD_ANON:
 			gnutls_anon_free_server_credentials (crd->cred);
 			break;
+#ifdef EXPERIMENTAL_SRP
 		case GNUTLS_CRD_SRP:
 			gnutls_srp_free_server_credentials (crd->cred);
 			break;
+#endif
 		case GNUTLS_CRD_PSK:
 		case GNUTLS_CRD_IA:
 			//TODO: not handled
@@ -4290,9 +4309,11 @@ static void cleanup_starttls_credentials (void) {
 		case GNUTLS_CRD_ANON:
 			gnutls_anon_free_client_credentials (crd->cred);
 			break;
+#ifdef EXPERIMENTAL_SRP
 		case GNUTLS_CRD_SRP:
 			gnutls_srp_free_client_credentials (crd->cred);
 			break;
+#endif
 		case GNUTLS_CRD_PSK:
 		case GNUTLS_CRD_IA:
 			//TODO: not handled
@@ -4919,12 +4940,14 @@ fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__
 			got_remoteid = 0;
 			cmd->vfystatus = GNUTLS_CERT_SIGNER_NOT_FOUND;
 			break;
+#ifdef EXPERIMENTAL_SRP
 		case GNUTLS_CRD_SRP:
 			// Got a credential, validation follows later on
 			//TODO// SRP does not really auth the server
 			got_remoteid = 1;
 			cmd->vfystatus = GNUTLS_CERT_SIGNER_NOT_FOUND;
 			break;
+#endif
 		case GNUTLS_CRD_ANON:
 			// Did not get a credential, perhaps due to anonpre
 			got_remoteid = 0;
