@@ -34,7 +34,7 @@
 # Setting of the number of RSA private key bits (radically ignoring 2^n trends)
 #
 CONFFILE ?= $(shell pwd)/../etc/tlspool.conf
-RSABITS ?= 2000
+RSABITS ?= 2048
 PGPRSABITS ?= 2048
 
 #
