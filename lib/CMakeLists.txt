@@ -28,3 +28,5 @@ install(
     TARGETS tlspool_static
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
+
+add_subdirectory(python)

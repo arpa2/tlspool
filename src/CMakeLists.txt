@@ -52,3 +52,9 @@ install(
     TARGETS tlspool
     DESTINATION ${CMAKE_INSTALL_SBINDIR}
 )
+
+install(
+    DIRECTORY ${CMAKE_SOURCE_DIR}/include/tlspool/
+    DESTINATION /usr/include/tlspool
+)
+
