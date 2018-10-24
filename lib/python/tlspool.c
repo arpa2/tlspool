@@ -6390,6 +6390,7 @@ SWIG_init(void) {
   SWIG_Python_SetConstant(d, "PIOF_LIDENTRY_SKIP_NOTROOT",SWIG_From_int((int)(0x00000088)));
   SWIG_Python_SetConstant(d, "PIOF_LIDENTRY_SKIP_USER",SWIG_From_int((int)(0x00000081)));
   SWIG_Python_SetConstant(d, "PIOF_LIDENTRY_WANT_DBENTRY",SWIG_From_int((int)(0x00000100)));
+  SWIG_Python_SetConstant(d, "PIOF_STARTTLS_BOTHROLES_PEER",SWIG_From_int((int)(0x0000000f)));
   SWIG_Python_SetConstant(d, "PIOF_STARTTLS_DETACH",SWIG_From_int((int)(0x00002000)));
   SWIG_Python_SetConstant(d, "PIOF_STARTTLS_DOMAIN_REPRESENTS_USER",SWIG_From_int((int)(0x00008000)));
   SWIG_Python_SetConstant(d, "PIOF_STARTTLS_DTLS",SWIG_From_int((int)(0x00000100)));
@@ -6408,6 +6409,7 @@ SWIG_init(void) {
   SWIG_Python_SetConstant(d, "PIOF_STARTTLS_REQUEST_REMOTEID",SWIG_From_int((int)(0x00000800)));
   SWIG_Python_SetConstant(d, "PIOF_STARTTLS_WITHOUT_SNI",SWIG_From_int((int)(0x00000200)));
   SWIG_Python_SetConstant(d, "TLSPOOL_CTLKEYLEN",SWIG_From_int((int)(16)));
+  SWIG_Python_SetConstant(d, "TLSPOOL_DEFAULT_CONFIG_PATH",SWIG_FromCharPtr("/etc/tlspool.conf"));
   SWIG_Python_SetConstant(d, "TLSPOOL_DEFAULT_PIDFILE_PATH",SWIG_FromCharPtr("/var/run/tlspool.pid"));
   SWIG_Python_SetConstant(d, "TLSPOOL_DEFAULT_SOCKET_PATH",SWIG_FromCharPtr("/var/run/tlspool.sock"));
   SWIG_Python_SetConstant(d, "TLSPOOL_IDENTITY_V2",SWIG_FromCharPtr("20151111api@tlspool.arpa2.net"));

@@ -41,7 +41,7 @@ _tlspool.so: tlspool.c
 	python setup.py build_ext --inplace
 
 tlspool.c: py-tlspool.i ../swig-tlspool.i
-	grep -h '^#define \(PIOF_\|PIOC_\|TLSPOOL_\)' ../../include/tlspool/commands.h ../../include/tlspool/starttls.h | grep -v 'PATH.*\\' | sort | uniq > defines.h
+	grep -h '^#define \(PIOF_\|PIOC_\|TLSPOOL_\)' ../../include/tlspool/commands.h ../../include/tlspool/starttls.h | grep -v 'PATH.*\\' | grep -v 'windows' | sort | uniq > defines.h
 	$(SWIG) -python -threads -o "$@" "$<"
 
 .c.o:

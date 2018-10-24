@@ -444,6 +444,19 @@ class Connection:
 		   access afterwards.  The variables that are required at
 		   this point are service and, already obliged when making
 		   a new instance, cryptfd.
+
+                   Quoting the library documentation on file handles and
+                   who should close them:
+
+                   The cryptfd handle supplies the TLS connection that is
+                   assumed to have been setup.  When the function ends,
+                   either in success or failure, this handle will no longer
+                   be available to the caller; the responsibility of closing
+                   it is passed on to the function and/or the TLS Pool.
+
+                   And on plainfd:  The file handle returned [in privdata],
+                   if it is >= 0, should be closed by the caller, both in
+                   case of success and failure.
 		"""
 		assert (self.cryptsk is not None)
 		assert (self.cryptfd >= 0)
@@ -463,12 +476,18 @@ class Connection:
 			socktp = socket.SOCK_STREAM
 		plainsockptr = socket_data ()
 		plainsockptr.unix_socket = self.plainfd
+# Clone cryptfd so _starttls() and Python can each close it
+                unix_cryptfd = os.dup (self.cryptfd)
+                if unix_cryptfd < 0:
+                        _tlspool.raise_errno ()
+# We close cryptsk now and it will not repeat during garbage collection
+                self.cryptsk.close ()
+		self.cryptsk = None
+		self.cryptfd = -1
 # Provide None for the callback function, SWIG won't support it
 # We might at some point desire a library of C routine options?
-		rv = _starttls (self.cryptfd, self.tlsdata, plainsockptr, None)
+		rv = _starttls (unix_cryptfd, self.tlsdata, plainsockptr, None)
 		self.plainfd = -1
-		self.cryptfd = -1
-		self.cryptsk = None
 		if rv < 0:
 			_tlspool.raise_errno ()
 		if self.plainsk is None:
@@ -612,17 +631,24 @@ class SecurityMixIn:
 			socktp = socket.SOCK_STREAM
 		plainsockptr = socket_data ()
 		plainsockptr.unix_socket = -1
-		rv = _starttls (sox.fileno (), self.tlsdata, plainsockptr, None)
+                unix_sox = os.dup (sox.fileno ())
+                if unix_sox < 0:
+                        _tlspool.raise_errno ()
+		sox.close ()
+		rv = _starttls (unix_sox, self.tlsdata, plainsockptr, None)
 		if rv < 0:
 			_tlspool.raise_errno ()
 		assert (plainsockptr.unix_socket >= 0)
 		sox2 = socket.fromfd (plainsockptr.unix_socket, af, socktp)
+# Now, since socket.fromfd() used os.dup(), we close the original
+                os.close (plainsockptr.unix_socket)
+                plainsockptr.unix_socket = -1
 		if type (self.request) == tuple:
+#TODO# This is not permitted, editing a tuple
 			self.request [1] = sox2
 		else:
 			self.request     = sox2
 		self.handle_secure ()
-		sox2.close ()
 
 	def startssh (self):
 		raise NotImplementedError ("Python wrapper does not implement STARTSSH")
@@ -694,6 +720,7 @@ PIOF_LIDENTRY_SKIP_DOMAIN_SUB = _tlspool.PIOF_LIDENTRY_SKIP_DOMAIN_SUB
 PIOF_LIDENTRY_SKIP_NOTROOT = _tlspool.PIOF_LIDENTRY_SKIP_NOTROOT
 PIOF_LIDENTRY_SKIP_USER = _tlspool.PIOF_LIDENTRY_SKIP_USER
 PIOF_LIDENTRY_WANT_DBENTRY = _tlspool.PIOF_LIDENTRY_WANT_DBENTRY
+PIOF_STARTTLS_BOTHROLES_PEER = _tlspool.PIOF_STARTTLS_BOTHROLES_PEER
 PIOF_STARTTLS_DETACH = _tlspool.PIOF_STARTTLS_DETACH
 PIOF_STARTTLS_DOMAIN_REPRESENTS_USER = _tlspool.PIOF_STARTTLS_DOMAIN_REPRESENTS_USER
 PIOF_STARTTLS_DTLS = _tlspool.PIOF_STARTTLS_DTLS
@@ -712,6 +739,7 @@ PIOF_STARTTLS_RENEGOTIATE = _tlspool.PIOF_STARTTLS_RENEGOTIATE
 PIOF_STARTTLS_REQUEST_REMOTEID = _tlspool.PIOF_STARTTLS_REQUEST_REMOTEID
 PIOF_STARTTLS_WITHOUT_SNI = _tlspool.PIOF_STARTTLS_WITHOUT_SNI
 TLSPOOL_CTLKEYLEN = _tlspool.TLSPOOL_CTLKEYLEN
+TLSPOOL_DEFAULT_CONFIG_PATH = _tlspool.TLSPOOL_DEFAULT_CONFIG_PATH
 TLSPOOL_DEFAULT_PIDFILE_PATH = _tlspool.TLSPOOL_DEFAULT_PIDFILE_PATH
 TLSPOOL_DEFAULT_SOCKET_PATH = _tlspool.TLSPOOL_DEFAULT_SOCKET_PATH
 TLSPOOL_IDENTITY_V2 = _tlspool.TLSPOOL_IDENTITY_V2
