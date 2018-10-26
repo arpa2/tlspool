@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdint.h>
 
+
 #include <unistd.h>
 #include <poll.h>
 #include <errno.h>
@@ -13,6 +14,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netdb.h>
 
 #include <tlspool/starttls.h>
 
@@ -42,12 +44,19 @@ void sigcont_handler (int signum) {
 }
 
 int main (int argc, char **argv) {
-	int sox, cnx;
+	int sox, cnx, rc;
 	int plainfd;
-	struct sockaddr_in6 sin6;
+	const char *host = argc < 2 ? "::" : argv[1];
+	const char *service = argc < 3 ? "12345" : argv[2];
+	struct addrinfo	*res;
 	sigset_t sigcontset;
 	uint8_t rndbuf [16];
 
+	rc = getaddrinfo(host, service, NULL, &res);
+	if (rc != 0) {
+	    fprintf(stderr, "Error in getaddrinfo: %s\n", gai_strerror(rc));
+	    exit (1);
+	}
 	if (sigemptyset (&sigcontset) ||
 	    sigaddset (&sigcontset, SIGCONT) ||
 	    pthread_sigmask (SIG_BLOCK, &sigcontset, NULL)) {
@@ -56,16 +65,12 @@ int main (int argc, char **argv) {
 	}
 
 reconnect:
-	sox = socket (AF_INET6, SOCK_STREAM, 0);
+	sox = socket (res->ai_family, SOCK_STREAM, 0);
 	if (sox == -1) {
 		perror ("Failed to create socket on testsrv");
 		exit (1);
 	}
-	memset (&sin6, 0, sizeof (sin6));
-	sin6.sin6_family = AF_INET6;
-	sin6.sin6_port = htons (12345);
-	memcpy (&sin6.sin6_addr, &in6addr_loopback, 16);
-	if (bind (sox, (struct sockaddr *) &sin6, sizeof (sin6)) == -1) {
+	if (bind (sox, res->ai_addr, res->ai_addrlen) == -1) {
 		perror ("Socket failed to bind on testsrv");
 		if (errno == EADDRINUSE) {
 			close (sox);
@@ -133,6 +138,7 @@ reconnect:
 			exit (1);
 		}
 	}
+	freeaddrinfo(res);
 	return 0;
 }
 
