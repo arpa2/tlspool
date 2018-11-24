@@ -923,10 +923,11 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 #endif
 					//TODO// Setup for TCP, UDP, SCTP
 #ifndef WINDOWS_PORT
-					if (socketpair (AF_UNIX, SOCK_SEQPACKET, 0, soxx) == 0) {
+					if (socketpair (AF_UNIX, SOCK_SEQPACKET, 0, soxx) == 0)
 #else /* WINDOWS_PORT */
-					if (dumb_socketpair(soxx, 1) == 0) {
+					if (dumb_socketpair(soxx, 1) == 0)
 #endif /* WINDOWS_PORT */
+					{
 						// printf("DEBUG: socketpair succeeded\n");
 						/* Socketpair created */
 						plainfd = soxx [0];

@@ -49,6 +49,18 @@ int main (int argc, char **argv) {
 	sigset_t sigcontset;
 	uint8_t rndbuf [16];
 
+	if (argc > 2) {
+		fprintf (stderr, "Usage: %s [servername]\n", argv [0]);
+		exit (1);
+	} else if (argc == 2) {
+		if (strlen (argv [1]) > sizeof (tlsdata_cli.remoteid) - 1) {
+			fprintf (stderr, "Server name exceeded %d characters\n",
+					sizeof (tlsdata_cli.remoteid) - 1);
+			exit (1);
+		}
+		strcpy (tlsdata_cli.remoteid, argv [1]);
+	}
+
 	if (sigemptyset (&sigcontset) ||
 	    sigaddset (&sigcontset, SIGCONT) ||
 	    pthread_sigmask (SIG_BLOCK, &sigcontset, NULL)) {
