@@ -20,6 +20,11 @@
 
 #include "runterminal.h"
 
+
+static int    vhostc;
+static char **vhostv;
+
+
 static starttls_t tlsdata_srv = {
 	.flags = PIOF_STARTTLS_LOCALROLE_SERVER
 		| PIOF_STARTTLS_REMOTEROLE_CLIENT,
@@ -29,6 +34,46 @@ static starttls_t tlsdata_srv = {
 	.service = "generic",
 };
 static starttls_t tlsdata_now;
+
+
+int namedconnect_vhost (starttls_t *tlsdata, void *privdata) {
+	int i;
+	tlsdata->localid [sizeof (tlsdata->localid)-1] == '\0';
+	for (i=0; i<vhostc; i++) {
+		char *patn = vhostv [0];
+		char *mtch = tlsdata->localid;
+		if (*patn == '*') {
+			patn++;
+			mtch = strchr (mtch, '.');
+			if (mtch == NULL) {
+				continue;
+			}
+		}
+		if (strcasecmp (patn, mtch) == 0) {
+#if !defined(WINDOWS_PORT)
+			int soxx[2];
+#else
+			// https://github.com/ncm/selectable-socketpair
+			extern int dumb_socketpair(SOCKET socks[2], int make_overlapped);
+			SOCKET soxx[2];
+#endif
+			//TODO// Setup for TCP, UDP, SCTP
+#ifndef WINDOWS_PORT
+			if (socketpair (AF_UNIX, SOCK_SEQPACKET, 0, soxx) == 0)
+#else /* WINDOWS_PORT */
+			if (dumb_socketpair(soxx, 1) == 0)
+#endif /* WINDOWS_PORT */
+			{
+				// printf("DEBUG: socketpair succeeded\n");
+				/* Socketpair created */
+				* (int *) privdata = soxx [1];
+				return soxx [0];
+			}
+		}
+	}
+	return -1;
+}
+
 
 void sigcont_handler (int signum);
 static struct sigaction sigcont_action = {
@@ -46,13 +91,20 @@ void sigcont_handler (int signum) {
 int main (int argc, char **argv) {
 	int sox, cnx, rc;
 	int plainfd;
-	const char *host = argc < 2 ? "::" : argv[1];
-	const char *service = argc < 3 ? "12345" : argv[2];
 	struct addrinfo	*res;
 	sigset_t sigcontset;
 	uint8_t rndbuf [16];
+	int (*namedconnect) (starttls_t *tlsdata, void *privdata) = NULL;
 
-	rc = getaddrinfo(host, service, NULL, &res);
+	if (argc > 1) {
+		vhostc = argc-1;
+		vhostv = argv+1;
+		tlsdata_srv.localid [0] = '\0';
+		tlsdata_srv.flags |= PIOF_STARTTLS_LOCALID_CHECK;
+		namedconnect = namedconnect_vhost;
+	}
+
+	rc = getaddrinfo("::", "12345", NULL, &res);
 	if (rc != 0) {
 	    fprintf(stderr, "Error in getaddrinfo: %s\n", gai_strerror(rc));
 	    exit (1);
@@ -90,7 +142,7 @@ reconnect:
 		}
 		tlsdata_now = tlsdata_srv;
 		plainfd = -1;
-		if (-1 == tlspool_starttls (cnx, &tlsdata_now, &plainfd, NULL)) {
+		if (-1 == tlspool_starttls (cnx, &tlsdata_now, &plainfd, namedconnect)) {
 			perror ("Failed to STARTTLS on testsrv");
 			if (plainfd >= 0) {
 				close (plainfd);
