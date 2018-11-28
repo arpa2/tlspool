@@ -9,7 +9,7 @@
 #include <sys/stat.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>
-
+#include "nl_mansoft_tlspoolsocket_TlspoolSocket.h"   // Generated
 #ifdef TEST
 #ifdef _WIN32
 #define FILENAME_CRYPT "c:\\tmp\\crypt.txt"
@@ -41,7 +41,7 @@ extern "C" {
 	 * Method:    startTls0
 	 * Signature: ()I
 	 */
-	JNIEXPORT jint JNICALL Java_TlspoolSocket_startTls0
+	JNIEXPORT jint JNICALL Java_nl_mansoft_tlspoolsocket_TlspoolSocket_startTls0
 	(JNIEnv *env, jobject thisObj)
 	{
 		int rc = 0;
@@ -100,7 +100,7 @@ extern "C" {
 	 * Method:    readEncrypted
 	 * Signature: ([BII)I
 	 */
-	JNIEXPORT jint JNICALL Java_TlspoolSocket_readEncrypted
+	JNIEXPORT jint JNICALL Java_nl_mansoft_tlspoolsocket_TlspoolSocket_readEncrypted
 	(JNIEnv *env, jobject thisObj, jbyteArray inJNIArray, jint off, jint len)
 	{
 		jbyte *inCArray = env->GetByteArrayElements(inJNIArray, NULL);
@@ -125,7 +125,7 @@ extern "C" {
 	 * Method:    writeEncrypted
 	 * Signature: ([BII)I
 	 */
-	JNIEXPORT jint JNICALL Java_TlspoolSocket_writeEncrypted
+	JNIEXPORT jint JNICALL Java_nl_mansoft_tlspoolsocket_TlspoolSocket_writeEncrypted
 	(JNIEnv *env, jobject thisObj, jbyteArray inJNIArray, jint off, jint len)
 	{
 		jbyte *inCArray = env->GetByteArrayElements(inJNIArray, NULL);
