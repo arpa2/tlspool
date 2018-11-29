@@ -29,4 +29,10 @@ install(
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-add_subdirectory(python)
+option(LANGUAGE_SUPPORT_PYTHON
+	"Add language support for Python"
+	OFF)
+
+if(LANGUAGE_SUPPORT_PYTHON)
+    add_subdirectory(python)
+endif()

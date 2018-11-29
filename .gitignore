@@ -6,3 +6,4 @@ lib*.a
 build
 .kdev4
 tlspool.kdev4
+etc/root.key
