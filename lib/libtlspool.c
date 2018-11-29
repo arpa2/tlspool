@@ -27,6 +27,7 @@
 #include <sys/un.h>
 #include <sys/select.h>
 #include <sys/resource.h>
+#include <netinet/in.h>
 #endif
 
 #if !defined(WINDOWS_PORT)
@@ -701,6 +702,13 @@ static int socket_dup_protocol_info(int fd, int pid, LPWSAPROTOCOL_INFOW lpProto
 }
 #endif
 
+/*
+ * converts IPPROTO_* to SOCK_*, returns -1 if invalid protocol
+ */
+static int ipproto_to_sockettype(uint8_t ipproto) {
+	return ipproto == IPPROTO_TCP ? SOCK_STREAM : ipproto == IPPROTO_UDP ? SOCK_DGRAM : ipproto == IPPROTO_SCTP ? SOCK_SEQPACKET : -1;
+}
+
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
  *
@@ -761,7 +769,11 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 #endif
 	int processing;
 	int renegotiate = 0 != (tlsdata->flags & PIOF_STARTTLS_RENEGOTIATE);
-
+	int type = ipproto_to_sockettype (tlsdata->ipproto);
+	if (type == -1) {
+		errno = EINVAL;
+		return -1;
+	}
 	/* Prepare command structure */
 	poolfd = tlspool_open_poolhandle (NULL);
 	if (poolfd == INVALID_POOL_HANDLE) {
@@ -923,7 +935,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 #endif
 					//TODO// Setup for TCP, UDP, SCTP
 #ifndef WINDOWS_PORT
-					if (socketpair (AF_UNIX, SOCK_SEQPACKET, 0, soxx) == 0)
+					if (socketpair (AF_UNIX, type, 0, soxx) == 0)
 #else /* WINDOWS_PORT */
 					if (dumb_socketpair(soxx, 1) == 0)
 #endif /* WINDOWS_PORT */
