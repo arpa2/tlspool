@@ -1004,7 +1004,7 @@ void cleanup_starttls (void) {
  * attempt is made to renegotiate the security of the connection.
  */
 static int copycat (int local, int remote, gnutls_session_t wrapped, pool_handle_t client) {
-	char buf [1024];
+	char buf [16384];
 	struct pollfd inout [3];
 	ssize_t sz;
 	struct linger linger = { 1, 10 };
