@@ -41,7 +41,7 @@ int namedconnect_vhost (starttls_t *tlsdata, void *privdata) {
 	tlsdata->localid [sizeof (tlsdata->localid)-1] == '\0';
 	fprintf (stderr, "namedconnect_vhost looking for %s\n", tlsdata->localid);
 	for (i=0; i<vhostc; i++) {
-		char *patn = vhostv [0];
+		char *patn = vhostv [i];
 		char *mtch = tlsdata->localid;
 		if (*patn == '*') {
 			patn++;
