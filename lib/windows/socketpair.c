@@ -70,7 +70,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *   sockets must be closed with closesocket() regardless.
  */
 
-int dumb_socketpair(SOCKET socks[2], int make_overlapped)
+int dumb_socketpair(SOCKET socks[2], int sock_type, int make_overlapped)
 {
     union {
        struct sockaddr_in inaddr;
@@ -88,7 +88,7 @@ int dumb_socketpair(SOCKET socks[2], int make_overlapped)
     }
     socks[0] = socks[1] = -1;
 
-    listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    listener = socket(AF_INET, sock_type, IPPROTO_TCP);
     if (listener == -1)
         return SOCKET_ERROR;
 

@@ -27,6 +27,7 @@
 #include <sys/un.h>
 #include <sys/select.h>
 #include <sys/resource.h>
+#include <netinet/in.h>
 #endif
 
 #if !defined(WINDOWS_PORT)
@@ -704,6 +705,15 @@ static int socket_dup_protocol_info(int fd, int pid, LPWSAPROTOCOL_INFOW lpProto
 
 
 /*
+ * converts IPPROTO_* to SOCK_*, returns -1 if invalid protocol
+ */
+static int ipproto_to_sockettype(uint8_t ipproto) {
+	return ipproto == IPPROTO_TCP ? SOCK_STREAM : ipproto == IPPROTO_UDP ? SOCK_DGRAM : ipproto == IPPROTO_SCTP ? SOCK_SEQPACKET : -1;
+}
+
+
+
+/*
  * The namedconnect() function is called by tlspool_starttls() when the
  * identities have been exchanged, and established, in the TLS handshake.
  * This is the point at which a connection to the plaintext side is
@@ -732,8 +742,12 @@ static int socket_dup_protocol_info(int fd, int pid, LPWSAPROTOCOL_INFOW lpProto
 int tlspool_namedconnect_default (starttls_t *tlsdata, void *privdata) {
 	int plainfd;
 	int soxx[2];
-	//TODO// Setup for TCP, UDP, SCTP
-	if (socketpair (AF_UNIX, SOCK_SEQPACKET, 0, soxx) == 0)
+	int type = ipproto_to_sockettype (tlsdata->ipproto);
+	if (type == -1) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (socketpair (AF_UNIX, type, 0, soxx) == 0)
 	{
 		// printf("DEBUG: socketpair succeeded\n");
 		/* Socketpair created */
@@ -750,10 +764,14 @@ int tlspool_namedconnect_default (starttls_t *tlsdata, void *privdata) {
 int tlspool_namedconnect_default (starttls_t *tlsdata, void *privdata) {
 	int plainfd;
 	// https://github.com/ncm/selectable-socketpair
-	extern int dumb_socketpair(SOCKET socks[2], int make_overlapped);
+	extern int dumb_socketpair(SOCKET socks[2], int sock_type, int make_overlapped);
 	SOCKET soxx[2];
-	//TODO// Setup for TCP, UDP, SCTP
-	if (dumb_socketpair(soxx, 1) == 0)
+	int type = ipproto_to_sockettype (tlsdata->ipproto);
+	if (type == -1) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (dumb_socketpair(soxx, type, 1) == 0)
 	{
 		// printf("DEBUG: socketpair succeeded\n");
 		/* Socketpair created */
@@ -809,7 +827,11 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 #endif
 	int processing;
 	int renegotiate = 0 != (tlsdata->flags & PIOF_STARTTLS_RENEGOTIATE);
-
+	int type = ipproto_to_sockettype (tlsdata->ipproto);
+	if (type == -1) {
+		errno = EINVAL;
+		return -1;
+	}
 	/* Prepare command structure */
 	poolfd = tlspool_open_poolhandle (NULL);
 	if (poolfd == INVALID_POOL_HANDLE) {
