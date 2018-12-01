@@ -39,6 +39,7 @@ static starttls_t tlsdata_now;
 int namedconnect_vhost (starttls_t *tlsdata, void *privdata) {
 	int i;
 	tlsdata->localid [sizeof (tlsdata->localid)-1] == '\0';
+	fprintf (stderr, "namedconnect_vhost looking for %s\n", tlsdata->localid);
 	for (i=0; i<vhostc; i++) {
 		char *patn = vhostv [0];
 		char *mtch = tlsdata->localid;
@@ -71,6 +72,7 @@ int namedconnect_vhost (starttls_t *tlsdata, void *privdata) {
 			}
 		}
 	}
+	fprintf (stderr, "No match found in namedconnect_vhost, tried %d\n", vhostc);
 	return -1;
 }
 

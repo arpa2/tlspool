@@ -909,7 +909,8 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		case PIOC_STARTTLS_LOCALID_V2:
 		case PIOC_PLAINTEXT_CONNECT_V2:
 			if (namedconnect) {
-				plainfd = (*namedconnect) (tlsdata, privdata);
+				fprintf (stderr, "Callback to check local id or provide plaintext fd for localid=%s\n", cmd.pio_data.pioc_starttls.localid);
+				plainfd = (*namedconnect) (&cmd.pio_data.pioc_starttls, privdata);
 			} else {
 				/* default namedconnect() implementation */
 				plainfd = * (int *) privdata;

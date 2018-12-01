@@ -1135,7 +1135,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 				gnutls_privkey_t *pkey) {
 	gnutls_certificate_type_t certtp;
 	gnutls_pcert_st *pc = NULL;
-	struct command *cmd;
+	struct command *cmd, **pcmd;
 	char *lid, *rid;
 	gnutls_datum_t privdatum = { NULL, 0 };
 	gnutls_datum_t certdatum = { NULL, 0 };
@@ -1160,12 +1160,14 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 	// Setup a number of common references and structures
 	errno = 0;
 	*pcert = NULL;
-	cmd = (struct command *) gnutls_session_get_ptr (session);
-	if (cmd == NULL) {
+	pcmd = (struct command **) gnutls_session_get_ptr (session);
+	if (pcmd == NULL) {
 		E_g2e ("No data pointer with session",
 			GNUTLS_E_INVALID_SESSION);
 		return gtls_errno;
 	}
+	cmd = *pcmd;
+	tlog (LOG_DAEMON, LOG_DEBUG, "clisrv_cert_retrieve() retrieved session pointer %p\n", cmd);
 	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALROLE_CLIENT) {
 		lidrole = LID_ROLE_CLIENT;
 		rolestr = "client";
@@ -1190,13 +1192,14 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 			return gtls_errno;
 		}
 		if (*lid != '\0') {
-			int atidx;
-			for (atidx=128; atidx > 0; atidx--) {
-				if (lid [atidx-1] == '@') {
-					break;
-				}
+			char *lid_dom;
+			lid_dom = strrchr (lid, '@');
+			if (lid_dom == NULL) {
+				lid_dom = lid;
+			} else {
+				lid_dom++;
 			}
-			if (strncmp (sni, lid + atidx, sizeof (sni)-atidx) != 0) {
+			if (strcmp (sni, lid_dom) != 0) {
 				tlog (TLOG_TLS, LOG_ERR, "SNI %s does not match preset local identity %s", sni, lid);
 				E_g2e ("Requested SNI does not match local identity",
 					GNUTLS_E_NO_CERTIFICATE_FOUND);
@@ -1205,6 +1208,7 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 		} else {
 			// TODO: Should ask for permission before accepting SNI
 			memcpy (lid, sni, sizeof (sni));
+			tlog (TLOG_TLS, LOG_INFO, "Copied SNI %s into local identity", sni);
 		}
 	}
 
@@ -1238,20 +1242,25 @@ gtls_error clisrv_cert_retrieve (gnutls_session_t session,
 	// Find the prefetched local identity to use towards this remote
 	// Send a callback to the user if none is available and accessible
 	if (cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALID_CHECK) {
+		//TODO// Up to the commit blamed for this line, we silently dropped cmd and had a resp instead
 		uint32_t oldcmd = cmd->cmd.pio_cmd;
-		struct command *resp;
+		assert (cmd->passfd < 0);	// There is no way this could already be used
 		cmd->cmd.pio_cmd = PIOC_STARTTLS_LOCALID_V2;
-		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response with PIOC_STARTTLS_LOCALID_V2");
-		resp = send_callback_and_await_response (cmd, 0);
-		assert (resp != NULL);	// No timeout, should be non-NULL
-		if (resp->cmd.pio_cmd != PIOC_STARTTLS_LOCALID_V2) {
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response with PIOC_STARTTLS_LOCALID_V2 on %s", cmd->cmd.pio_data.pioc_starttls.localid);
+		cmd = *pcmd = send_callback_and_await_response (cmd, 0);
+		assert (cmd != NULL);	// No timeout requested, so the return should never be NULL
+		if (cmd->cmd.pio_cmd != PIOC_STARTTLS_LOCALID_V2) {
 			tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has unexpected command code");
 			cmd->cmd.pio_cmd = oldcmd;
 			return GNUTLS_E_CERTIFICATE_ERROR;
 		}
-		assert (resp == cmd);  // No ERROR, so should be the same
-		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that sets plainfd:=%d and lid:=\"%s\" for rid==\"%s\"", cmd->passfd, lid, rid);
 		cmd->cmd.pio_cmd = oldcmd;
+		//WHYWOULDWEASSUMETHIS// assert (resp == cmd);  // No ERROR, so should be the same
+		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that sets plainfd:=%d and lid:=\"%s\" for rid==\"%s\"", cmd->passfd, lid, rid);
+		// Accept passfd if it is >= 0
+		if (cmd->passfd >= 0) {
+			fprintf (stderr, "Received a file descriptor; passing it to the main starttls function\n");
+		}
 		//
 		// Check that new rid is a generalisation of original rid
 		// Note: This is only of interest for client operation
@@ -2527,7 +2536,8 @@ static gtls_error cli_kdhsig_encode (gnutls_session_t session,
 	char derctime [100];
 	krb5_int32 now_us;
 	QDERBUF_INT32_T dercusec;
-	cmd = (struct command *) gnutls_session_get_ptr (session);
+	cmd = * (struct command **) gnutls_session_get_ptr (session);
+	tlog (LOG_DAEMON, LOG_DEBUG, "cli_kdhsig_encode() retrieved session pointer %p\n", cmd);
 	memset (&auth, 0, sizeof (auth));
 	memset (&subkey, 0, sizeof (subkey));
 	assert (cmd->krbid_cli != NULL);
@@ -2681,7 +2691,8 @@ static int srv_kdhsig_decode (gnutls_session_t session,
 	static const uint8_t auth_packer [] = {
 		DER_PACK_rfc4120_Authenticator, DER_PACK_END };
 	encrypted_data_t encdata;
-	cmd = (struct command *) gnutls_session_get_ptr (session);
+	cmd = * (struct command **) gnutls_session_get_ptr (session);
+	tlog (LOG_DAEMON, LOG_DEBUG, "srv_kdhsig_decode() retrieved session pointer %p\n", cmd);
 prange ("srv_E", enc_authenticator->data, enc_authenticator->size);
 	//
 	// Retrieve the session key and store it in cmd->krb_key.
@@ -3832,6 +3843,7 @@ static int configure_session (struct command *cmd,
 			int anonpre_ok) {
 	int i;
 	int gtls_errno = GNUTLS_E_SUCCESS;
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 	//
 	// Install the shared credentials for the client or server role
 	if (creds != NULL) {
@@ -3844,6 +3856,7 @@ static int configure_session (struct command *cmd,
 					creds [i].cred  ));
 		}
 	}
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 	//
 	// Setup the priority string for this session; this avoids future
 	// credential callbacks that ask for something impossible or
@@ -3873,14 +3886,17 @@ static int configure_session (struct command *cmd,
 #ifdef EXPERIMENTAL_SRP
 			":%cSRP:%cSRP-RSA:%cSRP-DSS"
 #endif
-			,anonpre_ok				?'+':'-',
-			1 /* lidtpsup (cmd, LID_TYPE_KRB5)*/		?'+':'-',
-			1 /*lidtpsup (cmd, LID_TYPE_X509)*/		?'+':'-',
-			1 /*lidtpsup (cmd, LID_TYPE_PGP)*/		?'+':'-',
+			,anonpre_ok				?'+':'-'
+			,1 /* lidtpsup (cmd, LID_TYPE_KRB5)*/		?'+':'-'
+			,1 /*lidtpsup (cmd, LID_TYPE_X509)*/		?'+':'-'
+			,1 /*lidtpsup (cmd, LID_TYPE_PGP)*/		?'+':'-'
 			//TODO// Temporarily patched out SRP
-			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
-			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-',
-			lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-');
+#ifdef EXPERIMENTAL_SRP
+			,lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-'
+			,lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-'
+			,lidtpsup (cmd, LID_TYPE_SRP)		?'+':'-'
+#endif
+			);
 #else
 		// It's not possible to make good decisions on certificate type
 		// for both sides based on knowledge of local authentication
@@ -3898,16 +3914,21 @@ static int configure_session (struct command *cmd,
 #ifdef EXPERIMENTAL_SRP
 			":%cSRP:%cSRP-RSA:%cSRP-DSS"
 #endif
-			,anonpre_ok				?'+':'-',
-			1		?'+':'-',
-			1		?'+':'-',
+			,anonpre_ok				?'+':'-'
+			,1		?'+':'-'
+			,1		?'+':'-'
+#ifdef EXPERIMENTAL_SRP
 			//TODO// Temporarily patched out SRP
-			1		?'+':'-',
-			1		?'+':'-',
-			1		?'+':'-');
+			,1		?'+':'-'
+			,1		?'+':'-'
+			,1		?'+':'-'
 #endif
+			);
+#endif
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 		tlog (TLOG_TLS, LOG_DEBUG, "Constructed priority string %s for local ID %s",
 			priostr, cmd->cmd.pio_data.pioc_starttls.localid);
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 		E_g2e ("Failed to set GnuTLS priority string",
 			gnutls_priority_set_direct (
 			session,
@@ -3916,6 +3937,7 @@ static int configure_session (struct command *cmd,
 	}
 	//
 	// Return the application GNUTLS_E_ code including _SUCCESS
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 	return gtls_errno;
 }
 
@@ -3928,9 +3950,9 @@ static int configure_session (struct command *cmd,
  *  - User hints -- local and remote identities provided
  */
 static int srv_clienthello (gnutls_session_t session, unsigned int htype, unsigned int post, unsigned int incoming, const gnutls_datum_t *msg) {
-	struct command *cmd;
+	struct command *cmd, **pcmd;
 	int gtls_errno = GNUTLS_E_SUCCESS;
-	char sni [sizeof (cmd->cmd.pio_data.pioc_starttls.remoteid)]; // static
+	char sni [sizeof (cmd->cmd.pio_data.pioc_starttls.remoteid)]; // static size
 	size_t snilen = sizeof (sni);
 	unsigned int snitype;
 	char *lid;
@@ -3944,13 +3966,16 @@ fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), 
 errno = 0;
 fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 
-if (!post) {
 	//
 	// Setup a number of common references
-	cmd = (struct command *) gnutls_session_get_ptr (session);
-	if (cmd == NULL) {
+	pcmd = (struct command **) gnutls_session_get_ptr (session);
+	if (pcmd == NULL) {
 		return GNUTLS_E_INVALID_SESSION;
 	}
+	cmd = *pcmd;
+	tlog (LOG_DAEMON, LOG_DEBUG, "srv_clienthello() retrieved session pointer %p\n", cmd);
+
+if (!post) {
 
 	//
 	// Setup server-specific credentials and priority string
@@ -3963,15 +3988,12 @@ fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), 
 			srv_creds, srv_credcount,
 			cmd->anonpre & ANONPRE_SERVER));
 fprintf (stderr, "DEBUG: Got gtls_errno = %d at %d\n", gtls_errno, __LINE__);
+fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 
 } else {
 
 	//
 	// Setup a number of common references
-	cmd = (struct command *) gnutls_session_get_ptr (session);
-	if (cmd == NULL) {
-		return GNUTLS_E_INVALID_SESSION;
-	}
 	lid = cmd->cmd.pio_data.pioc_starttls.localid;
 
 	//
@@ -4018,19 +4040,22 @@ fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), 
 fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 	if (sni [0] != '\0') {
 		if (*lid != '\0') {
-			int atidx;
-			for (atidx=128; atidx > 0; atidx--) {
-				if (lid [atidx-1] == '@') {
-					break;
-				}
+			char *lid_dom;
+			lid_dom = strrchr (lid, '@');
+			if (lid_dom == NULL) {
+				lid_dom = lid;
+			} else {
+				lid_dom++;
 			}
-			if (strncmp (sni, lid + atidx, sizeof (sni)-atidx) != 0) {
-				tlog (TLOG_USER | TLOG_TLS, LOG_ERR, "Mismatch between client-sent SNI %s and local identity %s", sni, lid);
-fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
+			if (strcmp (sni, lid_dom) != 0) {
+				tlog (TLOG_USER | TLOG_TLS, LOG_ERR, "Mismatch between client-sent SNI %s and localid domain %s", sni, lid_dom);
+				E_g2e ("Requested SNI does not match local identity",
+					GNUTLS_E_NO_CERTIFICATE_FOUND);
 				return GNUTLS_E_UNEXPECTED_HANDSHAKE_PACKET;
 			}
 		} else {
 			memcpy (lid, sni, sizeof (sni));
+			tlog (TLOG_TLS, LOG_INFO, "Copied SNI %s into local identity", sni);
 fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), __LINE__);
 		}
 	} else {
@@ -4473,7 +4498,7 @@ fprintf (stderr, "DEBUG: pthread_join returned %d\n", errno);
 			// We have now synchronised with the cancelled thread
 			// Cleanup any _remote data in ckn->session->cmd
 			cleanup_any_remote_credentials (
-				(struct command *) gnutls_session_get_ptr (
+				* (struct command **) gnutls_session_get_ptr (
 					ckn->session));
 		}
 		if (errno != 0) {
@@ -4678,7 +4703,8 @@ fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__
 	if (ckn != NULL) {
 		gnutls_session_set_ptr (
 			session,
-			cmd);
+			&cmd);
+		tlog (LOG_DAEMON, LOG_DEBUG, "posted session pointer %p\n", cmd);
 		//TODO:DONE?// Clear various settings... creds, flags, modes? CLI/SRV?
 	} else {
 		E_g2e ("Failed to initialise GnuTLS peer session",
@@ -4691,7 +4717,8 @@ fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__
 			got_session = 1;
 			gnutls_session_set_ptr (
 				session,
-				cmd);
+				&cmd);
+			tlog (LOG_DAEMON, LOG_DEBUG, "posted session pointer %p\n", cmd);
 		}
 	}
 	cmd->session = session;
@@ -4781,9 +4808,12 @@ fprintf (stderr, "DEBUG: Configuring server credentials (because it is not a cli
 
 	//
 	// Prefetch local identities that might be used in this session
-	if (!anonpost) {
-		E_g2e ("Failed to fetch local credentials",
-			fetch_local_credentials (cmd));
+	// Skip this for situations where it is done in clisrv_cert_retrieve()
+	if ((cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_LOCALID_CHECK) == 0) {
+		if (!anonpost) {
+			E_g2e ("Failed to fetch local credentials",
+				fetch_local_credentials (cmd));
+		}
 	}
 
 	//
@@ -4906,7 +4936,10 @@ fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__
 		//DROPPED// (gtls_errno != GNUTLS_E_WARNING_ALERT_RECEIVED) &&
 		(gnutls_error_is_fatal (gtls_errno) == 0));
 	//
-	// Handshake done -- initialise remote_xxx, vfystatus, got_remoteid
+	// Handshake done -- initialise replycmd, remote_xxx, vfystatus, got_remoteid
+	if (replycmd != NULL) {
+		replycmd = cmd;
+	}
 	if ((gtls_errno == 0) && !(cmd->cmd.pio_data.pioc_starttls.flags & PIOF_STARTTLS_IGNORE_REMOTEID)) {
 		// We want to try to authenticate the peer
 		E_g2e ("Failed to retrieve peer credentials",
@@ -5177,15 +5210,27 @@ fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__
 	}
 
 	//
-	// Request the plaintext file descriptor with a callback
+	// Request the plaintext file descriptor with a callback (or dig up from clisrv_ handshake)
+	if (cmd->passfd >= 0) {
+		if (plainfd >= 0) {
+			tlog (TLOG_UNIXSOCK | TLOG_USER, LOG_ERR, "Doubly supplied plainfd, closing the second one supplied %d\n", cmd->passfd);
+			close (cmd->passfd);
+		} else {
+			plainfd = cmd->passfd;
+		}
+		cmd->passfd = -1;
+	}
 	if (plainfd < 0) {
+		//TODO// Up to the commit blamed for this line, we silently dropped cmd and had a resp instead
 		uint32_t oldcmd = cmd->cmd.pio_cmd;
-		struct command *resp;
 		cmd->cmd.pio_cmd = PIOC_PLAINTEXT_CONNECT_V2;
 		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Calling send_callback_and_await_response with PIOC_PLAINTEXT_CONNECT_V2");
-		resp = send_callback_and_await_response (replycmd, 0);
-		assert (resp != NULL);	// No timeout, should be non-NULL
-		if (resp->cmd.pio_cmd != PIOC_PLAINTEXT_CONNECT_V2) {
+		cmd = send_callback_and_await_response (replycmd, 0);
+		if (replycmd != NULL) {
+			replycmd = cmd;
+		}
+		assert (cmd != NULL);	// No timeout given, so the result should never be NULL
+		if (cmd->cmd.pio_cmd != PIOC_PLAINTEXT_CONNECT_V2) {
 			tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has unexpected command code");
 			send_error (replycmd, EINVAL, "Callback response has bad command code");
 			if (preauth) {
@@ -5210,8 +5255,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__
 		}
 		cmd->cmd.pio_cmd = oldcmd;
 		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing callback response that set plainfd:=%d for lid==\"%s\" and rid==\"%s\"", cmd->passfd, cmd->cmd.pio_data.pioc_starttls.localid, cmd->cmd.pio_data.pioc_starttls.remoteid);
-		plainfd = resp->passfd;
-		resp->passfd = -1;
+		plainfd = cmd->passfd;
 	}
 	if (plainfd < 0) {
 		tlog (TLOG_UNIXSOCK, LOG_ERR, "No plaintext file descriptor supplied to TLS Pool");
