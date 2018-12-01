@@ -702,12 +702,91 @@ static int socket_dup_protocol_info(int fd, int pid, LPWSAPROTOCOL_INFOW lpProto
 }
 #endif
 
+
+
 /*
  * converts IPPROTO_* to SOCK_*, returns -1 if invalid protocol
  */
 static int ipproto_to_sockettype(uint8_t ipproto) {
 	return ipproto == IPPROTO_TCP ? SOCK_STREAM : ipproto == IPPROTO_UDP ? SOCK_DGRAM : ipproto == IPPROTO_SCTP ? SOCK_SEQPACKET : -1;
 }
+
+
+
+/*
+ * The namedconnect() function is called by tlspool_starttls() when the
+ * identities have been exchanged, and established, in the TLS handshake.
+ * This is the point at which a connection to the plaintext side is
+ * needed, and a callback to namedconnect() is made to find a handle for
+ * it.  The function is called with a version of the tlsdata that has
+ * been updated by the TLS Pool to hold the local and remote identities. 
+ *
+ * When the namedconnect argument passed to tlspool_starttls() is NULL,
+ * this default function is used instead of the possible override by the
+ * caller.  This interprets the privdata handle as an (int *) holding
+ * a file descriptor.  If its value is valid, that is, >= 0, it will be
+ * returned directly; otherwise, a socketpair is constructed, one of the
+ * sockets is stored in privdata for use by the caller and the other is
+ * returned as the connected file descriptor for use by the TLS Pool.
+ * This means that the privdata must be properly initialised for this
+ * use, with either -1 (to create a socketpair) or the TLS Pool's
+ * plaintext file descriptor endpoint.  The file handle returned in
+ * privdata, if it is >= 0, should be closed by the caller, both in case
+ * of success and failure.
+ *
+ * The return value should be -1 on error, with errno set, or it should
+ * be a valid file handle that can be passed back to the TLS Pool to
+ * connect to.
+ */
+#if !defined(WINDOWS_PORT)
+int tlspool_namedconnect_default (starttls_t *tlsdata, void *privdata) {
+	int plainfd;
+	int soxx[2];
+	int type = ipproto_to_sockettype (tlsdata->ipproto);
+	if (type == -1) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (socketpair (AF_UNIX, type, 0, soxx) == 0)
+	{
+		// printf("DEBUG: socketpair succeeded\n");
+		/* Socketpair created */
+		plainfd = soxx [0];
+		* (int *) privdata = soxx [1];
+	} else {
+		/* Socketpair failed */
+		// printf("DEBUG: socketpair failed\n");
+		plainfd = -1;
+	}
+	return plainfd;
+}
+#else /* WINDOWS_PORT */
+int tlspool_namedconnect_default (starttls_t *tlsdata, void *privdata) {
+	int plainfd;
+	// https://github.com/ncm/selectable-socketpair
+	extern int dumb_socketpair(SOCKET socks[2], int sock_type, int make_overlapped);
+	SOCKET soxx[2];
+	int type = ipproto_to_sockettype (tlsdata->ipproto);
+	if (type == -1) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (dumb_socketpair(soxx, type, 1) == 0)
+	{
+		// printf("DEBUG: socketpair succeeded\n");
+		/* Socketpair created */
+		plainfd = soxx [0];
+		* (int *) privdata = soxx [1];
+	} else {
+		/* Socketpair failed */
+		// printf("DEBUG: socketpair failed\n");
+		plainfd = -1;
+	}
+	return plainfd;
+}
+#endif /* WINDOWS_PORT */
+
+
 
 /* The library function for starttls, which is normally called through one
  * of the two inline variations below, which start client and server sides.
@@ -726,27 +805,6 @@ static int ipproto_to_sockettype(uint8_t ipproto) {
  * The privdata handle is used in conjunction with the namedconnect() call;
  * it is passed on to connect the latter to the context from which it was
  * called and is not further acted upon by this function.
- *
- * The namedconnect() function is called when the identities have been
- * exchanged, and established, in the TLS handshake.  This is the point
- * at which a connection to the plaintext side is needed, and a callback
- * to namedconnect() is made to find a handle for it.  The function is
- * called with a version of the tlsdata that has been updated by the
- * TLS Pool to hold the local and remote identities.  The return value
- * should be -1 on error, with errno set, or it should be a valid file
- * handle that can be passed back to the TLS Pool to connect to.
- *
- * When the namedconnect argument passed is NULL, default behaviour is
- * triggered.  This interprets the privdata handle as an (int *) holding
- * a file descriptor.  If its value is valid, that is, >= 0, it will be
- * returned directly; otherwise, a socketpair is constructed, one of the
- * sockets is stored in privdata for use by the caller and the other is
- * returned as the connected file descriptor for use by the TLS Pool.
- * This means that the privdata must be properly initialised for this
- * use, with either -1 (to create a socketpair) or the TLS Pool's
- * plaintext file descriptor endpoint.  The file handle returned in
- * privdata, if it is >= 0, should be closed by the caller, both in case
- * of success and failure.
  *
  * This function returns zero on success, and -1 on failure.  In case of
  * failure, errno will be set.
@@ -921,37 +979,18 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 		case PIOC_STARTTLS_LOCALID_V2:
 		case PIOC_PLAINTEXT_CONNECT_V2:
 			if (namedconnect) {
-				plainfd = (*namedconnect) (tlsdata, privdata);
+				fprintf (stderr, "Callback to check local id or provide plaintext fd for localid=%s\n", cmd.pio_data.pioc_starttls.localid);
+				plainfd = (*namedconnect) (&cmd.pio_data.pioc_starttls, privdata);
 			} else {
 				/* default namedconnect() implementation */
 				plainfd = * (int *) privdata;
 				if ((plainfd < 0) && (cmd.pio_cmd == PIOC_PLAINTEXT_CONNECT_V2)) {
-#if !defined(WINDOWS_PORT)
-					int soxx[2];
-#else
-					// https://github.com/ncm/selectable-socketpair
-					extern int dumb_socketpair(SOCKET socks[2], int make_overlapped);
-					SOCKET soxx[2];
-#endif
-					//TODO// Setup for TCP, UDP, SCTP
-#ifndef WINDOWS_PORT
-					if (socketpair (AF_UNIX, type, 0, soxx) == 0)
-#else /* WINDOWS_PORT */
-					if (dumb_socketpair(soxx, 1) == 0)
-#endif /* WINDOWS_PORT */
-					{
-						// printf("DEBUG: socketpair succeeded\n");
-						/* Socketpair created */
-						plainfd = soxx [0];
-						* (int *) privdata = soxx [1];
-					} else {
-						/* Socketpair failed */
-						// printf("DEBUG: socketpair failed\n");
-						cmd.pio_cmd = PIOC_ERROR_V2;
-						cmd.pio_data.pioc_error.tlserrno = errno;
-						plainfd = -1;
-					}
+					plainfd = tlspool_namedconnect_default (&cmd.pio_data.pioc_starttls, privdata);
 				}
+			}
+			if (plainfd == -1) {
+				cmd.pio_cmd = PIOC_ERROR_V2;
+				cmd.pio_data.pioc_error.tlserrno = errno;
 			}
 			/* We may now have a value to send in plainfd */
 			if (plainfd >= 0) {
