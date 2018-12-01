@@ -1005,8 +1005,6 @@ void cleanup_starttls (void) {
  */
 static int copycat (int local, int remote, gnutls_session_t wrapped, pool_handle_t client) {
 	char buf [1024];
-	gnutls_packet_t packet;
-	gnutls_datum_t data;
 	struct pollfd inout [3];
 	ssize_t sz;
 	struct linger linger = { 1, 10 };
@@ -1065,11 +1063,8 @@ client = INVALID_POOL_HANDLE;
 		}
 		if (inout [1].revents & POLLIN) {
 			// Read remote and decrypt to local
+			gnutls_packet_t packet;
 			sz = gnutls_record_recv_packet (wrapped, &packet);
-			if (sz > 0) {
-				gnutls_packet_get(packet, &data, NULL);
-				sz = data.size;
-			}
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat received %d remote bytes from %d (or error if <0)", (int) sz, remote);
 			if (sz < 0) {
 				//TODO// Process GNUTLS_E_REHANDSHAKE
@@ -1092,9 +1087,14 @@ client = INVALID_POOL_HANDLE;
 				setsockopt (local, SOL_SOCKET, SO_LINGER, &linger, sizeof (linger));
 #endif /* WINDOWS_PORT */
 				shutdown (local, SHUT_WR);
-			} else if (send (local, data.data, sz, RECV_FLAGS) != sz) {
-				break;	// communication error
-			} else {
+			} else { /* sz > 0 */
+				gnutls_datum_t data;
+				gnutls_packet_get(packet, &data, NULL);
+				sz = send (local, data.data, data.size, RECV_FLAGS);
+				gnutls_packet_deinit(packet);
+				if (sz != data.size) {
+					break;	// communication error
+				}
 				tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat sent %d bytes to local %d", (int) sz, local);
 			}
 		}
