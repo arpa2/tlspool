@@ -40,6 +40,7 @@ krb5_error_code KRB5_CALLCONV krb5_decrypt_tkt_part(krb5_context,
                                                     krb5_ticket * );
 #endif
 
+
 #include <quick-der/api.h>
 #include <quick-der/rfc4120.h>
 typedef DER_OVLY_rfc4120_Ticket ticket_t;
