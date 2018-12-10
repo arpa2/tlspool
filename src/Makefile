@@ -40,13 +40,6 @@ KERBEROS_CFLAGS = $(shell krb5-config --cflags)
 KERBEROS_LIBS = $(shell krb5-config --libs)
 # CFLAGS += -DHAVE_TLS_KDH
 
-ifdef WINVER
-CFLAGS += -D_WIN32_WINNT=0x0600 -DATTRIBUTE_UNUSED="" -I ../include/windows
-OBJS += windows/syslog.o windows/windows.o windows/getopt.o
-LIBS += -lkernel32 -ladvapi32 -lmsvcrt -lwsock32 -lws2_32
-EXE = .exe
-endif
-
 PKG_CONFIG ?= pkg-config
 
 ifdef WINVER

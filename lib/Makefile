@@ -25,7 +25,7 @@ PREFIX ?= /usr/local
 
 ifdef WINVER
 # TODO libtlspool_lidentry and libtlspool_pinentry
-libtlspool_OBJS = libtlspool.o
+libtlspool_OBJS = libtlspool.o libtlspool_configvar.o
 else
 libtlspool_OBJS = libtlspool.o libtlspool_lidentry.o libtlspool_pinentry.o libtlspool_configvar.o
 endif

@@ -31,11 +31,14 @@
 
 #include <libtasn1.h>
 
+
+#ifdef HAVE_TLS_KDH
 #include <krb5.h>
 /* Plus, from k5-int.h: */
 krb5_error_code KRB5_CALLCONV krb5_decrypt_tkt_part(krb5_context,
                                                     const krb5_keyblock *,
                                                     krb5_ticket * );
+#endif
 
 
 #include <quick-der/api.h>
