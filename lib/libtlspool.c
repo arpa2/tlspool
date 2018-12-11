@@ -39,9 +39,13 @@
 #define BUFSIZE 4096
 #define random rand
 #define srandom srand
-
 #define _tprintf printf
 #endif /* WINDOWS_PORT */
+
+/* Windows supports SCTP but fails to define this IANA-standardised symbol: */
+#ifndef IPPROTO_SCTP
+#define IPPROTO_SCTP 132
+#endif
 
 /* The master thread will run the receiving side of the socket that connects
  * to the TLS Pool.  The have_master_lock is used with _trylock() and will
