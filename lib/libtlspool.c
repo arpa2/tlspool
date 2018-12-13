@@ -712,7 +712,11 @@ static int socket_dup_protocol_info(int fd, int pid, LPWSAPROTOCOL_INFOW lpProto
  * converts IPPROTO_* to SOCK_*, returns -1 if invalid protocol
  */
 static int ipproto_to_sockettype(uint8_t ipproto) {
+#ifndef WINDOWS_PORT
 	return ipproto == IPPROTO_TCP ? SOCK_STREAM : ipproto == IPPROTO_UDP ? SOCK_DGRAM : ipproto == IPPROTO_SCTP ? SOCK_SEQPACKET : -1;
+#else /* WINDOWS_PORT */
+	return ipproto == IPPROTO_TCP ? SOCK_STREAM : ipproto == IPPROTO_UDP ? SOCK_DGRAM : -1;
+#endif /* WINDOWS_PORT */
 }
 
 
