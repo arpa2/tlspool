@@ -8,6 +8,11 @@ extern "C"
 {
 #endif
 
+#if  defined(__CYGWIN__) || defined(__MINGW64__) || defined(_WIN32)
+#define WINDOWS_PORT
+#define bzero(b,len) (memset((b), '\0', (len)), (void) 0)
+#endif
+
 #include <tlspool/commands.h>
 
 #ifdef WINDOWS_PORT
