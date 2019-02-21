@@ -40,12 +40,12 @@ get_version_from_git(TLSPool 0.20)
 find_package(BDB REQUIRED)         # ARPA
 find_package(GnuTLS REQUIRED)      # Module
 find_package(GnuTLSDane REQUIRED)  # ARPA
-find_package(KERBEROS REQUIRED)    # Local
+#find_package(KERBEROS REQUIRED)    # Local
 find_package(Libldns REQUIRED)     # ARPA
 find_package(LibTASN1 REQUIRED)    # ARPA
 find_package(OpenLDAP REQUIRED)    # ARPA
 find_package(P11-Kit REQUIRED)     # ARPA
-find_package(Quick-DER 1.2.4 REQUIRED NO_MODULE)  # Config
+find_package(Quick-DER REQUIRED NO_MODULE)  # Config
 find_package(Unbound REQUIRED)     # ARPA
 
 # TODO: look for TLS-KDH
@@ -70,6 +70,9 @@ add_definitions(-fPIC -pthread)
 set(pthread_LIBRARIES pthread)
 # Always include the TLSPool top-level include/ dir.
 include_directories(${CMAKE_SOURCE_DIR}/include)
+
+# Windows only
+include_directories(${CMAKE_SOURCE_DIR}/include/windows)
 
 enable_testing()
 

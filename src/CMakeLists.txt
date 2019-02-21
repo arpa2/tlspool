@@ -32,6 +32,7 @@ set(tlspool_SRC
     starttls.c
     trust.c
     validate.c
+	windows/syslog.c
 )
 
 add_executable(tlspool ${tlspool_SRC})
@@ -48,6 +49,7 @@ target_link_libraries(tlspool
     ${pthread_LIBRARIES}
 )
 
+add_compile_definitions(_WIN32_WINNT=0x0600 ATTRIBUTE_UNUSED="")
 install(
     TARGETS tlspool
     DESTINATION ${CMAKE_INSTALL_SBINDIR}

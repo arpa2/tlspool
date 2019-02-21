@@ -57,7 +57,7 @@ SBIN ?= sbin
 
 BDB_CFLAGS ?=
 ifdef WINVER
-BDB_LIBS   = -ldb-6.1
+BDB_LIBS   = -ldb-6.0
 else
 BDB_LIBS   ?= -ldb # this is the default
 endif

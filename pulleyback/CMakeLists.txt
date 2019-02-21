@@ -20,4 +20,5 @@ target_link_libraries(pulleyback_tlspool ${BDB_LIBRARY} ${Quick-DER_LIBRARIES})
 install(
     TARGETS pulleyback_tlspool
     LIBRARY DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/steamworks/pulleyback/
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/steamworks/pulleyback/
 )

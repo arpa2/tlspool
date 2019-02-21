@@ -1,8 +1,8 @@
 set(libtlspool_SRC
     libtlspool.c
-    libtlspool_lidentry.c
-    libtlspool_pinentry.c
     libtlspool_configvar.c
+	windows/syslog.c
+	windows/socketpair.c
 )
 
 # Compile the files only once
@@ -22,6 +22,7 @@ set_target_properties(tlspool_static PROPERTIES
 
 install(
     TARGETS tlspool_shared
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 install(
