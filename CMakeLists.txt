@@ -71,14 +71,17 @@ set(pthread_LIBRARIES pthread)
 # Always include the TLSPool top-level include/ dir.
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
-# Windows only
-include_directories(${CMAKE_SOURCE_DIR}/include/windows)
+if("${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
+	include_directories(${CMAKE_SOURCE_DIR}/include/windows)
+endif()
 
 enable_testing()
 
 add_subdirectory(src)
 add_subdirectory(lib)
-add_subdirectory(tool)
+if(NOT("${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*"))
+	add_subdirectory(tool)
+endif()
 add_subdirectory(pulleyback)
 add_subdirectory(doc)
 if(BUILD_TESTING)
