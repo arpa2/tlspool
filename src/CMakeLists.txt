@@ -16,24 +16,30 @@ include_directories(
 )
 
 set(tlspool_SRC
-    cache.c
-    config.c
-    ctlkey.c
-    daemon.c
-    donai.c
-    error.c
-    lidentry.c
-    manage.c
-    online.c
-    pgp.c
-    pinentry.c
-    remote.c
-    service.c
-    starttls.c
-    trust.c
-    validate.c
-	windows/syslog.c
+	cache.c
+	config.c
+	ctlkey.c
+	daemon.c
+	donai.c
+	error.c
+	lidentry.c
+	manage.c
+	online.c
+	pgp.c
+	pinentry.c
+	remote.c
+	service.c
+	starttls.c
+	trust.c
+	validate.c
 )
+# add windows/syslog.c for windows
+if("${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
+	set(tlspool_SRC
+		${tlspool_SRC}
+		windows/syslog.c
+	)
+endif()
 
 add_executable(tlspool ${tlspool_SRC})
 target_link_libraries(tlspool

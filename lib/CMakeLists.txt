@@ -1,9 +1,20 @@
-set(libtlspool_SRC
-    libtlspool.c
-    libtlspool_configvar.c
-	windows/syslog.c
-	windows/socketpair.c
-)
+if("${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
+# TODO 	libtlspool_lidentry.c and libtlspool_pinentry.c for Windows
+	set(libtlspool_SRC
+		libtlspool.c
+		libtlspool_configvar.c
+		windows/syslog.c
+		windows/socketpair.c
+	)
+else()
+	set(libtlspool_SRC
+		libtlspool.c
+		libtlspool_lidentry.c	
+		libtlspool_pinentry.c	
+		libtlspool_configvar.c
+	)
+endif()
+
 
 # Compile the files only once
 add_library(_libtlspool OBJECT ${libtlspool_SRC})
