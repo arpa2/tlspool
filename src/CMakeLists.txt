@@ -55,7 +55,10 @@ target_link_libraries(tlspool
     ${pthread_LIBRARIES}
 )
 
-add_compile_definitions(_WIN32_WINNT=0x0600 ATTRIBUTE_UNUSED="")
+if("${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
+	add_compile_definitions(_WIN32_WINNT=0x0600 ATTRIBUTE_UNUSED="")
+endif()
+
 install(
     TARGETS tlspool
     DESTINATION ${CMAKE_INSTALL_SBINDIR}
