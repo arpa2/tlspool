@@ -477,11 +477,11 @@ class Connection:
 		plainsockptr = socket_data ()
 		plainsockptr.unix_socket = self.plainfd
 # Clone cryptfd so _starttls() and Python can each close it
-                unix_cryptfd = os.dup (self.cryptfd)
-                if unix_cryptfd < 0:
-                        _tlspool.raise_errno ()
+		unix_cryptfd = os.dup (self.cryptfd)
+		if unix_cryptfd < 0:
+			_tlspool.raise_errno ()
 # We close cryptsk now and it will not repeat during garbage collection
-                self.cryptsk.close ()
+		self.cryptsk.close ()
 		self.cryptsk = None
 		self.cryptfd = -1
 # Provide None for the callback function, SWIG won't support it
@@ -631,9 +631,9 @@ class SecurityMixIn:
 			socktp = socket.SOCK_STREAM
 		plainsockptr = socket_data ()
 		plainsockptr.unix_socket = -1
-                unix_sox = os.dup (sox.fileno ())
-                if unix_sox < 0:
-                        _tlspool.raise_errno ()
+		unix_sox = os.dup (sox.fileno ())
+		if unix_sox < 0:
+			_tlspool.raise_errno ()
 		sox.close ()
 		rv = _starttls (unix_sox, self.tlsdata, plainsockptr, None)
 		if rv < 0:
@@ -641,8 +641,8 @@ class SecurityMixIn:
 		assert (plainsockptr.unix_socket >= 0)
 		sox2 = socket.fromfd (plainsockptr.unix_socket, af, socktp)
 # Now, since socket.fromfd() used os.dup(), we close the original
-                os.close (plainsockptr.unix_socket)
-                plainsockptr.unix_socket = -1
+		os.close (plainsockptr.unix_socket)
+		plainsockptr.unix_socket = -1
 		if type (self.request) == tuple:
 #TODO# This is not permitted, editing a tuple
 			self.request [1] = sox2
