@@ -1,3 +1,4 @@
+if(NOT "${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
 add_definitions(-DDEBUG)
 include_directories(${BDB_INCLUDE_DIR})
 
@@ -62,3 +63,4 @@ add_test(
     COMMAND pulleybacksimu
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
+endif()

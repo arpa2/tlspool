@@ -1,4 +1,5 @@
 project(tlspool-pulleyback C)
+if(NOT "${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
 
 # TODO:
 #  - CFLAGS from Makefile are -ggdb3 -O0 -fPIC -std=gnu11
@@ -22,3 +23,4 @@ install(
     LIBRARY DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/steamworks/pulleyback/
     ARCHIVE DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/steamworks/pulleyback/
 )
+endif()

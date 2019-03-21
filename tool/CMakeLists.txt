@@ -1,3 +1,4 @@
+if(NOT "${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
 include_directories(${BDB_INCLUDE_DIR})
 
 add_library(_tool_common OBJECT runterminal.c ../src/donai.c)
@@ -72,3 +73,4 @@ install(
         tlstunnel
     DESTINATION ${CMAKE_INSTALL_SBINDIR}
 )
+endif()
