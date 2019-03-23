@@ -35,7 +35,7 @@ import tempfile
 # import optparse
 
 
-if not '--' in sys.argv or sys.argv [1] == '--' or sys.argv [-1] == '--':
+if len (sys.argv) < 2 or sys.argv [1] == '--' or sys.argv [-1] == '--':
 	sys.stderr.write ('Usage: %s cmd1 arg1a arg1b -- cmd2 arg2a -- cmd3 arg3a arg3b\n' % (sys.argv [0],))
 	sys.exit (1)
 

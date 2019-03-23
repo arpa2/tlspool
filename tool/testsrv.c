@@ -18,7 +18,9 @@
 
 #include <tlspool/starttls.h>
 
+#include "socket.h"
 #include "runterminal.h"
+#include "chat_builtin.h"
 
 
 static int    vhostc;
@@ -90,27 +92,87 @@ void sigcont_handler (int signum) {
 	sigcont = 1;
 }
 
+int exit_val = 1;
+void graceful_exit (int signum) {
+	exit (exit_val);
+}
+	
+
 int main (int argc, char **argv) {
 	int sox, cnx, rc;
 	int plainfd;
-	struct addrinfo	*res;
+	struct sockaddr_storage sa;
 	sigset_t sigcontset;
 	uint8_t rndbuf [16];
 	int (*namedconnect) (starttls_t *tlsdata, void *privdata) = NULL;
+	char *progname = NULL;
+	bool do_signum = false;
+	bool do_timeout = false;
+	int signum = -1;
+	int timeout = -1;
+	bool do_chat = false;
+	int    chat_argc = 0;
+	char **chat_argv = NULL;
 
-	if (argc > 1) {
-		vhostc = argc-1;
+	// argv[1] is SNI or . as a wildcard;
+	// argv[2] is address and requires argv[3] for port
+	if ((argc == 1) || (argc == 3)) {
+		fprintf (stderr, "Usage: %s servername|. [address port [0|signum|-timeout [chatargs...]]]\n", argv [0]);
+		exit (1);
+	}
+
+	// store the program name
+	/* progname = strrchr (argv [0], '/'); */
+	if (progname == NULL) {
+		progname = argv [0];
+	}
+
+	// process argv[1] with local identity or its overriding "."
+	if (strcmp (argv [1], ".") != 0) {
+		if (strlen (argv [1]) > sizeof (tlsdata_srv.localid) - 1) {
+			fprintf (stderr, "Server name exceeded %d characters\n",
+					sizeof (tlsdata_srv.localid) - 1);
+			exit (1);
+		}
+		vhostc = 1;
 		vhostv = argv+1;
 		tlsdata_srv.localid [0] = '\0';
 		tlsdata_srv.flags |= PIOF_STARTTLS_LOCALID_CHECK;
 		namedconnect = namedconnect_vhost;
 	}
 
-	rc = getaddrinfo("::", "12345", NULL, &res);
-	if (rc != 0) {
-	    fprintf(stderr, "Error in getaddrinfo: %s\n", gai_strerror(rc));
-	    exit (1);
+	// process optional argv[2,3] with address and port
+	memset (&sa, 0, sizeof (sa));
+	char *addrstr = "::1", *portstr = "12345";
+	if (argc >= 4) {
+		addrstr = argv [2];
+		portstr = argv [3];
 	}
+	if (!socket_parse (addrstr, portstr, (struct sockaddr *) &sa)) {
+		fprintf (stderr, "Incorrect address %s and/or port %s\n", argv [2], argv [3]);
+		exit (1);
+	}
+
+	// process optional 0|-signum|timeout
+	// where 0 means nothing, -signum awaits the signal number, timeout is seconds to finish
+	if (argc >= 5) {
+		int parsed = atoi (argv [4]);
+		if (parsed < 0) {
+			do_timeout = true;
+			timeout = -parsed;
+		} else if (parsed > 0) {
+			do_signum = true;
+			signum = parsed;
+		}
+	}
+
+	// process optional argv[5+] with chat information
+	if (argc > 5) {
+		do_chat = true;
+		chat_argc = argc - 5;
+		chat_argv = argv + 5;
+	}
+
 	if (sigemptyset (&sigcontset) ||
 	    sigaddset (&sigcontset, SIGCONT) ||
 	    pthread_sigmask (SIG_BLOCK, &sigcontset, NULL)) {
@@ -118,30 +180,46 @@ int main (int argc, char **argv) {
 		exit (1);
 	}
 
+	// When timeout hits, we should stop gracefully, with exit(exit_val)
+	if (do_timeout) {
+		if (signal (SIGALRM, graceful_exit) == SIG_ERR) {
+			fprintf (stderr, "Failed to install signal handler for timeout\n");
+			exit (1);
+		}
+		alarm (timeout);
+		printf ("Scheduled to exit(exit_val) in %d seconds\n", timeout);
+	}
+
+	// When the signal hits, we should stop gracefully, with exit(exit_val)
+	if (do_signum) {
+		if (signal (signum, graceful_exit) == SIG_ERR) {
+			fprintf (stderr, "Failed to install signal handler for signal %d\n", signum);
+			exit (1);
+		}
+		printf ("Scheduled to exit(exit_val) upon reception of signal %d\n", signum);
+	}
+
 reconnect:
-	sox = socket (res->ai_family, SOCK_STREAM, 0);
-	if (sox == -1) {
+	if (!socket_server ((struct sockaddr *) &sa, SOCK_STREAM, &sox)) {
 		perror ("Failed to create socket on testsrv");
 		exit (1);
 	}
-	if (bind (sox, res->ai_addr, res->ai_addrlen) == -1) {
-		perror ("Socket failed to bind on testsrv");
-		if (errno == EADDRINUSE) {
-			close (sox);
-			sleep (1);
-			goto reconnect;
-		}
-		exit (1);
-	}
-	if (listen (sox, 5) == -1) {
-		perror ("Socket failed to listen on testsrv");
-		exit (1);
-	}
+	printf ("--\n");
+	fflush (stdout);
+	/*
+	 * During the first iteration, exit_val is 1 because a single connection
+	 * should come through.  During later connections, exit_val is 0 while in
+	 * accept() but it will always be 1 during active connections, including
+	 * during the TLS Pool handshake.  As a result, timeout and signal may
+	 * interrupt us but it will only exit(0) between connections and after at
+	 * least one connection.
+	 */
 	while ((cnx = accept (sox, NULL, 0))) {
 		if (cnx == -1) {
 			perror ("Failed to accept incoming connection");
 			continue;
 		}
+		exit_val = 1;
 		tlsdata_now = tlsdata_srv;
 		plainfd = -1;
 		if (-1 == tlspool_starttls (cnx, &tlsdata_now, &plainfd, namedconnect)) {
@@ -179,20 +257,27 @@ reconnect:
 			printf ("SIGCONT will trigger renegotiation of the TLS handshake during a connection\n");
 		}
 		printf ("DEBUG: Local plainfd = %d\n", plainfd);
-		runterminal (plainfd, &sigcont, &tlsdata_now,
-			PIOF_STARTTLS_LOCALROLE_SERVER | PIOF_STARTTLS_REMOTEROLE_CLIENT | PIOF_STARTTLS_RENEGOTIATE,
-			"testsrv@tlspool.arpa2.lab",
-			NULL
-		);
+		if (do_chat) {
+			if (chat_builtin (plainfd, progname, chat_argc, chat_argv) != 0) {
+				fprintf (stderr, "Chat session failed on the server side\n");
+				exit (1);
+			}
+		} else {
+			runterminal (plainfd, &sigcont, &tlsdata_now,
+				PIOF_STARTTLS_LOCALROLE_SERVER | PIOF_STARTTLS_REMOTEROLE_CLIENT | PIOF_STARTTLS_RENEGOTIATE,
+				"testsrv@tlspool.arpa2.lab",
+				NULL
+			);
+		}
 		printf ("DEBUG: Client connection terminated\n");
 		close (plainfd);
+		exit_val = 0;
 		if (pthread_sigmask (SIG_BLOCK, &sigcontset, NULL))  {
 			perror ("Failed to block signal handler for SIGCONT");
 			close (sox);
 			exit (1);
 		}
 	}
-	freeaddrinfo(res);
 	return 0;
 }
 
