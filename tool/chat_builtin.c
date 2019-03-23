@@ -14,6 +14,10 @@
  * From: Rick van Rein <rick@openfortress.nl>
  */
 
+
+#include "chat_builtin.h"
+
+
 /*
  *	Chat -- a program for automatic session establishment (i.e. dial
  *		the phone and log in).

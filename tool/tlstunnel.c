@@ -25,6 +25,9 @@
 #include <tlspool/starttls.h>
 
 
+#include "chat_builtin.h"
+
+
 static starttls_t tlsdata = {
 	.flags = 0,
 	.local = 0,
@@ -148,7 +151,6 @@ void parse_addrinfo (char *instr, char local_remote,
 }
 
 
-int chat_builtin (int plainfd, char *progpath, int argc, char *argv []);
 int chat (int plainfd) {
 	int chatexit = 0;
 	//

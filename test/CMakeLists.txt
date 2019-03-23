@@ -63,4 +63,32 @@ add_test(
     COMMAND pulleybacksimu
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-endif()
+
+### Run testcli and testsrv under Pypeline
+#
+#
+set (testcli  ${CMAKE_BINARY_DIR}/tool/testcli)
+set (testsrv  ${CMAKE_BINARY_DIR}/tool/testsrv)
+set (pypeline ${CMAKE_SOURCE_DIR}/test/pypeline)
+
+if (TEST_UNDER_TLSPOOL)
+add_test(
+	NAME ping6dance-srv2cli
+	COMMAND ${pypeline}
+		${testcli} . IP:LOCAL TCP:PORT      -5 -sSv "" ping EPROTONOTSUPPORTED ping6 pong6
+		--
+		${testsrv} . IP:LOCAL TCP:PORT SIG:HUP -sSv    ping EPROTONOTSUPPORTED ping6 pong6
+)
+endif ()
+
+if (TEST_UNDER_TLSPOOL)
+add_test(
+	NAME ping6dance-cli2srv
+	COMMAND ${pypeline}
+		${testcli} . IP:LOCAL TCP:PORT      -5 -sSv    ping EPROTONOTSUPPORTED ping6 pong6
+		--
+		${testsrv} . IP:LOCAL TCP:PORT SIG:HUP -sSv "" ping EPROTONOTSUPPORTED ping6 pong6
+)
+endif ()
+
+endif ()
