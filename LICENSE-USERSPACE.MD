@@ -3,7 +3,7 @@
 TLS Pool user space tools, libraries and include files are found
 in the directories lib, include, tool, extra and testdata.
 
->   Copyright (c) 2013-2016, Rick van Rein, the ARPA2 project.
+>   Copyright (c) 2013-2019, Rick van Rein, the ARPA2 project.
 >   All rights reserved.
 
 Redistribution and use in source and binary forms, with or without

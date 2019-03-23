@@ -8,23 +8,23 @@
 #include <tlspool/commands.h>
 
 
-/* OS independent pool handle
- */
 #ifdef WINDOWS_PORT
-typedef struct {
-	OVERLAPPED oOverlap;
-	HANDLE hPipeInst;
-	struct tlspool_command chRequest;
-	DWORD cbRead;
-	DWORD dwState;
-	BOOL fPendingIO;
-} PIPEINST, *LPPIPEINST;
-typedef LPPIPEINST pool_handle_t;
-#define INVALID_POOL_HANDLE NULL
-#else /* WINDOWS_PORT */
+/* Our main purpose with the asynchronous API is simplicity.
+ * You can say a lot about the Windows platform, but not
+ * that it is simple.  We may not be able to support it.
+ *
+ * Instead, what we could do is simulate the API on top of
+ * the synchronous default API for Windows.  If we do this,
+ * we should do it in such a manner that tools like libev
+ * continue to work.
+ */
+#error "The asynchronous API is not available on Windows"
+#endif
+
+
+/* POSIX pool handle type.
+ */
 typedef int pool_handle_t;
-#define INVALID_POOL_HANDLE -1
-#endif /* WINDOWS_PORT */ 
 
 
 /* The tlspool_async_callback structure manages
@@ -42,7 +42,7 @@ typedef int pool_handle_t;
  */
 struct tlspool_async_callback {
 	UT_hash_handle hh;
-	void (*cbfunc) (struct tlspool_async_callback *cbdata);
+	void (*cbfunc) (struct tlspool_async_callback *cbdata, int opt_fd);
 	struct tlspool_command cmd;
 };
 
@@ -63,8 +63,7 @@ struct tlspool_async_handle {
 	pool_handle_t handle;
 	size_t cmdsize;
 	struct tlspool_async_callback *requests;
-	char YYYYMMDD_producer [8+128];
-	uint32_t facilities;
+	struct pioc_ping pingdata;
 };
 
 
@@ -72,12 +71,15 @@ struct tlspool_async_handle {
  * This opens a socket, but it does not start the
  * suggested "ping" operation.  All fields in the
  * structure are initialised, so it may enter with
- * no information set at all.
+ * no information set at all.  You can request to
+ * perform a blocking initial ping operation.
  *
  * Return true on success, false with errno on failure.
  */
 bool tlspool_async_open (struct tlspool_async_handle *pool,
-			size_t sizeof_tlspool_command);
+			size_t sizeof_tlspool_command,
+			char *path,
+			bool blocking_ping);
 
 
 /* Send a request to the TLS Pool and register a
@@ -86,10 +88,11 @@ bool tlspool_async_open (struct tlspool_async_handle *pool,
  * Return true on succes, false with errno on failure.
  */
 bool tlspool_async_request (struct tlspool_async_handle *pool,
-			struct tlspool_async_callback *reqcb);
+			struct tlspool_async_callback *reqcb,
+			int opt_fd);
 
 
-/* Cancel a request.
+/* Cancel a request.  Do not trigger the callback.
  *
  * BE CAREFUL.  The TLS Pool can still send back a
  * response with the request identity, and you have
@@ -106,6 +109,10 @@ bool tlspool_async_cancel (struct tlspool_async_handle *pool,
  * by reading any available data from the TLS Pool.
  *
  * Return true on success, false with errno otherwise.
+ *
+ * Specifically, when errno is EAGAIN or EWOULDBLOCK,
+ * the return value is true to indicate business as
+ * usual.
  */
 bool tlspool_async_process (struct tlspool_async_handle *pool);
 
@@ -113,6 +120,8 @@ bool tlspool_async_process (struct tlspool_async_handle *pool);
 /* Indicate that a connection to the TLS Pool has been
  * closed down.  Cancel any pending requests by locally
  * generating error responses.
+ *
+ * Return true on success, false with errno otherwise.
  */
 bool tlspool_async_closed (struct tlspool_async_handle *pool);
 
