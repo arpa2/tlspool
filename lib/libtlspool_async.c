@@ -13,6 +13,7 @@
  */
 
 
+#include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <assert.h>
@@ -26,6 +27,7 @@
 #include <sys/un.h>
 
 #include <tlspool/async.h>
+#include <tlspool/starttls.h>
 
 
 #ifdef WINDOWS_PORT
@@ -51,7 +53,7 @@
  *
  * Return true on success, false with errno on failure.
  */
-bool tlspool_async_open (struct tlspool_async_handle *pool,
+bool tlspool_async_open (struct tlspool_async_pool *pool,
 			size_t sizeof_tlspool_command,
 			char *path,
 			bool blocking_ping) {
@@ -63,8 +65,16 @@ bool tlspool_async_open (struct tlspool_async_handle *pool,
 		return false;
 	}
 	//
+	// Find the path to connect to
+	if (path == NULL) {
+		path = tlspool_configvar (NULL, "socket_name");
+	}
+	if (path == NULL) {
+		path = TLSPOOL_DEFAULT_SOCKET_PATH;
+	}
+	//
 	// Initialise the structure with basic data
-	memset (pool, 0, sizeof (pool));
+	memset (pool, 0, sizeof (*pool));
 	pool->cmdsize = sizeof_tlspool_command;
 	//
 	// Open the handle to the TLS Pool
@@ -94,20 +104,20 @@ bool tlspool_async_open (struct tlspool_async_handle *pool,
 	// is not as offensive during initialisation
 	// as later on, and this is quite simple.
 	if (blocking_ping) {
-		struct tlspool_command cmd;
-		memset (&cmd, 0, sizeof (cmd));	/* Do not leak old stack info */
-		cmd.pio_reqid = 1;
-		cmd.pio_cbid = 0;
-		cmd.pio_cmd = PIOC_PING_V2;
-		if (send (sox, &cmd, sizeof (cmd), MSG_NOSIGNAL) != sizeof (cmd)) {
+		struct tlspool_command poolcmd;
+		memset (&poolcmd, 0, sizeof (poolcmd));	/* Do not leak old stack info */
+		poolcmd.pio_reqid = 1;
+		poolcmd.pio_cbid = 0;
+		poolcmd.pio_cmd = PIOC_PING_V2;
+		if (send (sox, &poolcmd, sizeof (poolcmd), MSG_NOSIGNAL) != sizeof (poolcmd)) {
 			errno = EPROTO;
 			goto fail_handle_close;
 		}
-		if (recv (sox, &cmd, sizeof (cmd), MSG_NOSIGNAL) != sizeof (cmd)) {
+		if (recv (sox, &poolcmd, sizeof (poolcmd), MSG_NOSIGNAL) != sizeof (poolcmd)) {
 			errno = EPROTO;
 			goto fail_handle_close;
 		}
-		memcpy (&pool->pingdata, &cmd.pio_data.pioc_ping, sizeof (struct pioc_ping));
+		memcpy (&pool->pingdata, &poolcmd.pio_data.pioc_ping, sizeof (struct pioc_ping));
 	}
 	//
 	// Make the connection non-blocking
@@ -136,8 +146,8 @@ fail_handle:
  *
  * Return true on succes, false with errno on failure.
  */
-bool tlspool_async_request (struct tlspool_async_handle *pool,
-			struct tlspool_async_callback *reqcb,
+bool tlspool_async_request (struct tlspool_async_pool *pool,
+			struct tlspool_async_request *reqcb,
 			int opt_fd) {
 	//
 	// Consistency is better checked now than later
@@ -145,16 +155,18 @@ bool tlspool_async_request (struct tlspool_async_handle *pool,
 	//
 	// Loop until we have a unique reqid
 	bool not_done = true;
-	while (not_done) {
+	do {
 		uint16_t reqid = (uint16_t) (random() & 0x0000ffff);
 		reqcb->cmd.pio_reqid = reqid;
-		struct tlspool_async_callback *prior_entry = NULL;
-		HASH_FIND (hh, pool->requests, &reqcb->cmd.pio_reqid, 2, prior_entry);
+		struct tlspool_async_request *prior_entry = NULL;
+		HASH_FIND (hh, pool->requests, &reqid, 2, prior_entry);
+		//LIST_STYLE// DL_SEARCH_SCALAR (pool->requests, prior_entry, cmd.pio_reqid, reqid);
 		not_done = (prior_entry != NULL);
-	}
+	} while (not_done);
 	//
 	// Insert into the hash table with the unique reqid
 	HASH_ADD (hh, pool->requests, cmd.pio_reqid, 2, reqcb);
+	//LIST_STYLE// DL_APPEND (pool->requests, reqcb);
 	//
 	// Construct the message to send -- including opt_fd, if any
 	struct iovec iov;
@@ -179,7 +191,7 @@ bool tlspool_async_request (struct tlspool_async_handle *pool,
 	//
 	// Send the request to the TLS Pool
 #ifdef WINDOWS_PORT
-	ssize_t sent = np_send_command (&cmd);
+	ssize_t sent = np_send_command (&poolcmd);
 #else
 	ssize_t sent = sendmsg (pool->handle, &mh, MSG_NOSIGNAL);
 #endif
@@ -220,12 +232,13 @@ fail:
  *
  * Return true on success, false with errno otherwise.
  */
-bool tlspool_async_cancel (struct tlspool_async_handle *pool,
-			struct tlspool_async_callback *reqcb) {
+bool tlspool_async_cancel (struct tlspool_async_pool *pool,
+			struct tlspool_async_request *reqcb) {
 	//
 	// Just rip the request from the hash, ignoring
 	// what it will do when a response comes back
 	HASH_DEL (pool->requests, reqcb);
+	//LIST_STYLE// DL_DELETE (pool->requests, reqcb);
 	//
 	// No sanity checks; you are not sane using this...
 	return true;
@@ -241,24 +254,24 @@ bool tlspool_async_cancel (struct tlspool_async_handle *pool,
  * the return value is true to indicate business as
  * usual.
  */
-bool tlspool_async_process (struct tlspool_async_handle *pool) {
-	//
-	// Reception structures
-	// Note that we do not receive file descriptors
-	// (maybe later -- hence opt_fd in the callback)
-	struct tlspool_command cmd;
-	struct iovec iov;
-	struct cmsghdr *cmsg;
-	struct msghdr mh;
-	//NOT-USED// char anc [CMSG_SPACE(sizeof(int))];
+bool tlspool_async_process (struct tlspool_async_pool *pool) {
 	//
 	// Start a loop reading from the TLS Pool
 	while (true) {
 		//
+		// Reception structures
+		// Note that we do not receive file descriptors
+		// (maybe later -- hence opt_fd in the callback)
+		struct tlspool_command poolcmd;
+		struct iovec iov;
+		struct cmsghdr *cmsg;
+		struct msghdr mh = { 0 };
+		//NOT-USED// char anc [CMSG_SPACE(sizeof(int))];
+		//
 		// Prepare memory structures for reception
-		memset (&cmd, 0, sizeof (cmd));   /* never, ever leak stack data */
-		iov.iov_base = &cmd;
-		iov.iov_len = sizeof (cmd);
+		memset (&poolcmd, 0, sizeof (poolcmd));   /* never, ever leak stack data */
+		iov.iov_base = &poolcmd;
+		iov.iov_len = sizeof (poolcmd);
 		mh.msg_iov = &iov;
 		mh.msg_iovlen = 1;
 		//NOT-USED// mh.msg_control = anc;
@@ -288,8 +301,9 @@ bool tlspool_async_process (struct tlspool_async_handle *pool) {
 		}
 		//
 		// Find the callback routine
-		struct tlspool_async_callback *reqcb = NULL;
-		HASH_FIND (hh, pool->requests, &reqcb->cmd.pio_reqid, 2, reqcb);
+		struct tlspool_async_request *reqcb = NULL;
+		HASH_FIND (hh, pool->requests, &poolcmd.pio_reqid, 2, reqcb);
+		//LIST_STYLE// DL_SEARCH_SCALAR (pool->requests, reqcb, cmd.pio_reqid, poolcmd.pio_reqid);
 		if (reqcb == NULL) {
 			/* We do not have a callback, user should decide */
 			errno = ENOENT;
@@ -298,6 +312,10 @@ bool tlspool_async_process (struct tlspool_async_handle *pool) {
 		//
 		// Take the callback function out of the hash
 		HASH_DEL (pool->requests, reqcb);
+		//LIST_STYLE// DL_DELETE (pool->requests, reqcb);
+		//
+		// Clone the command structure to the request structure
+		memcpy (&reqcb->cmd, &poolcmd, sizeof (reqcb->cmd));
 		//
 		// Invoke the callback; currently, we never receive an opt_fd
 		reqcb->cbfunc (reqcb, -1);
@@ -313,18 +331,27 @@ bool tlspool_async_process (struct tlspool_async_handle *pool) {
  *
  * Return true on success, false with errno otherwise.
  */
-bool tlspool_async_closed (struct tlspool_async_handle *pool) {
+bool tlspool_async_close (struct tlspool_async_pool *pool,
+				bool close_socket) {
+	//
+	// Should we try to close the underlying socket
+	if (close_socket && (pool->handle >= 0)) {
+		close (pool->handle);
+	}
 	//
 	// Locally clone the hash of pending requests
-	struct tlspool_async_callback *stopit = pool->requests;
+	struct tlspool_async_request *stopit = pool->requests;
 	pool->requests = NULL;
 	//
 	// Iterate over hash elements and callback on them
-	struct tlspool_async_callback *here, *_tmp;
-	HASH_ITER (hh, stopit, here, _tmp) {
+	struct tlspool_async_request *here, *_tmp;
+	HASH_ITER (hh, stopit, here, _tmp)
+	//LIST_STYLE// DL_FOREACH_SAFE (stopit, here, _tmp)
+	{
 		//
 		// Remove the entry from the cloned hash
 		HASH_DEL (stopit, here);
+		//LIST_STYLE// DL_DELETE (stopit, here);
 		//
 		// Fill the cmd buffer with an error message
 		here->cmd.pio_cmd = PIOC_ERROR_V2;

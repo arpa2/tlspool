@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include <tlspool/uthash.h>
+//LIST_STYLE// #include <tlspool/utlist.h>
 #include <tlspool/commands.h>
 
 
@@ -27,7 +28,7 @@
 typedef int pool_handle_t;
 
 
-/* The tlspool_async_callback structure manages
+/* The tlspool_async_request structure manages
  * a single pending request.  Once a response arrives,
  * the structure is taken out of the hash table and
  * the `cbfunc()` is invoked with the structure as
@@ -40,9 +41,11 @@ typedef int pool_handle_t;
  * Requests in the hash table are identified by the
  * request identity.
  */
-struct tlspool_async_callback {
+struct tlspool_async_request {
 	UT_hash_handle hh;
-	void (*cbfunc) (struct tlspool_async_callback *cbdata, int opt_fd);
+	//LIST_STYLE// struct tlspool_async_request *next;
+	//LIST_STYLE// struct tlspool_async_request *prev;
+	void (*cbfunc) (struct tlspool_async_request *cbdata, int opt_fd);
 	struct tlspool_command cmd;
 };
 
@@ -59,10 +62,10 @@ struct tlspool_async_callback {
  * fields "YYYYMMDD_producer" and "facilities"
  * with its output.
  */
-struct tlspool_async_handle {
+struct tlspool_async_pool {
 	pool_handle_t handle;
 	size_t cmdsize;
-	struct tlspool_async_callback *requests;
+	struct tlspool_async_request *requests;
 	struct pioc_ping pingdata;
 };
 
@@ -76,7 +79,7 @@ struct tlspool_async_handle {
  *
  * Return true on success, false with errno on failure.
  */
-bool tlspool_async_open (struct tlspool_async_handle *pool,
+bool tlspool_async_open (struct tlspool_async_pool *pool,
 			size_t sizeof_tlspool_command,
 			char *path,
 			bool blocking_ping);
@@ -87,8 +90,8 @@ bool tlspool_async_open (struct tlspool_async_handle *pool,
  *
  * Return true on succes, false with errno on failure.
  */
-bool tlspool_async_request (struct tlspool_async_handle *pool,
-			struct tlspool_async_callback *reqcb,
+bool tlspool_async_request (struct tlspool_async_pool *pool,
+			struct tlspool_async_request *reqcb,
 			int opt_fd);
 
 
@@ -101,8 +104,8 @@ bool tlspool_async_request (struct tlspool_async_handle *pool,
  *
  * Return true on success, false with errno otherwise.
  */
-bool tlspool_async_cancel (struct tlspool_async_handle *pool,
-			struct tlspool_async_callback *reqcb);
+bool tlspool_async_cancel (struct tlspool_async_pool *pool,
+			struct tlspool_async_request *reqcb);
 
 
 /* Process all (but possibly no) outstanding requests
@@ -114,7 +117,7 @@ bool tlspool_async_cancel (struct tlspool_async_handle *pool,
  * the return value is true to indicate business as
  * usual.
  */
-bool tlspool_async_process (struct tlspool_async_handle *pool);
+bool tlspool_async_process (struct tlspool_async_pool *pool);
 
 
 /* Indicate that a connection to the TLS Pool has been
@@ -123,7 +126,8 @@ bool tlspool_async_process (struct tlspool_async_handle *pool);
  *
  * Return true on success, false with errno otherwise.
  */
-bool tlspool_async_closed (struct tlspool_async_handle *pool);
+bool tlspool_async_close (struct tlspool_async_pool *pool,
+				bool close_socket);
 
 
 //TODO// How to register with an event loop?  The pool_handle_t is strange on Windows...

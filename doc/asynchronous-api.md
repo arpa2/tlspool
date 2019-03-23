@@ -131,9 +131,9 @@ at least within a process.
 We need a data structure for the callbacks:
 
 ```
-struct tlspool_async_callback {
+struct tlspool_async_request {
 	UT_hash_handle hh;
-	void (*cbfunc) (struct tlspool_callback *cbdata);
+	void (*cbfunc) (struct tlspool_request *cbdata);
 	struct tlspool_command cmd;
 };
 ```
@@ -153,10 +153,10 @@ The connectivity around a TLS Pool socket uses the
 following data structure:
 
 ```
-struct tlspool_async_socket {
+struct tlspool_async_pool {
 	tlspool_handle_t handle;
 	size_t cmdsize;
-	struct tlspool_async_callback *requests;
+	struct tlspool_async_request *requests;
 	char YYYYMMDD_producer [8+128];
 	uint32_t facilities;
 };
