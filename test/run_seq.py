@@ -13,6 +13,6 @@ import subprocess
 
 retcode = subprocess.call (sys.argv [1:])
 
-print '--'
+print ('--')
 
 sys.exit (retcode)

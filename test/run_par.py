@@ -11,7 +11,7 @@ import sys
 import subprocess
 
 
-print '--'
+print ('--')
 
 retcode = subprocess.call (sys.argv [1:])
 

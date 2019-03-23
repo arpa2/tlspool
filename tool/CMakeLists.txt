@@ -3,16 +3,16 @@ include_directories(${BDB_INCLUDE_DIR})
 add_library(_tool_common OBJECT runterminal.c ../src/donai.c)
 target_compile_definitions(_tool_common PUBLIC -DDONAI_ONLY_TEXTPROC)
 
-add_executable(testcli testcli.c socket.c chat_module.c $<TARGET_OBJECTS:_tool_common>)
+add_executable(testcli testcli.c socket.c chat_builtin.c $<TARGET_OBJECTS:_tool_common>)
 target_link_libraries(testcli tlspool_shared ${pthread_LIBRARIES})
 
-add_executable(testsrv testsrv.c socket.c chat_module.c $<TARGET_OBJECTS:_tool_common>)
+add_executable(testsrv testsrv.c socket.c chat_builtin.c $<TARGET_OBJECTS:_tool_common>)
 target_link_libraries(testsrv tlspool_shared ${pthread_LIBRARIES})
 
-add_executable(testpeer testpeer.c socket.c chat_module.c $<TARGET_OBJECTS:_tool_common>)
+add_executable(testpeer testpeer.c socket.c chat_builtin.c $<TARGET_OBJECTS:_tool_common>)
 target_link_libraries(testpeer tlspool_shared ${pthread_LIBRARIES})
 
-add_executable(tlstunnel tlstunnel.c chat_module.c)
+add_executable(tlstunnel tlstunnel.c chat_builtin.c)
 target_link_libraries(tlstunnel tlspool_shared ${pthread_LIBRARIES})
 
 add_executable(pingpool pingpool.c)
