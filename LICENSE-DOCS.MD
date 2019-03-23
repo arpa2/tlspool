@@ -4,7 +4,7 @@ TLS Pool documentation, including example configuration, are found in
 the project directories doc and etc.  In addition, textual documentation
 files are included in the project main directory.
 
->   Copyright (c) 2013-2016, Rick van Rein, the ARPA2 project.
+>   Copyright (c) 2013-2019, Rick van Rein, the ARPA2 project.
 >   All rights reserved.
 
 Your license (that word means freedom) is described by Creative Commons

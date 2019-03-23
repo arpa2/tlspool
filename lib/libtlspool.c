@@ -273,7 +273,7 @@ static void registry_flush (pool_handle_t poolfd) {
 			entry->buf->pio_cmd = PIOC_ERROR_V2;
 			entry->buf->pio_data.pioc_error.tlserrno = EPIPE;
 			strncpy (entry->buf->pio_data.pioc_error.message,
-				"No reply from TLS Pool",
+				"Disconnected from the TLS Pool",
 				sizeof (entry->buf->pio_data.pioc_error.message));
 			// Signal continuation to the recipient
 			pthread_mutex_unlock (entry->sig);

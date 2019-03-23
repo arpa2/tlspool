@@ -78,7 +78,7 @@ add_test(
 		--
 		${testsrv} . IP:LOCAL TCP:PORT SIG:HUP -sSv    ping EPROTONOTSUPPORTED ping6 pong6
 )
-endif ()
+endif()
 
 if (TEST_UNDER_TLSPOOL)
 add_test(
@@ -88,5 +88,15 @@ add_test(
 		--
 		${testsrv} . IP:LOCAL TCP:PORT SIG:HUP -sSv "" ping EPROTONOTSUPPORTED ping6 pong6
 )
-endif ()
+endif()
 
+### Run pingpool-async to test the asynchronous API
+#
+#
+
+if (TEST_UNDER_TLSPOOL)
+add_test(
+	NAME pingpool-async
+	COMMAND pingpool-async
+)
+endif()

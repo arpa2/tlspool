@@ -1,6 +1,6 @@
 #TLS POOL COPYRIGHT AND LICENSING
 
-TLS pool is **Copyright 2013-2016 Rick van Rein, the ARPA2.net project.**
+TLS pool is **Copyright 2013-2019 Rick van Rein, the ARPA2.net project.**
 
 The TLS Pool is open source software; its licensing lets you use it freely, but for the daemon you are obliged to share source code, and publish any modifications.
 

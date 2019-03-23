@@ -5,8 +5,14 @@ set(libtlspool_SRC
     libtlspool_configvar.c
 )
 
+set(libtlspool_async_SRC
+    libtlspool_async.c
+    libtlspool_configvar.c
+)
+
 # Compile the files only once
 add_library(_libtlspool OBJECT ${libtlspool_SRC})
+add_library(_libtlspool_async OBJECT ${libtlspool_async_SRC})
 
 # Make libraries out of the resulting objects; these
 # need to have unique names for CMake, and use OUTPUT_NAME
@@ -20,12 +26,33 @@ set_target_properties(tlspool_static PROPERTIES
     OUTPUT_NAME tlspool
 )
 
+# The asynchronous library is much more basic;
+# all functions are needed and there is no
+# "frivolous" support for PIN entry or callbacks.
+add_library(tlspool_async_shared SHARED $<TARGET_OBJECTS:_libtlspool_async>)
+set_target_properties(tlspool_async_shared PROPERTIES
+     OUTPUT_NAME tlspool_async
+)
+add_library(tlspool_async_static STATIC $<TARGET_OBJECTS:_libtlspool_async>)
+set_target_properties(tlspool_async_static PROPERTIES
+    OUTPUT_NAME tlspool_async
+)
+
 install(
     TARGETS tlspool_shared
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 install(
     TARGETS tlspool_static
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+install(
+    TARGETS tlspool_async_shared
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+install(
+    TARGETS tlspool_async_static
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
