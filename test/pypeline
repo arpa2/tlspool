@@ -1,0 +1,257 @@
+#!/usr/bin/env python
+#
+# pypeline builds a pipeline of network units, and keeps an eye on
+# their successful termination.  It allows quick testing setups with
+# an input stage in Python, an intermediate program run in a (portable)
+# subprocess, and finally an output stage in Python.  The Python units
+# run as threads and are usually called with a set of arguments, in
+# the style of argv[1:].
+#
+# Specify commands and arguments on the pypeline command line; "--"
+# separates the various commands.  They are started in turn, and
+# each must output "--\n" after it has finished completion (and is
+# ready for interaction).  Furthermore, there may be port numbers,
+# allocated dynamically when they are specified as "TCP:<key>" or
+# "UDP:<key>" or "SCTP:<key>" where the "<key>" is a string to
+# identify the same port (which may be empty).  A fresh port is then
+# allocated from the ephemeral space, and its number is passed to
+# the subprocesses as a commandline argument in that position.  In
+# a similar fashion, there can be "IP:<key>" to specify the local
+# host as an IP address.
+#
+# From: Rick van Rein <rick@openfortress.nl>
+
+
+import os
+import sys
+import time
+import re
+
+import socket
+import signal
+import threading
+import subprocess 
+import tempfile
+# import optparse
+
+
+if not '--' in sys.argv or sys.argv [1] == '--' or sys.argv [-1] == '--':
+	sys.stderr.write ('Usage: %s cmd1 arg1a arg1b -- cmd2 arg2a -- cmd3 arg3a arg3b\n' % (sys.argv [0],))
+	sys.exit (1)
+
+
+# The prox and zigs lists collect the arguments in [0] and any
+# new command is inserted in front, to assure handling from the
+# last program on the commandline to the earlier ones.  This is
+# the order in which programs are started.
+#
+prox = [ [] ]
+zigz = [ [] ]
+exok = [ None ]
+
+soxtypes = {
+	'TCP:':  (socket.AF_INET, socket.SOCK_STREAM,    0),
+	'UDP:':  (socket.AF_INET, socket.SOCK_DGRAM,     0),
+	'SCTP:': (socket.AF_INET, socket.SOCK_SEQPACKET, 0),
+}
+
+sigtypes = signal.SIGHUP
+
+tmpdir = None
+
+myip = socket.gethostbyname (socket.gethostname ())
+port_alloc = { }
+
+keyed_random = { }
+
+intlist_re = re.compile ('^[0-9]+(,[0-9]+)*$')
+
+for argi in sys.argv [1:]:
+	proto = argi [:1+argi.find (':')]
+	if exok [0] is None:
+		if intlist_re.match (argi):
+			exok [0] = set (map (lambda intstr: int (intstr), argi.split (',')))
+			continue
+		else:
+			exok [0] = set ([0])
+	if argi == '--':
+		prox.insert ( 0,[] )
+		zigz.insert ( 0,[] )
+		exok.insert ( 0,None )
+	elif proto == 'FILE:':
+		if tmpdir is None:
+			tmpdir = tempfile.mkdtemp ()
+		prox [0].append (tmpdir + os.sep + argi [5:] + '.pypefile')
+	elif proto == 'SIG:':
+		signame = argi [:3] + argi [4:]
+		signum = getattr (signal, signame, None)
+		if type (signum) != int:
+			sys.stderr.write ('No signal named %s is known' % (signame,))
+			sys.exit (1)
+		zigz [0].append ( (signame,signum) )
+		prox [0].append (str (signum))
+	elif proto == 'IP:':
+		prox [0].append (myip)
+	elif proto == 'RNDHEX:':
+		key = argi [7:]
+		if not keyed_random.has_key (key):
+			import random
+			prng = random.Random ()
+			rnd = ''.join ([ chr (prng.randint (0,255)) for i in range (16) ])
+			keyed_random [key] = rnd
+		prox [0].append (keyed_random [key].encode ('hex'))
+	elif soxtypes.has_key (proto):
+		if not port_alloc.has_key (argi):
+			sox = socket.socket ( *soxtypes [proto] )
+			sox.bind ( (myip, 0) )
+			port = str (sox.getsockname () [1])
+			sox.close ()
+			port_alloc [argi] = port
+		prox [0].append (port_alloc [argi])
+	else:
+		prox [0].append (argi)
+
+
+phase1_mutex = threading.Condition ()
+phase1_threads = set ()
+
+class SyncedProcess (threading.Thread):
+
+	def __init__ (self, argv, name=None, signals=[], ok_exit=set ([0])):
+		threading.Thread.__init__ (self, name=(name or argv [0]))
+		self.error = None
+		self.signals = signals
+		self.ok_exit = ok_exit
+		self.proc = subprocess.Popen (
+						argv,
+						stdin=None,
+						stdout=subprocess.PIPE,
+						universal_newlines=True)
+		self.sofar = ''
+		self.copyloop ('--\n')
+		self.phase1locker = len (signals) == 0
+		if self.phase1locker:
+			phase1_mutex.acquire ()
+			phase1_threads.add (self)
+			phase1_mutex.release ()
+
+	def copyloop (self, terminator):
+		nextln = None
+		while nextln != terminator:
+			nextln = self.proc.stdout.readline ()
+			if nextln != terminator:
+				if nextln == '':
+					sys.stderr.write ('Program output ended before marker "%s"\n' % (terminator.strip (),))
+					self.error = 1
+					return
+				sys.stdout.write ('%s: %s' % (self.name, nextln))
+			self.sofar += nextln
+
+	def run (self):
+		self.copyloop ('')
+		if self.phase1locker:
+			phase1_mutex.acquire ()
+			phase1_threads.remove (self)
+			phase1_mutex.notify ()
+			phase1_mutex.release ()
+
+	def could_signal (self):
+		return self.signals != []
+
+	def send_signals (self):
+		if self.proc.returncode is not None:
+			return
+		for (signame,signum) in self.signals:
+			self.proc.send_signal (signum)
+
+	def initial_result (self):
+		# Result code or None
+		self.join (0.0)
+		if not self.isAlive ():
+			return None
+		self.proc.poll ()
+		return self.proc.returncode
+
+	def final_result (self):
+		self.join ()
+		if self.proc.returncode is None:
+			self.proc.wait ()
+		return self.error or self.proc.returncode
+
+	def final_judgement (self):
+		exitval = self.final_result ()
+		return (exitval, exitval in self.ok_exit)
+
+	def final_output (self):
+		self.join ()
+		if self.proc.returncode is None:
+			self.proc.wait ()
+		return self.sofar
+
+syncprox = []
+for (proc,zig,excitement) in zip (prox,zigz,exok):
+	pni = 0
+	if 'python' in proc [0]:
+		pni = 1
+	elif 'valgrind' in proc [0]:
+		pni = 1
+		while proc [pni] != '--' and proc [pni] [:1] == '-':
+			pni += 1
+	name = proc [pni].split ('/') [-1].split ('\\') [-1]
+	sys.stdout.write ('pypeline: initial: %s == %r\n' % (name,proc))
+	newsyncer = SyncedProcess (proc, name=name, signals=zig, ok_exit=excitement)
+	syncprox.append (newsyncer)
+	sys.stdout.write ('pypeline: freerun: %s\n' % (name,))
+	newsyncer.start ()
+
+#
+# We enter the end game.  This consists of three phasis, during which
+# the programs are graceffully terminated.  There is no overall timer,
+# as each individual program is supposed to have a timeout or respond
+# to a termination signal.
+#
+# The first pass waits until all programs without a registered signal
+# have ended their actions.  The second phase signals to the other
+# programs (when they are still running) in an attempt to end them.
+# The third phase finally waits until all programs which were signaled
+# have also terminated.  This allows daemon-style programs to run as
+# long as required, but terminate as soon the time-dependent work is
+# complete.
+#
+# Actions are still made in the reverse order of appearance on the
+# command line, but any order would work just as well.  The magic
+# is in the ordering in phases, not the ordering on the command line.
+#
+
+sys.stdout.write ('pypeline: end game, stage 1/3.  Await self-terminating programs.\n')
+phase1_mutex.acquire ()
+while len (phase1_threads) > 0:
+	active = phase1_threads.copy ()
+	phase1_mutex.wait ()
+	for sync in active:
+		if sync not in phase1_threads:
+			sys.stdout.write ('pypeline: stopped: %s\n' % (sync.name,))
+phase1_mutex.release ()
+
+sys.stdout.write ('pypeline: end game, stage 2/3.  Sending registered termination signals.\n')
+for sync in syncprox:
+	sync.send_signals ()
+
+sys.stdout.write ('pypeline: end game, stage 3/3.  Wait until signal-registering programs have ended.\n')
+exitval = 0
+for (sync,proc) in zip (syncprox,prox):
+	(result,result_ok) = sync.final_judgement ()
+	if result_ok:
+		sys.stdout.write ('pypeline: success: %s -> exit (%d)\n' % (sync.name, result))
+	else:
+		sys.stdout.write ('pypeline: failure: %s -> exit (%d)\n' % (sync.name, result))
+		exitval = 1
+	sys.stdout.write ('\nFINAL OUTPUT FROM %s IS:\n%s\n\n' % (sync.name.upper (), sync.final_output ()))
+
+if tmpdir is not None:
+	for tmpfn in os.listdir (tmpdir):
+		os.remove (tmpdir + os.sep + tmpfn)
+	os.rmdir (tmpdir)
+
+sys.exit (exitval)
+
