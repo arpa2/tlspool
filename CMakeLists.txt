@@ -58,6 +58,8 @@ endif()
 feature_summary(WHAT ALL VAR _features)
 message(STATUS ${_features})
 
+option(TEST_UNDER_TLSPOOL "Test under the assumption of an available TLS Pool" OFF)
+
 option(EXPERIMENTAL_SRP_SUPPORT "Enable support for SRP based on relative file names" OFF)
 if (EXPERIMENTAL_SRP_SUPPORT)
     add_definitions(-DEXPERIMENTAL_SRP)
