@@ -61,7 +61,9 @@ int main (int argc, char *argv []) {
 	if (argc == 2) {
 		sockpath = argv [1];
 	}
-	assert (tlspool_async_open (&mypool, sizeof (struct tlspool_command), sockpath, true));
+	assert (tlspool_async_open (&mypool, sizeof (struct tlspool_command),
+			TLSPOOL_IDENTITY_V2, PIOF_FACILITY_STARTTLS,
+			sockpath));
 	print_pioc_ping (&mypool.pingdata, "Initial ");
 	printf ("\n");
 
