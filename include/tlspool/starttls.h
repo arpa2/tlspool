@@ -300,7 +300,8 @@ int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec
  * So, be sure to use TLSPOOL_PRNGBUFLEN which holds the header-file defined
  * size.
  */
-int tlspool_prng (char *label, char *opt_ctxvalue,
+int tlspool_prng (char *label,
+		uint16_t ctxvalue_len, uint8_t *opt_ctxvalue,
 		uint16_t prng_len, uint8_t *prng_buf,
 		uint8_t *ctlkey);
 

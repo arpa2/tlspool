@@ -1192,7 +1192,8 @@ int _tlspool_control_command (int cmdcode, uint8_t *ctlkey) {
  * So, be sure to use TLSPOOL_PRNGBUFLEN which holds the header-file defined
  * size.
  */
-int tlspool_prng (char *label, char *opt_ctxvalue,
+int tlspool_prng (char *label,
+		uint16_t ctxvalue_len, uint8_t *opt_ctxvalue,
 		uint16_t prng_len, uint8_t *prng_buf,
 		uint8_t *ctlkey) {
 	struct tlspool_command cmd;
@@ -1206,8 +1207,8 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 	if ((prng_len > TLSPOOL_PRNGBUFLEN) ||
 			(label == NULL) || (strlen (label) > 254) ||
 			((opt_ctxvalue != NULL) &&
-				((strlen (opt_ctxvalue) > 254) ||
-					(strlen (label) + strlen (opt_ctxvalue) > TLSPOOL_PRNGBUFLEN - TLSPOOL_CTLKEYLEN)))) {
+				((ctxvalue_len > 254) ||
+					(strlen (label) + ctxvalue_len > TLSPOOL_PRNGBUFLEN - TLSPOOL_CTLKEYLEN)))) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -1236,7 +1237,7 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
 	cmd.pio_data.pioc_prng.in1_len = strlen (label);
 	memcpy (cmd.pio_data.pioc_prng.buffer + TLSPOOL_CTLKEYLEN, label, cmd.pio_data.pioc_prng.in1_len);
 	if (opt_ctxvalue != NULL) {
-		cmd.pio_data.pioc_prng.in2_len = strlen (opt_ctxvalue);
+		cmd.pio_data.pioc_prng.in2_len = ctxvalue_len;
 		memcpy (cmd.pio_data.pioc_prng.buffer + TLSPOOL_CTLKEYLEN + cmd.pio_data.pioc_prng.in1_len, opt_ctxvalue, cmd.pio_data.pioc_prng.in2_len);
 	} else {
 		cmd.pio_data.pioc_prng.in2_len = -1;

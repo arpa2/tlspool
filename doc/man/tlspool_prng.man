@@ -1,4 +1,4 @@
-.TH TLSPOOL_PRNG 3 "November 2015" "ARPA2.net" "Library Calls"
+.TH TLSPOOL_PRNG 3 "November 2010" "ARPA2.net" "Library Calls"
 .SH NAME
 tlspool_prng \- Pseudo-Random Number Generation from TLS master secret
 .SH SYNOPSIS
@@ -8,8 +8,10 @@ tlspool_prng \- Pseudo-Random Number Generation from TLS master secret
 .br
 .B #include <tlspool/starttls.h>
 .sp
-.B int tlspool_prng (char *\fIlabel\fB, char *\fIopt_ctxvalue\fB,
+.B int tlspool_prng (char *\fIlabel\fB,
 .RS
+.B uint16_t \fIctxvalue_len\fB, uint8_t *\fIopt_ctxvalue\fB,
+.br
 .B uint16_t \fIprng_len\fB, uint8_t *\fIprng_buf\fB,
 .br
 .B uint8_t *ctlkey);
@@ -43,11 +45,26 @@ may be set to NULL to bypass the use of a context value.  Note that passing
 an empty string in
 .I opt_ctxvalue
 is different from not providing the string at all by setting it to NULL.
+Only when
+.I opt_ctxvalue
+is not NULL will the value of
+.I ctxvalue_len
+be used.
 .TP 3
  -
-.IR label " and " opt_ctxvalue " (if non-NULL)"
-refer to ASCII strings with printable characters, terminated with a NUL
-character.  The maximum string length of each is 254 bytes.
+.IR label
+refers to an ASCII string with printable characters, terminated with a NUL
+character.  The maximum string length is 254 bytes and its value is subject
+to limitations as per RFC 5705.
+.TP 3
+ -
+If not NULL,
+.IR opt_ctxvalue
+refers to an arbitrary sequence of octets.  It too has an upper limit of
+254 bytes.  Constraints may be imposed on the contents as a result of the
+registration of the
+.IR label
+string.
 .TP 3
  -
 .I prng_len
@@ -87,7 +104,9 @@ to a maximum value of
 .PP
 The TLS Pool may limit certain TLS PRNG labels, in adherence to the
 IANA-maintained TLS Exporter Label Registry.  It additionally supports
-the EXPERIMENTAL label prefix specified in RFC 5705.
+the
+.B EXPERIMENTAL
+label prefix specified in RFC 5705.
 .PP
 Be advised that the maximum size of buffer may increase in future releases.
 So, be sure to use
