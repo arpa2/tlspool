@@ -40,10 +40,10 @@ a popup for PIN entry belongs to it.
 Cut-and-dry text mode PIN entry
 -------------------------------
 
->   `Usage: tlspool-pinentry-textual`
+>   `Usage: tlspool-pin-entry`
 
 A minimalistic implementation of PIN entry is supplied with the TLS Pool, as
-`tlspool-pinentry-textual`.  It runs on a command shell which it occupies, and
+`tlspool-pin-entry`.  It runs on a command shell which it occupies, and
 on which any requests for a PIN by the TLS Pool will be shown.
 
 Graphical User Interface

@@ -51,7 +51,7 @@ following settings:
 Once you are happy with your configuration, launch the TLS Pool with
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-tlspool -kc /etc/tlspool.conf
+tlspool-daemon -kc /etc/tlspool.conf
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The argument `-c` provides a configuration file, and `-k` is used to kill any

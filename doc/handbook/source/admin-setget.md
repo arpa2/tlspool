@@ -17,7 +17,7 @@ use from LDAP configurations, we provide the [PulleyBack](admin-pulleyback.html)
 module that plugs into the Pulley component of SteamWorks.
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Usage: tlspool-dbget-localid tlspool.conf [user@]fqdn type [outfile.der]
+Usage: tlspool-localid-get tlspool.conf [user@]fqdn type [outfile.der]
  - tlspool.conf      is the configuration file for the TLS Pool
  - user@fqdn or fqdn is a network access identifier
  - type              X.509,OpenPGP,valexp,client,server,noP11,chained
@@ -32,7 +32,7 @@ outputting the PKCS \#11 URI on the command output and the binary credential in
 a file.
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Usage: tlspool-dbset-localid tlspool.conf [user@]fqdn type [p11priv pubdata...]
+Usage: tlspool-localid-set tlspool.conf [user@]fqdn type [p11priv pubdata...]
  - tlspool.conf      is the configuration file for the TLS Pool
  - user@fqdn or fqdn is a network access identifier
  - type              X.509,OpenPGP,valexp,client,server,nop11,chained
@@ -51,7 +51,7 @@ public credential are not provided, this removal is all that is done; the
 utility can then be used for deletion of a local credential.
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Usage: tlspool-dbget-disclose tlspool.conf selector
+Usage: tlspool-disclose-get tlspool.conf selector
  - tlspool.conf      is the configuration file for the TLS Pool
  - selector              is a matcher for remote peer identities
 The selector may take the following forms:
@@ -76,7 +76,7 @@ more local identities, and are indeed keys for use with the `localid.db` where
 they help to retrieve the adjoining credentials.
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Usage: tlspool-dbset-disclose tlspool.conf selector [[user@]domain...]
+Usage: tlspool-disclose-set tlspool.conf selector [[user@]domain...]
  - tlspool.conf      is the configuration file for the TLS Pool
  - selector              is a matcher for remote peer identities
  - user@domain or domain is a local client network access identifier
@@ -99,7 +99,7 @@ This utility works on `disclose.db` and is meant to update the information about
 disclose of local credentials to remote peers *when using TLS in client mode*.
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Usage: tlspool-dbget-trust tlspool.conf flags aabbccdd [outfile.bin]
+Usage: tlspool-trust-get tlspool.conf flags aabbccdd [outfile.bin]
  - tlspool.conf is the configuration file for the TLS Pool
  - flags        selection of x509,pgp,revoke,pinned,client,server,notroot
  - aabbccdd     is an anchor's key in hexadecimal notation
@@ -112,7 +112,7 @@ This utility works on the `trust.db` and is meant to retrieve information about
 trust to be placed into remote credentials by the TLS Pool.
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Usage: tlspool-dbset-trust tlspool.conf flags aabbccdd valexp [infile.bin]
+Usage: tlspool-trust-set tlspool.conf flags aabbccdd valexp [infile.bin]
  - tlspool.conf is the configuration file for the TLS Pool
  - flags        selection of x509,pgp,revoke,pinned,client,server,notroot
  - aabbccdd     is an anchor's key in hexadecimal notation

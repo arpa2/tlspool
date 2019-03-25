@@ -66,8 +66,8 @@ add_test(
 ### Run testcli and testsrv under Pypeline
 #
 #
-set (testcli  ${CMAKE_BINARY_DIR}/tool/testcli)
-set (testsrv  ${CMAKE_BINARY_DIR}/tool/testsrv)
+set (testcli  ${CMAKE_BINARY_DIR}/tool/tlspool-test-client)
+set (testsrv  ${CMAKE_BINARY_DIR}/tool/tlspool-test-server)
 set (pypeline ${CMAKE_SOURCE_DIR}/test/pypeline)
 
 if (TEST_UNDER_TLSPOOL)
@@ -97,6 +97,6 @@ endif()
 if (TEST_UNDER_TLSPOOL)
 add_test(
 	NAME pingpool-async
-	COMMAND pingpool-async
+	COMMAND tlspool-ping-async
 )
 endif()

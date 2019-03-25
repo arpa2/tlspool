@@ -35,7 +35,7 @@ set(man3_SRCS
     tlspool_control_reattach
     tlspool_configvar
 )
-set(man8_SRCS tlspool tlstunnel)
+set(man8_SRCS tlspool-daemon tlstunnel)
 
 install(FILES ${doc_SRCS} ${license_SRCS} DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/tlspool/)
 

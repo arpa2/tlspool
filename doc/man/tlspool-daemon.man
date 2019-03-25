@@ -1,13 +1,13 @@
 .TH TLSPOOL 8 "November 2015" "ARPA2.net" "System Management Commands"
 .SH NAME
-tlspool \- A daemon program that centralises TLS knowledge.
+tlspool-daemon \- Centralises TLS away from application name spaces.
 .SH SYNOPSIS
-.B tlspool
+.B tlspool-daemon
 [\fI-k\fR] [\fI-c configfile\fR]
 .SH DESCRIPTION
 .PP
 The
-.B tlspool
+.B tlspool-daemon
 program normally runs as a local daemon that listens to a UNIX domain
 socket where TLS can be requested for existing file descriptors.  It acts
 as a central point for controlling TLS activities, including privileges
@@ -56,17 +56,17 @@ which helps to deal with this properly.
 .TP
 \fB\-c configfile\fR
 points the
-.B tlspool
+.B tlspool-daemon
 program to a configuration file.  The format of the file is not documented
 here, instead the documentation is written as part of the example
 configuration file, and it is suggested to not remove it there.
 .TP
 \fB\-k\fR
 kills any previously started
-.B tlspool
+.B tlspool-daemon
 program running at the UNIX domain socket for the TLS Pool.  An exchange
 will be initiated to stop the previous
-.B tlspool
+.B tlspool-daemon
 daemon and then the current one will continue to be setup.
 .SH AUTHOR
 .PP
@@ -80,7 +80,7 @@ found on
 Please read the software distribution's
 .IR README ", " INSTALL " and " TODO " files"
 for information about the
-.B tlspool
+.B tlspool-daemon
 implementation status.
 .SH COPYRIGHT
 .PP

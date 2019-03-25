@@ -66,7 +66,7 @@ found on
 Please read the software distribution's
 .IR README ", " INSTALL " and " TODO " files"
 for information about the
-.I tlspool
+.I tlspool-daemon
 implementation status.
 .SH COPYRIGHT
 .PP
@@ -77,7 +77,7 @@ from various funding sources with an interest in a private and secure
 Internet that gives users control over their online presence.  This particular
 project has been sponsored in part by NCSC.
 .SH "SEE ALSO"
-.IR tlspool_control_detach "(3), " tlspool "(8)"
+.IR tlspool_control_detach "(3), " tlspool-daemon "(8)"
 .PP
 The TLS Pool API is documented in the include file
 .IR <tlspool/commands.h> " and " <tlspool/starttls.h>

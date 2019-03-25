@@ -65,10 +65,10 @@ current or initial selection just before the timeout.
 Cut-and-dry text mode Local Identity Selection
 ----------------------------------------------
 
->   `Usage: tlspool-lidsel-textual`
+>   `Usage: tlspool-localid-select`
 
 A minimalistic implementation of local identity selection is supplied with the
-TLS Pool, as `tlspool-lidsel-textual`.  It runs on a command shell which it
+TLS Pool, as `tlspool-localid-select`.  It runs on a command shell which it
 occupies, and on which any requests to select a local identity for the TLS Pool
 will be shown.  The tool presents a menu and awaits a choice.  It does not
 enforce the timeout, so it may fall out of grace when a response comes too

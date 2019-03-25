@@ -7,12 +7,12 @@ Generating PGP keys from PKCS \#11 keys
 >   useful as an alternative to (server) X.509 Certificates, so we provide
 >   tooling to help you get going.*
 
-The tool `pgp11_genkey` is generic in nature, and can be used outside of the TLS
+The tool `pgp11-genkey` is generic in nature, and can be used outside of the TLS
 Pool.  It is just included to be sure that such a tool is available to the users
 of the TLS Pool.
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Usage: pgp11_genkey provider privkey userid outfile.pgp
+Usage: pgp11-genkey provider privkey userid outfile.pgp
  - provider    is a path to a PKCS #11 service library
  - privkey     is a PKCS #11 private key URI from that provider [RFC7512]
  - userid      is a (quoted) PGP UserID like 'User Name <user@email.dom>'

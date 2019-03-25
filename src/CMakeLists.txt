@@ -34,8 +34,8 @@ set(tlspool_SRC
     validate.c
 )
 
-add_executable(tlspool ${tlspool_SRC})
-target_link_libraries(tlspool
+add_executable(tlspool-daemon ${tlspool_SRC})
+target_link_libraries(tlspool-daemon
     ${BDB_LIBRARY}
     ${GNUTLS_LIBRARY}
     ${GnuTLSDane_LIBRARIES}
@@ -49,7 +49,7 @@ target_link_libraries(tlspool
 )
 
 install(
-    TARGETS tlspool
+    TARGETS tlspool-daemon
     DESTINATION ${CMAKE_INSTALL_SBINDIR}
 )
 

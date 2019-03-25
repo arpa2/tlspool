@@ -15,7 +15,7 @@ course of their protocol interactions, due to a simple
 scripting facility.
 .PP
 The TLS facilities are drawn from a
-.IR tlspool (8)
+.IR tlspool-daemon (8)
 daemon, which is contacted over a UNIX domain socket.  It therefore
 inherits the architectural benefits of the TLS Pool, including the
 ability of central control, strong protection of cryptographic
@@ -123,7 +123,7 @@ The remote address for the tunnel.
 Set the local identity.  This should be of the form of a domain
 name, or user@domainname.  This paramater is required.  When a
 localid service program has registered with
-.IR tlspool (8)
+.IR tlspool-daemon (8)
 then the local identity may be passed through for filtering, depending
 on the option used when registering.
 .TP
@@ -134,7 +134,7 @@ but is (usually) needed to setup client mode.
 .TP
 .BR "-s \fIsvcname\fB" ", " "--service \fIsvcname\fB"
 Specify the service name that will be sent to
-.IR tlspool (8)
+.IR tlspool-daemon (8)
 during initiation of the TLS protection.  This helps to decide several
 protocol-specifics, including whether it is safe to start with an
 Anonymising Precursor.  The service name should follow the IANA spelling,
@@ -200,7 +200,7 @@ mailing list found on
 Please read the software distribution's
 .IR README ", " INSTALL " and " TODO " files"
 for information about the
-.IR tlspool (8)
+.IR tlspool-daemon (8)
 implementation status.
 .SH COPYRIGHT
 .PP
@@ -211,7 +211,7 @@ from various funding sources with an interest in a private and secure
 Internet that gives users control over their online presence.  This particular
 project has been sponsored in part by NCSC.
 .SH "SEE ALSO"
-.IR tlspool "(8), " tlspool_starttls "(3), " chat "(8), " pppd (8).
+.IR tlspool-daemon "(8), " tlspool_starttls "(3), " chat "(8), " pppd (8).
 .PP
 Online resources may be found on the project home page,
 .IR http://tlspool.arpa2.net .
