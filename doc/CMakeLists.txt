@@ -34,6 +34,11 @@ set(man3_SRCS
     tlspool_control_detach
     tlspool_control_reattach
     tlspool_configvar
+    tlspool_async_open
+    tlspool_async_request
+    tlspool_async_cancel
+    tlspool_async_process
+    tlspool_async_close
 )
 set(man8_SRCS tlspool-daemon tlstunnel)
 

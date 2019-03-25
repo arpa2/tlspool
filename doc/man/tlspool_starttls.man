@@ -8,9 +8,9 @@ tlspool_starttls \- Switch wrapping a plaintext connection into TLS
 .sp
 .B int tlspool_starttls (int \fIcryptfd\fB, starttls_t *\fItlsdata\fB,
 .RS
-void *\fIprivdata\fB,
+.B void *\fIprivdata\fB,
 .br
-int (*\fInamedconnect\fB) (starttls_t *\fItlsdata\fB, void *\fIprivdata\fB));
+.B int (*\fInamedconnect\fB) (starttls_t *\fItlsdata\fB, void *\fIprivdata\fB));
 .SH DESCRIPTION
 .PP
 .BR tlspool_starttls ()

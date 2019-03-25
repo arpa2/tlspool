@@ -1,0 +1,180 @@
+.TH TLSPOOL_ASYNC_OPEN 3 "March 2019" "ARPA2.net" "Library Calls"
+.SH NAME
+tlspool_async_open \- Open the TLS Pool for asynchronous communication.
+.SH SYNOPSIS
+.B #include <stdint.h>
+.br
+.B #include <stdbool.h>
+.sp
+.B #include <unistd.h>
+.sp
+.B #include <tlspool/async.h>
+.br
+.B #include <tlspool/commands.h>
+.sp
+.B bool tlspool_async_open (
+.RS
+.B struct tlspool_async_pool *\fIpool\fB,
+.br
+.B size_t \fIsizeof_tlspool_command\fB,
+.br
+.B char *\fItlspool_identity\fB,
+.br
+.B uint32_t \fIrequired_facilities\fB,
+.br
+.B char *\fIsocket_path\fB);
+.br
+.SH DESCRIPTION
+.PP
+.BR tlspool_async_open ()
+connects to the TLS Pool at the given
+.I socket_path
+which, if it starts with a slash, is considered a file name
+for a UNIX domain socket.  The connection will be described in
+.IR pool ,
+on which further operations work.  When set to NULL, the
+routine falls back to first looking up the
+.I socket_name
+in the configuration file, and lastly the
+.BR TLSPOOL_DEFAULT_SOCKET_PATH .
+.PP
+A few precautions are taken during this time.  First, the
+.I sizeof_tlspool_command
+argument is normally set with the outcome of
+.B sizeof (struct tlspool_command)
+which the library will check to assure binary compatibility
+under separate distribution.  Second, it is possible to
+detect the TLS Pool version and facilities available to us.
+.PP
+This second portion of information ends up in the
+.I pool
+structure under
+.IR pingdata .
+This is obtained with an initial synchronous exchange with
+the TLS Pool, but only when
+.I required_facilities
+is non-zero.  The value is composed of the
+.B PIOF_FACILITY_xxx
+flags that an application needs; for use with TLS, it should
+be set to
+.B PIOF_FACILITY_STARTTLS
+and will then be required in the TLS Pool offering.
+.PP
+A version and vendor of the TLS Pool is also exchanged, in a
+.B YYYYMMDD<tag>@<domain>
+textual format.
+The client usually provides its identity from the header
+files it sees by sending
+.B TLSPOOL_IDENTITY_V2
+as the value for the
+.I tlspool_identity
+parameter.
+.PP
+The reason for doing this
+.IR tlspool_ping (3)
+operation now, and synchronously, is that it is habitually run by
+all applications, but only once, at the start of their work.
+Synchronous access is quite simple at this time, and it rarely
+harms when it is only done during the setup phase.  If you insist,
+you can still set
+.I required_facilities
+to zero and skip this exchange.
+.PP
+Briefly put, the
+.BR tlspool_async_open ()
+call handles most negotiation to improve the reliability of
+the client operation.  When successful, everything should
+be plain sailing.
+.SH "ASYNCHRONOUS AND EVENT-DRIVEN USE"
+The asynchronous API never allocates memory.  The
+.I pool
+structure needs to be allocated by the caller.  It
+cannot be cleared until a matching call to
+.BR tlspool_async_close ()
+succeeds.
+.PP
+The call to
+.BR tlspool_async_open ()
+is not itself asynchronous, let alone event-driven, but it is
+prepares for these patterns immediately after it returns.  The
+.I pool
+serves as a collection point for requests to the same link to
+the TLS Pool.
+.PP
+Event loops can find the socket in the
+.I handle
+field of the
+.I pool
+structure.  They can respond to reading offerings through the
+.BR tlspool_async_process ()
+function.
+.PP
+To stop using the
+.IR pool ,
+use the
+.IR tlspool_async_close ()
+function.  Before reaching this point,
+.IR tlspool_async_request ()
+can be used to send a request to the TLS Pool over the link.
+.SH "RETURN VALUE"
+The function returns
+.B true
+on success or, in case of failure, it returns
+.B false
+and sets
+.I errno
+appropriately.  Note that there are local extensions founded
+in the
+.IR com_err (3)
+system.  Error codes specific to the TLS Pool are in
+.I <tlspool/errortable.h>
+but other systems may also link in with the
+.IR com_err (3)
+error system.
+.SH ERRORS
+None known to date.
+.SH AUTHOR
+.PP
+Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
+.SH "REPORTING BUGS"
+.PP
+For any discussion, including about bugs, please use the mailing list
+found on
+.IR http://lists.arpa2.org/mailman/listinfo/tls-pool .
+.PP
+Please read the software distribution's
+.IR README ", " INSTALL " and " TODO " files"
+for information about the
+.I tlspool-daemon
+implementation status.
+.SH COPYRIGHT
+.PP
+Copyright \(co 2015-2019 Rick van Rein, ARPA2.net.
+.PP
+ARPA2 is funded from InternetWide.org, which in turns receives donations
+from various funding sources with an interest in a private and secure
+Internet that gives users control over their online presence.  This particular
+project has been sponsored in part by NCSC.
+.SH "SEE ALSO"
+.IR tlspool_async_close "(3),"
+.IR tlspool_async_request "(3),"
+.IR tlspool_async_process "(3),"
+.IR tlspool-daemon "(8),"
+.IR tlspool_configvar "(3)."
+.PP
+The configuration file option
+.I socket_name
+influences the path at which the TLS Pool is available; this is not
+read by the client library, and when it differs from the default path in
+.BR TLSPOOL_DEFAULT_SOCKET_PATH ,
+this function is used to inform the client library once, before calling
+any of the other client functions.
+.PP
+The TLS Pool API is documented in the include file
+.IR <tlspool/commands.h> " and " <tlspool/starttls.h>
+for C, and the
+.I tlspool.py
+module for Python.
+.PP
+Online resources may be found on the project home page,
+.IR http://tlspool.arpa2.net .
