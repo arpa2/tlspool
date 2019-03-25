@@ -58,6 +58,8 @@ endif()
 feature_summary(WHAT ALL VAR _features)
 message(STATUS ${_features})
 
+option(DEBUG "Produce debugging output (for developers)" OFF)
+
 option(TEST_UNDER_TLSPOOL "Test under the assumption of an available TLS Pool" OFF)
 
 option(EXPERIMENTAL_SRP_SUPPORT "Enable support for SRP based on relative file names" OFF)
@@ -67,6 +69,9 @@ endif()
 
 # These are compile flags, not definitions, but it happens to work.
 add_definitions(-fPIC -pthread)
+if (DEBUG)
+	add_definitions (-ggdb3 -O0)
+endif()
 # Pretend we looked for pthread libraries, so that we can write
 # cmake code that looks consistent.
 set(pthread_LIBRARIES pthread)

@@ -19,6 +19,9 @@ target_link_libraries(tlstunnel tlspool_shared ${pthread_LIBRARIES})
 add_executable(pingpool pingpool.c)
 target_link_libraries(pingpool tlspool_shared ${pthread_LIBRARIES})
 
+add_executable(pingpool-async pingpool-async.c)
+target_link_libraries(pingpool-async tlspool_async_shared ${pthread_LIBRARIES})
+
 add_executable(lidsel lidsel.c)
 target_link_libraries(lidsel tlspool_shared ${pthread_LIBRARIES})
 

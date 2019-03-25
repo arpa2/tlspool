@@ -15,6 +15,17 @@ extern "C"
 
 #include <tlspool/commands.h>
 
+
+#ifdef WINDOWS_PORT
+#define TLSPOOL_DEFAULT_CONFIG_PATH "/etc/tlspool.conf.windows"
+#define TLSPOOL_DEFAULT_SOCKET_PATH "\\\\.\\pipe\\tlspool"
+#define TLSPOOL_DEFAULT_PIDFILE_PATH "/var/run/tlspool.pid"
+#else
+#define TLSPOOL_DEFAULT_CONFIG_PATH "/etc/tlspool.conf"
+#define TLSPOOL_DEFAULT_SOCKET_PATH "/var/run/tlspool.sock"
+#define TLSPOOL_DEFAULT_PIDFILE_PATH "/var/run/tlspool.pid"
+#endif /* WINDOWS_PORT */
+
 #ifdef WINDOWS_PORT
 #include <windows.h>
 #else
@@ -35,16 +46,6 @@ extern "C"
  * the calls are not re-entrant.  TODO: asynchronicity & request pooling.
  */
 
-
-#ifdef WINDOWS_PORT
-#define TLSPOOL_DEFAULT_CONFIG_PATH "/etc/tlspool.conf.windows"
-#define TLSPOOL_DEFAULT_SOCKET_PATH "\\\\.\\pipe\\tlspool"
-#define TLSPOOL_DEFAULT_PIDFILE_PATH "/var/run/tlspool.pid"
-#else
-#define TLSPOOL_DEFAULT_CONFIG_PATH "/etc/tlspool.conf"
-#define TLSPOOL_DEFAULT_SOCKET_PATH "/var/run/tlspool.sock"
-#define TLSPOOL_DEFAULT_PIDFILE_PATH "/var/run/tlspool.pid"
-#endif /* WINDOWS_PORT */
 
 /* Retrieve the process identity of the TLS Pool from the named file, or fall
  * back on the default file if the name is set to NULL.  Returns -1 on failure.

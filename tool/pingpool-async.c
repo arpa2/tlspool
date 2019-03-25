@@ -8,9 +8,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <assert.h>
 
 #include <tlspool/commands.h>
-#include <tlspool/starttls.h>
+#include <tlspool/async.h>
 
 
 void print_pioc_ping (pingpool_t *pp, char *prefix) {
@@ -38,9 +39,20 @@ void print_pioc_ping (pingpool_t *pp, char *prefix) {
 	printf ("%s facility: %s\n", prefix, facil + 1);
 }
 
+
+volatile bool callback_done = false;
+
+void cb_ping_done (struct tlspool_async_request *cbdata, int opt_fd) {
+	assert (opt_fd < 0);
+	callback_done = true;
+}
+
+
 int main (int argc, char *argv []) {
 	char *sockpath = NULL;
-	pingpool_t pp;
+	struct tlspool_async_pool mypool;
+	struct tlspool_async_request myreq;
+	pingpool_t *pp = &myreq.cmd.pio_data.pioc_ping;
 
 	if (argc > 2) {
 		fprintf (stderr, "Usage: %s [socketfile]\n", argv [0]);
@@ -49,14 +61,25 @@ int main (int argc, char *argv []) {
 	if (argc == 2) {
 		sockpath = argv [1];
 	}
-	(void) tlspool_open_poolhandle (sockpath);
+	assert (tlspool_async_open (&mypool, sizeof (struct tlspool_command), sockpath, true));
+	print_pioc_ping (&mypool.pingdata, "Initial ");
+	printf ("\n");
 
-	memset (&pp, 0, sizeof (pp));
-	strcpy (pp.YYYYMMDD_producer, TLSPOOL_IDENTITY_V2);
-	pp.facilities = PIOF_FACILITY_ALL_CURRENT;
+	memset (&myreq, 0, sizeof (myreq));
+	strcpy (pp->YYYYMMDD_producer, TLSPOOL_IDENTITY_V2);
+	pp->facilities = PIOF_FACILITY_ALL_CURRENT;
 	printf ("\n");
-	print_pioc_ping (&pp, "Client  ");
+	print_pioc_ping (pp, "Client  ");
 	printf ("\n");
+	//
+	// We now setup the request, and allow it to callback to us.
+	// We will loop until this has happened, which is not the best
+	// programming practice, but alright for a simple demonstration.
+	// In production use, we should of course use locks.
+	//
+	myreq.cmd.pio_cmd = PIOC_PING_V2;
+	myreq.cbfunc = cb_ping_done;
+	pp->facilities = ~0L;
 	//
 	// What we do now is not what any normal program should do; we ask
 	// for all the facilities that the TLS Pool can provide.  That may
@@ -64,12 +87,15 @@ int main (int argc, char *argv []) {
 	// integer flag value.  For a ping utility, that's useful, but for
 	// any sane program it would be a bad example to follow.
 	//
-	pp.facilities = ~0L;
-	if (tlspool_ping (&pp) < 0) {
-		perror ("Failed to ping TLS Pool");
-		exit (1);
+	assert (tlspool_async_request (&mypool, &myreq, -1));
+	while (!callback_done) {
+		tlspool_async_process (&mypool);
 	}
-	print_pioc_ping (&pp, "TLS Pool");
+	print_pioc_ping (pp, "TLS Pool");
 	printf ("\n");
+
+	assert (tlspool_async_close (&mypool, true));
+
+	return 0;
 }
 
