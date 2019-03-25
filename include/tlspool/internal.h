@@ -158,6 +158,9 @@ char *cfg_krb_client_keytab (void);
 char *cfg_krb_server_keytab (void);
 char *cfg_krb_client_credcache (void);
 char *cfg_krb_server_credcache (void);
+bool cfg_postquantum_auth (void);
+bool cfg_postquantum_encrypt (void);
+bool cfg_postquantum_handshake (void);
 
 
 /* error.c -- Mapping various error code systems to others.

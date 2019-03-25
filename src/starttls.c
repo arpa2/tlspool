@@ -3880,7 +3880,21 @@ fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), 
 	//  - CTYPEs, SRP, ANON-or-not --> fill in as + or - characters
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
 		char priostr [512];
+		//
+		// Check for Post Quantum algorithm requests; except for
+		// TLS-KDH these are not available yet, so when any of them
+		// is set in this early stage, the handshake should fail.
+		bool pq_auth = cfg_postquantum_auth ();
+		bool pq_encr = cfg_postquantum_encrypt ();
+		bool pq_shak = cfg_postquantum_handshake ();
 #ifdef HAVE_TLS_KDH
+		//
+		// With TLS-KDH we can achieve Post Quantum authentication
+		// and encryption.  When using KXOVER though, mind the gap!
+		// The handshake cannot be protected; it may never be.
+		if (pq_shak) {
+			gtls_errno = GNUTLS_E_NO_CIPHER_SUITES;
+		}
 		snprintf (priostr, sizeof (priostr)-1,
 			// "NORMAL:-RSA:" -- also ECDH-RSA, ECDHE-RSA, ...DSA...
 			"NONE:"
@@ -3910,6 +3924,15 @@ fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), 
 #endif
 			);
 #else
+		//
+		// Beyond TLS-KDH, the hopes for Post Quantum security
+		// are basically none.  This will be remedied, and at
+		// that time we should update the generation of the
+		// priority string with the algorithm preferences.
+		if (pq_auth || pq_encr || pq_shak) {
+			gtls_errno = GNUTLS_E_NO_CIPHER_SUITES;
+		}
+		//
 		// It's not possible to make good decisions on certificate type
 		// for both sides based on knowledge of local authentication
 		// abilities.  So we permit all (but would like to be subtler).
