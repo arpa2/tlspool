@@ -14,6 +14,7 @@
 
 #include "manage.h"
 
+static const char version_string[] = TLSPOOL_VERSION;  /* defined as compile-time argument */
 
 void process_hangup (int hangupsignal) {
 	tlog (TLOG_DAEMON, LOG_NOTICE, "Received signal %d as a hangup request");
@@ -75,8 +76,13 @@ int main (int argc, char *argv []) {
 	 * Cmdline argument parsing
 	 */
 	while (parsing) {
-		int opt = getopt (argc, argv, "kc:");
+		int opt = getopt (argc, argv, "Vkc:");
 		switch (opt) {
+		case 'V':
+			fputs (version_string, stdout);
+			fputc ('\n', stdout);
+			exit (0);
+			break;
 		case 'k':
 			if (kill_competition) {
 				fprintf (stderr, "You can only flag kill-the-competition once\n");

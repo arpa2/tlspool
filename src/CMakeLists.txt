@@ -38,6 +38,7 @@ set(tlspool_SRC
 )
 
 add_executable(tlspool-daemon ${tlspool_SRC})
+target_compile_definitions(tlspool-daemon PRIVATE -DTLSPOOL_VERSION="${TLSPool_VERSION}")
 target_link_libraries(tlspool-daemon
     ${BDB_LIBRARY}
     ${GNUTLS_LIBRARY}
