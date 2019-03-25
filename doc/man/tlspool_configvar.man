@@ -14,7 +14,7 @@ from the configuration file for the
 TLS Pool.  The name of the configuration file can be provided in the 
 .I cfgfile
 parameter or, if it is NULL, then first the environment variable
-.BR TLSPOOL_CFGFILE
+.BR TLSPOOL_CONFIG_FILE
 is tried and, failing to find that, it tries the compile-time setting
 .BR TLSPOOL_DEFAULT_CONFIG_PATH .
 .PP
