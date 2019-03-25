@@ -195,7 +195,7 @@ void error_setstring (char *);
 	if (db_errno == 0) { \
 		db_errno = (dbcall); \
 		if (db_errno != 0) { \
-			error_db2posix (db_errno, (errstr)); \
+			error_db2comerr (db_errno, (errstr)); \
 		} \
 	} \
 }
@@ -227,7 +227,7 @@ void error_setstring (char *);
 /* Workhorse functions to map error systems, concealed by shorthand macros
  * defined below.
  */
-void error_db2posix (int db_errno, char *errstr);
+void error_db2comerr (int db_errno, char *errstr);
 void error_posix2strings (char *errstr);
 
 

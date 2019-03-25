@@ -4,7 +4,7 @@
 
 The TLS Pool dæmon is well-documented in its manual page.  Please read it:
 
-  * `tlspool(8)`
+  * `tlspool-daemon(8)`
 
 The following tools are of use to the administration of the TLS Pool:
 

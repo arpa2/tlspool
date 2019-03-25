@@ -32,10 +32,10 @@ echo "PKCS #11 Object URI: $OBJURI"
 
 Next, we **construct a public key** from the private key but, lacking tooling
 for that in most open source projects, we have created our own and called it
-`pgp11_genkey`.  We use it as follows:
+`pgp11-genkey`.  We use it as follows:
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-pgp11_genkey "$P11LIB" "$OBJURI" "<www.example.com>" key.gpg
+pgp11-genkey "$P11LIB" "$OBJURI" "<www.example.com>" key.gpg
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The output file in `key.gpg` now holds a public key.  **Do this only once:** the

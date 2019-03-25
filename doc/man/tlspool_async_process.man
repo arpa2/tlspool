@@ -1,0 +1,148 @@
+.TH TLSPOOL_ASYNC_PROCESS 3 "March 2019" "ARPA2.net" "Library Calls"
+.SH NAME
+tlspool_async_process \- Process command responses from the TLS Pool.
+.SH SYNOPSIS
+.B #include <stdbool.h>
+.sp
+.B #include <tlspool/async.h>
+.br
+.B #include <tlspool/commands.h>
+.sp
+.B bool tlspool_async_process (
+.RS
+.B struct tlspool_async_pool *\fIpool\fB);
+.br
+.SH DESCRIPTION
+.PP
+.BR tlspool_async_process ()
+attempts to read command responses from the
+TLS Pool.  The socket used is non-blocking, so
+it will gracefully return as soon as no work
+remains to be done.  The idea is to process
+anything that can be done, usually in response
+to an event that indicates data to be read from
+the TLS Pool socket.
+.PP
+While processing responses,
+.BR tlspool_async_process ()
+looks up the request identifier in each of them,
+and uses it to find the request in the
+.I pool
+where it was dropped by
+.BR tlspool_async_request ()
+to wait for this response.  The request is
+removed from from the
+.I pool
+and its callback function is invoked.
+.PP
+Effectively, the task of the
+.BR tlspool_async_process ()
+is to invoke all those callbacks that are ready
+to continue.  As is common in both asynchronous
+and event-driven styles, these functions should
+not block and instead return control sooner
+rather than later.  The responsiveness of an
+entire application generally relies on this.
+.PP
+It should be possible to work in this style without
+threading or processing.  There may be one
+exception, and that is to fill a multi-core
+processor with work.  In such architectures, it
+is common to allocate one thread to each core
+and make them all run such a loop.
+.PP
+The asynchronous design of the TLS Pool is not
+re-entrant, for reasons of simplicity and speed.
+When a thread is tied to a core and when each
+connection has its own core, it should be possible
+to use the TLS Pool without further locking.  And
+experience optimal speed.
+.SH "ASYNCHRONOUS AND EVENT-DRIVEN USE"
+The call to
+.BR tlspool_async_process ()
+is one of the rare functions in an asynchronous
+or event-driven design that may run for a while,
+as it effectively points the processor core to
+work that needs to be done, and running through
+it is actually quite productive.  There is no
+current support to finish (a bit) earlier, for
+instance to improve responsiveness to other
+events calling for attention.
+.PP
+The asynchronous API never allocates memory.  By
+symmetry, the
+.BR tlspool_async_process ()
+function does not free any memory either.  It is
+up to the initiator of the request what to do;
+return the request memory to a pool,
+.BR free (3)
+it or perhaps recycle it.  Or reduce the use count
+of a memory pool.  Whatever it does, keep in mind
+that some of the data in the command may be private; 
+it probably should not be delivered back into a queue,
+or even main memory, without clearing it.
+.PP
+.SH "RETURN VALUE"
+The function returns
+.B true
+on success or, in case of failure, it returns
+.B false
+and sets
+.I errno
+appropriately.  Note that there are local extensions founded
+in the
+.IR com_err (3)
+system.  Error codes specific to the TLS Pool are in
+.I <tlspool/errortable.h>
+but other systems may also link in with the
+.IR com_err (3)
+error system.
+.SH ERRORS
+None known to date.
+.SH AUTHOR
+.PP
+Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
+.SH "REPORTING BUGS"
+.PP
+For any discussion, including about bugs, please use the mailing list
+found on
+.IR http://lists.arpa2.org/mailman/listinfo/tls-pool .
+.PP
+Please read the software distribution's
+.IR README ", " INSTALL " and " TODO " files"
+for information about the
+.I tlspool-daemon
+implementation status.
+.SH COPYRIGHT
+.PP
+Copyright \(co 2015-2019 Rick van Rein, ARPA2.net.
+.PP
+ARPA2 is funded from InternetWide.org, which in turns receives donations
+from various funding sources with an interest in a private and secure
+Internet that gives users control over their online presence.  This particular
+project has been sponsored in part by NCSC.
+.SH "SEE ALSO"
+.IR tlspool_async_close "(3),"
+.IR tlspool_async_request "(3),"
+.IR tlspool_async_process "(3),"
+.IR tlspool-daemon "(8),"
+.IR tlspool_configvar "(3),"
+.IR dup "(2),"
+.IR dup2 "(2)."
+.PP
+The configuration file option
+.I socket_name
+influences the path at which the TLS Pool is available; this is not
+read by the client library, and when it differs from the default path in
+.BR TLSPOOL_DEFAULT_SOCKET_PATH ,
+this function is used to inform the client library once, before calling
+any of the other client functions.
+.PP
+The TLS Pool API is documented in the include file
+.IR <tlspool/commands.h> " and " <tlspool/starttls.h>
+for C, and the
+.I tlspool.py
+module for Python.
+.PP
+Online resources may be found on the project home page,
+.IR http://tlspool.arpa2.net .

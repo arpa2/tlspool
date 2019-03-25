@@ -4,10 +4,13 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <errno.h>
 #include <ctype.h>
 #include <string.h>
 #include <limits.h>
+
+#include <errno.h>
+#include <com_err.h>
+#include <errortable.h>
 
 #ifndef WINDOWS_PORT
 #include <sys/socket.h>

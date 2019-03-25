@@ -1,0 +1,135 @@
+.TH TLSPOOL_ASYNC_CANCEL 3 "March 2019" "ARPA2.net" "Library Calls"
+.SH NAME
+tlspool_async_cancel \- Cancel an asynchronous request to the TLS Pool.
+.SH SYNOPSIS
+.B #include <stdbool.h>
+.sp
+.B #include <tlspool/async.h>
+.sp
+.B bool tlspool_async_cancel (
+.RS
+.B struct tlspool_async_pool *\fIpool\fB,
+.br
+.B struct tlspool_async_request *\fIreqcb\fB);
+.br
+.SH DESCRIPTION
+.PP
+.BR tlspool_async_cancel ()
+retracts a command request from the TLS Pool.
+This is not generally safe; the TLS Pool will
+respond with the request identifier of the
+request at some future date, and when a new
+request has been assigned the same value it
+might... backfire.
+.PP
+A more reliable approach is to use
+.BR tlspool_async_close ()
+for all pending requests at once, and close
+the socket to the TLS Pool before or during
+that process.  This however is course-grained, 
+if TLS Pool connections are not pooled with a
+matching logic.  Closing down everything
+is not an option when a single connection is
+closed down, for example.
+.PP
+The reason for wanting to cancel a request
+is usually to cleanup resources.  The memory
+for the
+.I reqcb
+and the command in it needs to be cleaned up
+by the application, and deferral may not be a
+helpful option; many other resources could be
+hanging in on the request, waiting for it to
+be closed.
+.PP
+A better solution may be to replace the
+callback function registered in the
+.I reqcb
+using an (atomic!) swap of this pointer.
+The new callback may take care of the
+(remaining) cleanup as soon as the call to
+.BR tlspool_async_cancel ()
+returns success.  Or much simpler, one might
+add a flag in the data to indicate that the
+registered callback function needs to take
+a diversion.
+.PP
+The replacement code might for instance be
+used to simply deallocate the request and
+command, but otherwise it is left in the
+.I pool
+to lock the request identifier until the
+TLS Pool returns it.  And when the memory
+is allocated in a memory pool, it might
+help to simply lower its use count and
+trigger automatic cleanup with just a
+small delay until the TLS Pool responds.
+.PP
+To be quite clear, the only reliable use of
+.BR tlspool_async_cancel ()
+is as a place to find these alternative
+approaches; do not consider using the
+call itself...
+.SH "ASYNCHRONOUS AND EVENT-DRIVEN USE"
+See the other commands, they are more
+interesting and more useful.
+.SH "RETURN VALUE"
+The function returns
+.B true
+on success or, in case of failure, it returns
+.B false
+and sets
+.I errno
+appropriately.  Note that there are local extensions founded
+in the
+.IR com_err (3)
+system.  Error codes specific to the TLS Pool are in
+.I <tlspool/errortable.h>
+but other systems may also link in with the
+.IR com_err (3)
+error system.
+.SH ERRORS
+None known to date.
+.SH AUTHOR
+.PP
+Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
+.SH "REPORTING BUGS"
+.PP
+For any discussion, including about bugs, please use the mailing list
+found on
+.IR http://lists.arpa2.org/mailman/listinfo/tls-pool .
+.PP
+Please read the software distribution's
+.IR README ", " INSTALL " and " TODO " files"
+for information about the
+.I tlspool-daemon
+implementation status.
+.SH COPYRIGHT
+.PP
+Copyright \(co 2015-2019 Rick van Rein, ARPA2.net.
+.PP
+ARPA2 is funded from InternetWide.org, which in turns receives donations
+from various funding sources with an interest in a private and secure
+Internet that gives users control over their online presence.  This particular
+project has been sponsored in part by NCSC.
+.SH "SEE ALSO"
+.IR tlspool_async_request "(3),"
+.IR tlspool_async_close "(3),"
+.IR tlspool-daemon "(8)."
+.PP
+The configuration file option
+.I socket_name
+influences the path at which the TLS Pool is available; this is not
+read by the client library, and when it differs from the default path in
+.BR TLSPOOL_DEFAULT_SOCKET_PATH ,
+this function is used to inform the client library once, before calling
+any of the other client functions.
+.PP
+The TLS Pool API is documented in the include file
+.IR <tlspool/commands.h> " and " <tlspool/starttls.h>
+for C, and the
+.I tlspool.py
+module for Python.
+.PP
+Online resources may be found on the project home page,
+.IR http://tlspool.arpa2.net .

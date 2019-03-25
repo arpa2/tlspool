@@ -1,0 +1,99 @@
+.TH TLSPOOL_ASYNC_CLOSE 3 "March 2019" "ARPA2.net" "Library Calls"
+.SH NAME
+tlspool_async_close \- Close the TLS Pool link and stop pending requests.
+.SH SYNOPSIS
+.B #include <stdbool.h>
+.sp
+.B #include <tlspool/async.h>
+.sp
+.B bool tlspool_async_close (
+.RS
+.B struct tlspool_async_pool *\fIpool\fB,
+.br
+.B bool \fIclose_socket\fB);
+.br
+.SH DESCRIPTION
+.PP
+.BR tlspool_async_close ()
+disconnects from the TLS Pool at the given
+.I pool
+as opened by
+.BR tlspool_async_open ().
+By setting the
+.I close_socket
+flag, the underlying socket can be closed (which only makes
+sense when we are not responding to a socket close-down).
+.PP
+Any requests that are pending on the
+.I pool
+connection are cancelled and will return an error to
+allow properly processing the various implications of
+the disconnect.
+.SH "ASYNCHRONOUS AND EVENT-DRIVEN USE"
+The call to
+.BR tlspool_async_close ()
+is not itself asynchronous, let alone event-driven, but it is
+the point that ends many independent requests that may have
+been fired since
+.BR tlspool_async_open ()
+was called.
+.SH "RETURN VALUE"
+The function returns
+.B true
+on success or, in case of failure, it returns
+.B false
+and sets
+.I errno
+appropriately.  Note that there are local extensions founded
+in the
+.IR com_err (3)
+system.  Error codes specific to the TLS Pool are in
+.I <tlspool/errortable.h>
+but other systems may also link in with the
+.IR com_err (3)
+error system.
+.SH ERRORS
+None known to date.
+.SH AUTHOR
+.PP
+Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
+.SH "REPORTING BUGS"
+.PP
+For any discussion, including about bugs, please use the mailing list
+found on
+.IR http://lists.arpa2.org/mailman/listinfo/tls-pool .
+.PP
+Please read the software distribution's
+.IR README ", " INSTALL " and " TODO " files"
+for information about the
+.I tlspool-daemon
+implementation status.
+.SH COPYRIGHT
+.PP
+Copyright \(co 2015-2019 Rick van Rein, ARPA2.net.
+.PP
+ARPA2 is funded from InternetWide.org, which in turns receives donations
+from various funding sources with an interest in a private and secure
+Internet that gives users control over their online presence.  This particular
+project has been sponsored in part by NCSC.
+.SH "SEE ALSO"
+.IR tlspool_async_open "(3),"
+.IR tlspool_async_request "(3),"
+.IR tlspool-daemon "(8)."
+.PP
+The configuration file option
+.I socket_name
+influences the path at which the TLS Pool is available; this is not
+read by the client library, and when it differs from the default path in
+.BR TLSPOOL_DEFAULT_SOCKET_PATH ,
+this function is used to inform the client library once, before calling
+any of the other client functions.
+.PP
+The TLS Pool API is documented in the include file
+.IR <tlspool/commands.h> " and " <tlspool/starttls.h>
+for C, and the
+.I tlspool.py
+module for Python.
+.PP
+Online resources may be found on the project home page,
+.IR http://tlspool.arpa2.net .

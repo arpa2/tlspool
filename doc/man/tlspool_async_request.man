@@ -1,0 +1,196 @@
+.TH TLSPOOL_ASYNC_REQUEST 3 "March 2019" "ARPA2.net" "Library Calls"
+.SH NAME
+tlspool_async_request \- Send an asynchronous request to the TLS Pool.
+.SH SYNOPSIS
+.B #include <stdbool.h>
+.sp
+.B #include <tlspool/async.h>
+.br
+.B #include <tlspool/commands.h>
+.sp
+.B bool tlspool_async_request (
+.RS
+.B struct tlspool_async_pool *\fIpool\fB,
+.br
+.B struct tlspool_async_request *\fIreqcb\fB,
+.br
+.B int \fIopt_fd\fB);
+.br
+.SH DESCRIPTION
+.PP
+.BR tlspool_async_request ()
+submits a prepared command to the TLS Pool
+and registers a callback function to be invoked
+when the matching response arrives.  The link to
+the TLS Pool must have been setup in
+.I pool
+by a call to
+.BR tlspool_async_open ()
+before.
+.PP
+The most interesting bit of magic happens when
+.I opt_fd
+passes a file descriptor, such as a socket, to the
+TLS Pool.  This is recognised by a non-negative
+value and passes along the request's command as
+ancilary data, across process boundaries.  This is
+general POSIX functionality, though not commonly
+used.  The file descriptor arriving at the TLS Pool
+may be compared to a
+.BR dup (2)
+that happens to end up in another process.  The
+local file descriptor remains open, but will
+usually be closed by the caller.  It is safe to do
+this immediately after the call to
+.BR tlspool_async_request ()
+but it is also possible to keep it until a reply
+comes, and perhaps use
+.BR dup2 (2)
+to close the old file descriptor and replace it
+with another with the same number.  You can have
+a completely cool API that does not change the
+file descriptor number but simply switches on
+TLS.  This is only possible when the original
+file descriptor is still open, as its number
+might otherwise be reused and replacing its
+contents might surrender an arbitrary other user's
+connection!
+.PP
+Take note however, that events loops are based on
+calls such as
+.BR select (2)
+or
+.BR poll (2)
+and not all such routines are transparent about
+duplicate handles.  The provider of your event loop
+may be able to explain this with a staggering amount
+of detail.
+.PP
+Requests over the link in
+.I pool
+are identified by their
+.IR pio_reqid ,
+short for its request identifier, and created
+at random as part of the
+.BR tlspool_async_request ()
+call.
+.PP
+The fields in the
+.I reqcb
+structure are the
+.I cmd
+holding the TLS Pool command structure and, most
+importantly, the callback function with prototype
+.sp
+.B void (*\fIcbfunc\fB) (
+.RS
+.B struct tlspool_async_request *\fIcbdata\fB,
+.br
+.B int \fIopt_fd\fB);
+.RE
+.sp
+When it is called, the
+.I cbdata
+parameter will be the original
+.I reqcb
+supplied to
+.BR tlspool_async_request ()
+and the
+.I opt_fd
+may be supplied by the TLS Pool to commands that
+expect to receive one.  It is another one of
+those process-crossing file descriptor duplications.
+.SH "ASYNCHRONOUS AND EVENT-DRIVEN USE"
+The call to
+.BR tlspool_async_request ()
+returns immediately, and when successful
+the registered callback will later be called,
+normally as part of a
+.BR tlspool_async_process ()
+run.  There is no thread or process responsible
+of doing this; the call to
+.IR tlspool_async_process ()
+must be driven by the application.
+.PP
+The asynchronous API never allocates memory.  The
+.I reqcb
+structure needs to be allocated by the caller and cannot
+be removed until either
+.BR tlspool_async_cancel ()
+or
+.BR tlspool_async_close ()
+cancels this pending request.
+.PP
+The application may change its mind and want to retract
+a command, but the TLS Pool will not be notified and may
+still respond with the request identifier.  This introduces
+a risk in terms of stability.  Having said that, the
+.IR tlspool_async_cancel ()
+operation is the call that retracts the command and allows
+the memory of the
+.I reqcb
+to return to its caller.
+.SH "RETURN VALUE"
+The function returns
+.B true
+on success or, in case of failure, it returns
+.B false
+and sets
+.I errno
+appropriately.  Note that there are local extensions founded
+in the
+.IR com_err (3)
+system.  Error codes specific to the TLS Pool are in
+.I <tlspool/errortable.h>
+but other systems may also link in with the
+.IR com_err (3)
+error system.
+.SH ERRORS
+None known to date.
+.SH AUTHOR
+.PP
+Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
+.SH "REPORTING BUGS"
+.PP
+For any discussion, including about bugs, please use the mailing list
+found on
+.IR http://lists.arpa2.org/mailman/listinfo/tls-pool .
+.PP
+Please read the software distribution's
+.IR README ", " INSTALL " and " TODO " files"
+for information about the
+.I tlspool-daemon
+implementation status.
+.SH COPYRIGHT
+.PP
+Copyright \(co 2015-2019 Rick van Rein, ARPA2.net.
+.PP
+ARPA2 is funded from InternetWide.org, which in turns receives donations
+from various funding sources with an interest in a private and secure
+Internet that gives users control over their online presence.  This particular
+project has been sponsored in part by NCSC.
+.SH "SEE ALSO"
+.IR tlspool_async_close "(3),"
+.IR tlspool_async_request "(3),"
+.IR tlspool_async_process "(3),"
+.IR tlspool-daemon "(8),"
+.IR tlspool_configvar "(3),"
+.IR dup "(2),"
+.IR dup2 "(2)."
+.PP
+The configuration file option
+.I socket_name
+influences the path at which the TLS Pool is available; this is not
+read by the client library, and when it differs from the default path in
+.BR TLSPOOL_DEFAULT_SOCKET_PATH ,
+this function is used to inform the client library once, before calling
+any of the other client functions.
+.PP
+The TLS Pool API is documented in the include file
+.IR <tlspool/commands.h> " and " <tlspool/starttls.h>
+for C, and the
+.I tlspool.py
+module for Python.
+.PP
+Online resources may be found on the project home page,
+.IR http://tlspool.arpa2.net .

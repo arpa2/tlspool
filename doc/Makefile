@@ -14,7 +14,7 @@ MAN3 = tlspool_socket tlspool_starttls \
 	tlspool_control_detach tlspool_control_reattach \
 	tlspool_configvar
 
-MAN8 = tlspool tlstunnel
+MAN8 = tlspool-daemon tlstunnel
 
 
 all:

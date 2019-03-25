@@ -15,7 +15,10 @@
 
 #include <unistd.h>
 #include <syslog.h>
+
 #include <errno.h>
+#include <com_err.h>
+#include <errortable.h>
 
 #include <gnutls/gnutls.h>
 #include <gnutls/pkcs11.h>
@@ -890,10 +893,10 @@ fprintf (stderr, "DEBUG: gtls_errno==%d after  importing onthefly_issuercrt\n", 
 	if ((gtls_errno == GNUTLS_E_SUCCESS) && (otfsigkey != NULL)) {
 		E_g2e ("Failed to initialise on-the-fly issuer private key structure",
 			gnutls_privkey_init (&onthefly_issuerkey));
-fprintf (stderr, "DEBUG: before onthefly p11 import, gtlserrno = %d\n", gtls_errno);
+fprintf (stderr, "DEBUG: before onthefly p11 import, gtls_errno = %d\n", gtls_errno);
 		E_g2e ("Failed to import pkcs11: URI into on-the-fly issuer private key",
 			gnutls_privkey_import_pkcs11_url (onthefly_issuerkey, otfsigkey));
-fprintf (stderr, "DEBUG: after  onthefly p11 import, gtlserrno = %d\n", gtls_errno);
+fprintf (stderr, "DEBUG: after  onthefly p11 import, gtls_errno = %d\n", gtls_errno);
 	}
 fprintf (stderr, "DEBUG: When it matters, gtls_errno = %d, onthefly_issuercrt %s NULL, onthefly_issuerkey %s NULL\n", gtls_errno, onthefly_issuercrt?"!=":"==", onthefly_issuerkey?"!=":"==");
 	if ((gtls_errno == GNUTLS_E_SUCCESS) && (onthefly_issuercrt != NULL) && (onthefly_issuerkey != NULL)) {
@@ -4444,7 +4447,8 @@ static void *starttls_thread (void *cmd_void) {
 	// General thread setup
 	replycmd = cmd = (struct command *) cmd_void;
 	if (cmd == NULL) {
-		send_error (replycmd, EINVAL, "Command structure not received");
+		send_error (replycmd, E_TLSPOOL_COMMAND_NEEDED,
+				"TLS Pool needs a command but got none");
 		assert (pthread_detach (pthread_self ()) == 0);
 		return NULL;
 	}
@@ -4460,7 +4464,8 @@ static void *starttls_thread (void *cmd_void) {
 /*
 	if (cryptfd < 0) {
 		tlog (TLOG_UNIXSOCK, LOG_ERR, "No ciphertext file descriptor supplied to TLS Pool");
-		send_error (replycmd, EINVAL, "No ciphertext file descriptor supplied to TLS Pool");
+		send_error (replycmd, E_TLSPOOL_CIPHER_SOCKET_NEEDED,
+				"TLS Pool needs a ciphertext socket but got none");
 		assert (pthread_detach (pthread_self ()) == 0);
 		return NULL;
 	}
@@ -4479,7 +4484,8 @@ fprintf (stderr, "DEBUG: Got a request to renegotiate existing TLS connection\n"
 		// Check that no FD was passed (and ended up in cryptfd)
 		if (cryptfd >= 0) {
 			tlog (TLOG_UNIXSOCK, LOG_ERR, "Renegotiation started with extraneous file descriptor");
-			send_error (replycmd, EPROTO, "File handle supplied for renegotiation");
+			send_error (replycmd, E_TLSPOOL_SUPERFLUOUS_SOCKET,
+				"TLS Pool received a superfluous socket");
 			close (cryptfd);
 			assert (pthread_detach (pthread_self ()) == 0);
 			return NULL;
@@ -4490,7 +4496,8 @@ fprintf (stderr, "DEBUG: Got a request to renegotiate existing TLS connection\n"
 fprintf (stderr, "DEBUG: Got ckn == %p\n", (void *) ckn);
 		if (ckn == NULL) {
 			tlog (TLOG_UNIXSOCK, LOG_ERR, "Failed to find TLS connection for renegotiation by its ctlkey");
-			send_error (replycmd, ESRCH, "Cannot find TLS connection for renegotiation");
+			send_error (replycmd, E_TLSPOOL_RENOGIATE_NOT_FOUND,
+					"TLS Pool cannot find the connection to renegotiate");
 			assert (pthread_detach (pthread_self ()) == 0);
 			return NULL;
 		}
@@ -4512,7 +4519,8 @@ fprintf (stderr, "DEBUG: pthread_join returned %d\n", errno);
 		}
 		if (errno != 0) {
 			tlog (TLOG_UNIXSOCK, LOG_ERR, "Failed to interrupt TLS connection for renegotiation");
-			send_error (replycmd, errno, "Cannot interrupt TLS connection for renegotiation");
+			send_error (replycmd, E_TLSPOOL_RENOGIATE_NOT_INTERRUPTABLE,
+					"TLS Pool cannot interrupt the connection to renegotiate");
 			ctlkey_unfind (&ckn->regent);
 			assert (pthread_detach (pthread_self ()) == 0);
 			// Do not free the ckn, as the other thread still runs
@@ -4555,7 +4563,8 @@ fprintf (stderr, "DEBUG: Client-side invocation flagged as wrong; compensated er
 	//
 	// When renegotiating TLS security, ensure that it is done securely
 	if (renegotiating && (gnutls_safe_renegotiation_status (session) == 0)) {
-		send_error (replycmd, EPROTO, "Renegotiation requested while secure renegotiation is unavailable on remote");
+		send_error (replycmd, E_TLSPOOL_RENOGIATE_WOULD_BE_INSECURE,
+			"TLS Pool cannot ask peer for secure renegotiation");
 		if (cryptfd >= 0) {
 			close (cryptfd);
 			cryptfd = -1;
@@ -4594,7 +4603,8 @@ fprintf (stderr, "DEBUG: Client-side invocation flagged as wrong; compensated er
 /*
 	errno = pthread_setcancelstate (PTHREAD_CANCEL_ENABLE, NULL);
 	if (errno != 0) {
-		send_error (replycmd, ESRCH, "STARTTLS handler thread cancellability refused");
+		send_error (replycmd, E_TLSPOOL_CONNECTION_HANDLER_SETUP,
+				"TLS Pool failed to setup the connection handler");
 		if (cryptfd >= 0) {
 			close (cryptfd);
 			cryptfd = -1;
@@ -4617,7 +4627,8 @@ fprintf (stderr, "DEBUG: Client-side invocation flagged as wrong; compensated er
 	//
 	// Check and setup the plaintext file handle
 	if (cryptfd < 0) {
-		send_error (replycmd, EPROTO, "You must supply a TLS-protected socket");
+		send_error (replycmd, E_TLSPOOL_CIPHER_SOCKET_NEEDED,
+				"TLS Pool needs a ciphertext socket but got none");
 		if (plainfd >= 0) {
 			close (plainfd);
 			plainfd = -1;
@@ -4687,7 +4698,8 @@ fprintf (stderr, "DEBUG: anonpre_determination, comparing [%d] %s to %s, found c
 		//
 		// Neither a TLS client nor a TLS server
 		//
-		send_error (replycmd, ENOTSUP, "Command not supported");
+		send_error (replycmd, E_TLSPOOL_COMMAND_NOTIMPL,
+				"TLS Pool command or variety not implemented");
 		close (cryptfd);
 		if (plainfd >= 0) {
 			close (plainfd);
@@ -4869,7 +4881,8 @@ if (renegotiating) {
 		if (cmd->session_errno) {
 			send_error (replycmd, cmd->session_errno, error_getstring ());
 		} else {
-			send_error (replycmd, EIO, "Failed to prepare for TLS");
+			send_error (replycmd, E_TLSPOOL_CONNECTION_DRIVER_SETUP,
+					"TLS Pool failed to setup the TLS driver");
 		}
 		if (got_session) {
 fprintf (stderr, "gnutls_deinit (%p) at %d\n", (void *)session, __LINE__);
@@ -5188,7 +5201,8 @@ fprintf (stderr, "DEBUG: Freeing cmd->lids[%d].data %p\n", i-LID_TYPE_MIN, (void
 			}
 			send_error (replycmd, cmd->session_errno, errstr);
 		} else {
-			send_error (replycmd, EPERM, "TLS handshake failed");
+			send_error (replycmd, E_TLSPOOL_STIRRED_NOT_SHAKEN,
+					"TLS Pool and peer failed during the TLS handshake");
 		}
 		if (preauth) {
 			free (preauth);
@@ -5241,7 +5255,8 @@ fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__
 		assert (cmd != NULL);	// No timeout given, so the result should never be NULL
 		if (cmd->cmd.pio_cmd != PIOC_PLAINTEXT_CONNECT_V2) {
 			tlog (TLOG_UNIXSOCK, LOG_ERR, "Callback response has unexpected command code");
-			send_error (replycmd, EINVAL, "Callback response has bad command code");
+			send_error (replycmd, E_TLSPOOL_COMMAND_BAD_CALLBACK_RESPONSE,
+					"TLS Pool command code unacceptable as callback response");
 			if (preauth) {
 				free (preauth);
 			}
@@ -5268,7 +5283,8 @@ fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__
 	}
 	if (plainfd < 0) {
 		tlog (TLOG_UNIXSOCK, LOG_ERR, "No plaintext file descriptor supplied to TLS Pool");
-		send_error (replycmd, EINVAL, "No plaintext file descriptor supplied to TLS Pool");
+		send_error (replycmd, E_TLSPOOL_PLAIN_SOCKET_NEEDED,
+					"TLS Pool needs a plaintext socket but got none");
 		if (preauth) {
 			free (preauth);
 		}
@@ -5298,7 +5314,8 @@ fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__
 		ckn = (struct ctlkeynode_tls *) malloc (sizeof (struct ctlkeynode_tls));
 	}
 	if (ckn == NULL) {
-		send_error (replycmd, ENOMEM, "Out of memory allocating control key structure");
+		send_error (replycmd, E_TLSPOOL_OUT_OF_MEMORY,
+				"TLS Pool ran out of memory");
 	} else {
 		int detach = (orig_starttls.flags & PIOF_STARTTLS_DETACH) != 0;
 		ckn->session = session;
@@ -5375,7 +5392,8 @@ fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__
 			ckn = NULL;
 //DEBUG// fprintf (stderr, "Unregistered  control key\n");
 		} else {
-			send_error (replycmd, ENOENT, "Failed to register control key for TLS connection");
+			send_error (replycmd, E_TLSPOOL_CTLKEY_REGISTRATION_FAILED,
+					"TLS Pool failed to register control key for connection");
 		}
 	}
 	if (preauth) {
@@ -5405,7 +5423,8 @@ void starttls (struct command *cmd) {
 	/* Create a thread and, if successful, wait for it to unlock cmd */
 	errno = pthread_create (&cmd->handler, NULL, starttls_thread, (void *) cmd);
 	if (errno != 0) {
-		send_error (cmd, ESRCH, "STARTTLS thread refused");
+		send_error (cmd, E_TLSPOOL_ENTANGLED_THREADS,
+				"TLS Pool failed to start a threa");
 		return;
 	}
 //TODO:TEST// Thread detaches itself before terminating w/o followup
@@ -5413,7 +5432,8 @@ void starttls (struct command *cmd) {
 	errno = pthread_detach (cmd->handler);
 	if (errno != 0) {
 		pthread_cancel (cmd->handler);
-		send_error (cmd, ESRCH, "STARTTLS thread detachment refused");
+		send_error (cmd, E_TLSPOOL_CONNECTION_HANDLER_SETUP,
+				"TLS Pool failed to setup the connection handler");
 		return;
 	}
 */
@@ -5477,12 +5497,14 @@ void starttls_prng (struct command *cmd) {
 	//
 	// If an error occurrend with the command, report it now
 	if (err) {
-		send_error (cmd, EINVAL, "TLS PRNG request invalid");
+		send_error (cmd, E_TLSPOOL_PRNG_UNAVAILABLE,
+				"TLS Pool cannot use pseudo-random number generator");
 		// ckn is NULL if err != 0, so no need for ctlkey_unfind()
 		return;
 	}
 	if (ckn == NULL) {
-		send_error (cmd, ENOENT, "Invalid control key");
+		send_error (cmd, E_TLSPOOL_CTLKEY_NOT_FOUND,
+				"TLS Pool cannot find the control key");
 		return;
 	}
 	//
@@ -5503,7 +5525,8 @@ void starttls_prng (struct command *cmd) {
 	//
 	// Return the outcome to the user
 	if (err) {
-		send_error (cmd, errno? errno: EIO, "PRNG in TLS backend failed");
+		send_error (cmd, errno? errno: E_TLSPOOL_PRNG_UNAVAILABLE,
+				"TLS Pool cannot use pseudo-random number generator");
 	} else {
 		send_command (cmd, -1);
 	}

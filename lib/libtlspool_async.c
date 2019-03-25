@@ -45,18 +45,35 @@
 
 
 /* Initialise a new asynchronous TLS Pool handle.
- * This opens a socket, but it does not start the
- * suggested "ping" operation.  All fields in the
- * structure are initialised, so it may enter with
- * no information set at all.  You can request to
- * perform a blocking initial ping operation.
+ * This opens a socket, embedded into the pool
+ * structure.
+ *
+ * It is common, and therefore supported in this
+ * call, to start with a "ping" operation to
+ * exchange version information and supported
+ * facilities.  Since this is going to be in all
+ * code, where it would be difficult due to the
+ * asynchronous nature of the socket, we do it
+ * here, just before switching to asynchronous
+ * mode.  It is usually not offensive to bootstrap
+ * synchronously, but for some programs it may
+ * incur a need to use a thread pool to permit
+ * the blocking wait, or (later) reconnects can
+ * simply leave the identity to provide NULL and
+ * not TLSPOOL_IDENTITY_V2 which you would use to
+ * allow this optional facility.  We will ask
+ * for PIOF_FACILITY_ALL_CURRENT but you want to
+ * enforce less, perhaps PIOF_FACILITY_STARTTLS,
+ * as requesting too much would lead to failure
+ * opening the connection to the TLS Pool.
  *
  * Return true on success, false with errno on failure.
  */
 bool tlspool_async_open (struct tlspool_async_pool *pool,
 			size_t sizeof_tlspool_command,
-			char *path,
-			bool blocking_ping) {
+			char *tlspool_identity,
+			uint32_t required_facilities,
+			char *socket_path) {
 	int sox = -1;
 	//
 	// Validate expectations of the caller
@@ -65,12 +82,12 @@ bool tlspool_async_open (struct tlspool_async_pool *pool,
 		return false;
 	}
 	//
-	// Find the path to connect to
-	if (path == NULL) {
-		path = tlspool_configvar (NULL, "socket_name");
+	// Find the socket_path to connect to
+	if (socket_path == NULL) {
+		socket_path = tlspool_configvar (NULL, "socket_name");
 	}
-	if (path == NULL) {
-		path = TLSPOOL_DEFAULT_SOCKET_PATH;
+	if (socket_path == NULL) {
+		socket_path = TLSPOOL_DEFAULT_SOCKET_PATH;
 	}
 	//
 	// Initialise the structure with basic data
@@ -81,7 +98,7 @@ bool tlspool_async_open (struct tlspool_async_pool *pool,
 #ifndef WINDOWS_PORT
 	struct sockaddr_un sun;
 	memset (&sun, 0, sizeof (sun));
-	strcpy (sun.sun_path, (char *) path);
+	strcpy (sun.sun_path, socket_path);
 	sun.sun_family = AF_UNIX;
 	sox = socket (AF_UNIX, SOCK_STREAM, 0);
 	if (sox == -1) {
@@ -91,7 +108,7 @@ bool tlspool_async_open (struct tlspool_async_pool *pool,
 		goto fail_handle_close;
 	}
 #else
-	sox = open_named_pipe ((LPCTSTR) path);
+	sox = open_named_pipe ((LPCTSTR) socket_path);
 	if (sox == INVALID_POOL_HANDLE) {
 		//TODO// errno = ... (if not set yet)
 		return false;
@@ -103,12 +120,19 @@ bool tlspool_async_open (struct tlspool_async_pool *pool,
 	// and blocking is easier.  Also, blocking
 	// is not as offensive during initialisation
 	// as later on, and this is quite simple.
-	if (blocking_ping) {
+	if (required_facilities != 0) {
 		struct tlspool_command poolcmd;
 		memset (&poolcmd, 0, sizeof (poolcmd));	/* Do not leak old stack info */
 		poolcmd.pio_reqid = 1;
 		poolcmd.pio_cbid = 0;
 		poolcmd.pio_cmd = PIOC_PING_V2;
+		//
+		// Tell the TLS Pool what we think of them, and what we would like to have
+		assert (strlen (tlspool_identity) < sizeof (poolcmd.pio_data.pioc_ping.YYYYMMDD_producer));
+		strcpy (poolcmd.pio_data.pioc_ping.YYYYMMDD_producer, tlspool_identity);
+		poolcmd.pio_data.pioc_ping.facilities = required_facilities | PIOF_FACILITY_ALL_CURRENT;
+		//
+		// Send the request and await its response -- no contenders makes life easy
 		if (send (sox, &poolcmd, sizeof (poolcmd), MSG_NOSIGNAL) != sizeof (poolcmd)) {
 			errno = EPROTO;
 			goto fail_handle_close;
@@ -117,7 +141,13 @@ bool tlspool_async_open (struct tlspool_async_pool *pool,
 			errno = EPROTO;
 			goto fail_handle_close;
 		}
+		//
+		// In any case, return the negotiated data; then be sure it meets requirements
 		memcpy (&pool->pingdata, &poolcmd.pio_data.pioc_ping, sizeof (struct pioc_ping));
+		if ((pool->pingdata.facilities & required_facilities) != required_facilities) {
+			errno = ENOSYS;
+			goto fail_handle_close;
+		}
 	}
 	//
 	// Make the connection non-blocking

@@ -300,7 +300,8 @@ int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec
  * So, be sure to use TLSPOOL_PRNGBUFLEN which holds the header-file defined
  * size.
  */
-int tlspool_prng (char *label, char *opt_ctxvalue,
+int tlspool_prng (char *label,
+		uint16_t ctxvalue_len, uint8_t *opt_ctxvalue,
 		uint16_t prng_len, uint8_t *prng_buf,
 		uint8_t *ctlkey);
 
@@ -310,7 +311,7 @@ int tlspool_prng (char *label, char *opt_ctxvalue,
  * will iterate over the config file until it reads the desired value.  The value
  * returned is allocated and should be freed by the caller using free().
  *
- * When cfgfile is NULL, the environment variable TLSPOOL_CONFIGFILE is
+ * When cfgfile is NULL, the environment variable TLSPOOL_CONFIG_FILE is
  * tried first, followed by the default setting from the macro 
  * TLSPOOL_DEFAULT_SOCKET_PATH as defined in <tlspool/starttls.h>.
  *

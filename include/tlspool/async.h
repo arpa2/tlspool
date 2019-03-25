@@ -71,18 +71,35 @@ struct tlspool_async_pool {
 
 
 /* Initialise a new asynchronous TLS Pool handle.
- * This opens a socket, but it does not start the
- * suggested "ping" operation.  All fields in the
- * structure are initialised, so it may enter with
- * no information set at all.  You can request to
- * perform a blocking initial ping operation.
+ * This opens a socket, embedded into the pool
+ * structure.
+ *
+ * It is common, and therefore supported in this
+ * call, to start with a "ping" operation to
+ * exchange version information and supported
+ * facilities.  Since this is going to be in all
+ * code, where it would be difficult due to the
+ * asynchronous nature of the socket, we do it
+ * here, just before switching to asynchronous
+ * mode.  It is usually not offensive to bootstrap
+ * synchronously, but for some programs it may
+ * incur a need to use a thread pool to permit
+ * the blocking wait, or (later) reconnects can
+ * simply leave the identity to provide NULL and
+ * not TLSPOOL_IDENTITY_V2 which you would use to
+ * allow this optional facility.  We will ask
+ * for PIOF_FACILITY_ALL_CURRENT but you want to
+ * enforce less, perhaps PIOF_FACILITY_STARTTLS,
+ * as requesting too much would lead to failure
+ * opening the connection to the TLS Pool.
  *
  * Return true on success, false with errno on failure.
  */
 bool tlspool_async_open (struct tlspool_async_pool *pool,
 			size_t sizeof_tlspool_command,
-			char *path,
-			bool blocking_ping);
+			char *tlspool_identity,
+			uint32_t required_facilities,
+			char *socket_path);
 
 
 /* Send a request to the TLS Pool and register a

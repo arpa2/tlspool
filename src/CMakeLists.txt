@@ -15,6 +15,8 @@ include_directories(
     ${Unbound_INCLUDE_DIR}
 )
 
+add_com_err_table (errortable)
+
 set(tlspool_SRC
     cache.c
     config.c
@@ -32,10 +34,11 @@ set(tlspool_SRC
     starttls.c
     trust.c
     validate.c
+    ${COM_ERR_errortable_SRC}
 )
 
-add_executable(tlspool ${tlspool_SRC})
-target_link_libraries(tlspool
+add_executable(tlspool-daemon ${tlspool_SRC})
+target_link_libraries(tlspool-daemon
     ${BDB_LIBRARY}
     ${GNUTLS_LIBRARY}
     ${GnuTLSDane_LIBRARIES}
@@ -46,10 +49,11 @@ target_link_libraries(tlspool
     ${Quick-DER_LIBRARIES}
     ${Unbound_LIBRARIES}
     ${pthread_LIBRARIES}
+    ${com_err_LIBRARIES}
 )
 
 install(
-    TARGETS tlspool
+    TARGETS tlspool-daemon
     DESTINATION ${CMAKE_INSTALL_SBINDIR}
 )
 

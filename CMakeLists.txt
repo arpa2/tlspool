@@ -47,6 +47,7 @@ find_package(OpenLDAP REQUIRED)    # ARPA
 find_package(P11-Kit REQUIRED)     # ARPA
 find_package(Quick-DER 1.2.4 REQUIRED NO_MODULE)  # Config
 find_package(Unbound REQUIRED)     # ARPA
+find_package(com_err REQUIRED)     # Local
 
 # TODO: look for TLS-KDH
 

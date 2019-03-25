@@ -14,7 +14,7 @@ from the configuration file for the
 TLS Pool.  The name of the configuration file can be provided in the 
 .I cfgfile
 parameter or, if it is NULL, then first the environment variable
-.BR TLSPOOL_CFGFILE
+.BR TLSPOOL_CONFIG_FILE
 is tried and, failing to find that, it tries the compile-time setting
 .BR TLSPOOL_DEFAULT_CONFIG_PATH .
 .PP
@@ -37,7 +37,7 @@ found on
 Please read the software distribution's
 .IR README ", " INSTALL " and " TODO " files"
 for information about the
-.I tlspool
+.I tlspool-daemon
 implementation status.
 .SH COPYRIGHT
 .PP
@@ -48,7 +48,7 @@ from various funding sources with an interest in a private and secure
 Internet that gives users control over their online presence.  This particular
 project has been sponsored in part by NCSC.
 .SH "SEE ALSO"
-.IR tlspool "(8)"
+.IR tlspool-daemon "(8)"
 .PP
 The TLS Pool API is documented in the include file
 .IR <tlspool/commands.h> " and " <tlspool/starttls.h>

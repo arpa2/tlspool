@@ -1,11 +1,24 @@
 add_definitions(-DDEBUG)
 include_directories(${BDB_INCLUDE_DIR})
 
+# Include the error table from ../src
+use_com_err_table (errortable)
+
 message(STATUS "Building TLSPool tests\n.. run 'make test' to run them.")
 
 # Because these tests #include sources from elsewhere
 add_custom_target(src-validate DEPENDS ../src/validate.c)
 add_custom_target(src-onlinecheck DEPENDS ../src/online.c)
+
+### Sizes must allow for tlserrno <- errno <- tlserrno
+#
+add_executable(error_sizes errorsizes.c)
+add_dependencies(error_sizes src-validate)
+
+add_test(
+    NAME error-sizes
+    COMMAND error_sizes
+)
 
 ### Validation tests
 #
@@ -66,8 +79,8 @@ add_test(
 ### Run testcli and testsrv under Pypeline
 #
 #
-set (testcli  ${CMAKE_BINARY_DIR}/tool/testcli)
-set (testsrv  ${CMAKE_BINARY_DIR}/tool/testsrv)
+set (testcli  ${CMAKE_BINARY_DIR}/tool/tlspool-test-client)
+set (testsrv  ${CMAKE_BINARY_DIR}/tool/tlspool-test-server)
 set (pypeline ${CMAKE_SOURCE_DIR}/test/pypeline)
 
 if (TEST_UNDER_TLSPOOL)
@@ -97,6 +110,6 @@ endif()
 if (TEST_UNDER_TLSPOOL)
 add_test(
 	NAME pingpool-async
-	COMMAND pingpool-async
+	COMMAND tlspool-ping-async
 )
 endif()

@@ -19,7 +19,7 @@
  * will iterate over the config file until it reads the desired value.  The value
  * returned is allocated and should be freed by the caller using free().
  *
- * When cfgfile is NULL, the environment variable TLSPOOL_CONFIGFILE is
+ * When cfgfile is NULL, the environment variable TLSPOOL_CONFIG_FILE is
  * tried first, followed by the default setting from the macro 
  * TLSPOOL_DEFAULT_CONFIG_PATH as defined in <tlspool/starttls.h>.
  *
@@ -37,7 +37,7 @@ char *tlspool_configvar (char *cfgfile, char *varname) {
 	char *retval = NULL;
 
 	if (cfgfile == NULL) {
-		cfgfile = getenv ("TLSPOOL_CFGFILE");
+		cfgfile = getenv ("TLSPOOL_CONFIG_FILE");
 	}
 	if (cfgfile == NULL) {
 		cfgfile = TLSPOOL_DEFAULT_CONFIG_PATH;

@@ -1,0 +1,121 @@
+# Use com_err to translate this table to more-or-less
+# unique codes that fit a signed 32-bit integer without
+# hitting on POSIX error codes (which are not standard
+# but for 0).
+#
+# Everybody  uses           0 to           0
+# UNIX       uses           1 to         255
+# Unbound    uses         -10 to          -1
+# GnuTLS     uses        -500 to          -1 (overlap!)
+# BerkeleyDB uses      -30999 to      -30800
+# TLS Pool   uses -1167372288 to -1167372033
+# MIT krb5   uses -1765328384 to -1765328129 (multi-range)
+#
+# Our module name "tlsP" landed us in the given range.
+# All error messages start with "TLS Pool" to direct
+# attention of administrators seeking to shoot trouble.
+#
+# We shall _not_ make the classical mistake of adding
+# all the other's errors to our management.  Instead,
+# what we can do is forge the API expected by com_err()
+# and add an offset to the various library error systems.
+# We can use the local API to the com_err() system as a
+# way to call the underlying applications.  Sigh...
+#
+# To sustain binary consistency over versions, add to the
+# end of the table, but do not insert or remove codes.
+#
+# Our current practice of retro-fitting errno values
+# from POSIX will not work once we introduce remote
+# access through a library implementing the async API.
+#
+# From: Rick van Rein <rick@openfortress.nl>
+#
+
+error_table tlsP
+
+error_code E_TLSPOOL_OUT_OF_MEMORY,
+	"TLS Pool ran out of memory"
+
+error_code E_TLSPOOL_ENTANGLED_THREADS,
+	"TLS Pool failed to start a thread"
+
+error_code E_TLSPOOL_CLIENT_DISCONNECT,
+	"TLS Pool connection closed"
+
+error_code E_TLSPOOL_CLIENT_REFUSES_CALLBACK,
+	"TLS Pool client will not partake in callback"
+
+error_code E_TLSPOOL_COMMAND_NEEDED,
+	"TLS Pool needs a command but got none"
+
+error_code E_TLSPOOL_SUPERFLUOUS_SOCKET,
+	"TLS Pool received a superfluous socket"
+
+error_code E_TLSPOOL_CIPHER_SOCKET_NEEDED,
+	"TLS Pool needs a ciphertext socket but got none"
+
+error_code E_TLSPOOL_PLAIN_SOCKET_NEEDED,
+	"TLS Pool needs a plaintext socket but got none"
+
+error_code E_TLSPOOL_COMMAND_UNKNOWN,
+	"TLS Pool command unrecognised"
+
+error_code E_TLSPOOL_COMMAND_NOTIMPL,
+	"TLS Pool command or variety not implemented"
+
+error_code E_TLSPOOL_COMMAND_BAD_CALLBACK_RESPONSE,
+	"TLS Pool command code unacceptable as callback response"
+
+error_code E_TLSPOOL_FACILITY_STARTTLS,
+	"TLS Pool setup excludes STARTTLS facility"
+
+error_code E_TLSPOOL_FACILITY_STARTGSS,
+	"TLS Pool setup excludes STARTGSS facility"
+
+error_code E_TLSPOOL_FACILITY_STARTSSH,
+	"TLS Pool setup excludes STARTSSH facility"
+
+error_code E_TLSPOOL_CTLKEY_REGISTRATION_FAILED,
+	"TLS Pool failed to register control key for connection"
+
+error_code E_TLSPOOL_CTLKEY_NOT_FOUND,
+	"TLS Pool cannot find the control key"
+
+error_code E_TLSPOOL_CTLKEY_NOT_YOURS,
+	"TLS Pool does not grant you the control key"
+
+error_code E_TLSPOOL_CTLKEY_DETACHED,
+	"TLS Pool found the control key already detached"
+
+error_code E_TLSPOOL_CTLKEY_ATTACHED,
+	"TLS Pool found the control key already attached"
+
+error_code E_TLSPOOL_RENOGIATE_NOT_FOUND,
+	"TLS Pool cannot find the connection to renegotiate"
+
+error_code E_TLSPOOL_RENOGIATE_NOT_INTERRUPTABLE,
+	"TLS Pool cannot interrupt the connection to renegotiate"
+
+error_code E_TLSPOOL_RENOGIATE_WOULD_BE_INSECURE,
+	"TLS Pool cannot ask peer for secure renegotiation"
+
+error_code E_TLSPOOL_CONNECTION_HANDLER_SETUP,
+	"TLS Pool failed to setup the connection handler"
+
+error_code E_TLSPOOL_CONNECTION_DRIVER_SETUP,
+	"TLS Pool failed to setup the TLS driver"
+
+error_code E_TLSPOOL_STIRRED_NOT_SHAKEN,
+	"TLS Pool and peer failed during the TLS handshake"
+
+error_code E_TLSPOOL_PRNG_UNAVAILABLE,
+	"TLS Pool cannot use pseudo-random number generator"
+
+error_code E_TLSPOOL_LIDENTRY_NOT_VACANT,
+	"TLS Pool has no vacancy for localid selection"
+
+error_code E_TLSPOOL_PINENTRY_NOT_VACANT,
+	"TLS Pool has no vacancy for PIN entry"
+
+end

@@ -10,6 +10,9 @@ set(libtlspool_async_SRC
     libtlspool_configvar.c
 )
 
+# Include the error table from ../src
+use_com_err_table (errortable)
+
 # Compile the files only once
 add_library(_libtlspool OBJECT ${libtlspool_SRC})
 add_library(_libtlspool_async OBJECT ${libtlspool_async_SRC})

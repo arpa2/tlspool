@@ -5,8 +5,11 @@
 #ifdef UNCONSIDERED_OLD_CODE_WITHOUT_DB_CONFIGURATION
 
 #include <stdlib.h>
-#include <errno.h>
 #include <string.h>
+
+#include <errno.h>
+#include <com_err.h>
+#include <errortable.h>
 
 #include <gnutls/gnutls.h>
 #include <gnutls/abstract.h>
