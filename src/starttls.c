@@ -3314,6 +3314,19 @@ static void valexp_Cc_start (void *vcmd, struct valexp *ve, char pred) {
 }
 
 
+/* valexp_Qq_start -- validation function for the GnuTLS backend.
+ * This function ensures a post-quantum cipher suite.
+ * While _Q_ focusses on encryption, _q_ focusses on authentication.
+ * There is currently no variable to protect the handshake, as that
+ * may well prove impossible.
+ */
+static void valexp_Qq_start (void *vcmd, struct valexp *ve, char pred) {
+	/* Work to be done for TLS designers! */
+	/* Once we get TLS-KDH going we should update the code below */
+	valexp_setpredicate (ve, pred, 0);
+}
+
+
 static void valexp_error_start (void *handler_data, struct valexp *ve, char pred) {
 	assert (0);
 }
@@ -3384,6 +3397,9 @@ static void valexp_switch_start (void *handler_data, struct valexp *ve, char pre
 	case 'c':
 		valexp_Cc_start (handler_data, ve, pred);
 		break;
+	case 'Q':
+	case 'q':
+		valexp_Qq_start (handler_data, ve, pred);
 	default:
 		// Called on an unregistered symbol, that spells failure
 		valexp_setpredicate (ve, pred, 0);

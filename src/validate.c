@@ -32,7 +32,7 @@
  * thanks to the limited number of variables, the size of this variable
  * can be limited to 32 bits only.
  */
-static char valexp_varchars [] = "LlIiFfAaTtDdRrEeOoGgPpUuSsCc";
+static char valexp_varchars [] = "LlIiFfAaTtDdRrEeOoGgPpUuSsCcQq";
 static int valexp_char_bitnum [128];
 typedef uint32_t valexpreqs_t;
 

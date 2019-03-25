@@ -37,6 +37,24 @@ rope-pulling contest between PKIX and real-life security):
     the validity period of pinned identities, resulting from limited validity of
     the certificate received.
 
+-   **Post Quantum:** this constrains the cipher suites to only those that hold
+    up under an attack by a quantum computer.  This is a much more
+    [realistic threat](http://internetwide.org/blog/2018/02/10/quantum-crypto-1.html)
+    than people think, so the ARPA2 project has a plan for
+    [getting over Quantum Computers](http://internetwide.org/blog/2019/02/11/quantum-crypto-2.html)
+    of which the ability to enforce it in the TLS Pool is an important part.
+    It makes no sense at present to enforce Post Quantum crypto, as too few
+    options exist today, certainly in connections to remote servers.  The best
+    course of action would be to leave the default settings, and let us change
+    these settings once we are satisfied that it works sufficiently often and
+    can indeed be enforced.  We will of course take care of versioning constraints
+    for underlying crypto software to ensure that the new cipher suites are then
+    available.  Leave the defaults for an easy ride, or at best play with them
+    for a while; you will see that the results are devastating for now, but the
+    conclusion should *not* be to disable these settings actively, but rather to
+    remove them from the configuration file let the TLS Pool distribution care
+    for it, and time the change.
+
 -   **Forward Secrecy:** the use of a suitable cipher suite ensures that future
     reverse engineering of a private key does not make stored sessions from the
     past decipherable.
@@ -169,6 +187,19 @@ operations:
     that `E` won't require it to be a critical extension either). It is not an
     error if a non-critical extension turns up in a credential as a critical
     extension.
+
+-   `Q` and `q` evaluate protection of cipher suites against quantum computing.
+    Where `q` refers to authentication in a manner protected from quantum
+    computers, and `Q` refers to such encryption strength.  The thing we need
+    as fast as possible is `Q`, because current encrypted sessions can be stored
+    and rewound for decryption in the (near) future.  This is more serious than
+    the protection on authentication with `q`, as future quantum computers will
+    not be able to authenticate with today's credentials.  For now, both options
+    lead to flat-out failure, simply because the guarantees cannot be given.
+    You should not learn that they cannot be used however; just be aware that
+    you should always leave other options in your expressions.  Once most or
+    all people have evolved to post quantum crypto you can remove the other
+    options, if you decide then that they are wanting or lacking.
 
 -   `O` and `o` validate online/live information; for X.509 this means that a
     predefined OCSP central responder under local management is being contacted;
