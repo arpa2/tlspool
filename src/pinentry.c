@@ -10,8 +10,11 @@
 
 #include <unistd.h>
 #include <syslog.h>
-#include <errno.h>
 #include <time.h>
+
+#include <errno.h>
+#include <com_err.h>
+#include <errortable.h>
 
 #include <tlspool/internal.h>
 
@@ -98,7 +101,8 @@ void register_pinentry_command (struct command *cmd) {
 	}
 	pthread_mutex_unlock (&pinentry_lock);
 	if (error) {
-		send_error (cmd, EBUSY, "Another PIN entry process is active");
+		send_error (cmd, E_TLSPOOL_PINENTRY_NOT_VACANT,
+				"TLS Pool has no vacancy for PIN entry");
 		return;
 	}
 }

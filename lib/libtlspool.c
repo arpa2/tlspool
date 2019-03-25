@@ -4,12 +4,15 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
 #include <string.h>
 #include <assert.h>
 #include <stdint.h>
 #include <limits.h>
 #include <ctype.h>
+
+#include <errno.h>
+#include <com_err.h>
+#include <errortable.h>
 
 #include <unistd.h>
 #include <pthread.h>
@@ -29,6 +32,7 @@
 #include <sys/resource.h>
 #include <netinet/in.h>
 #endif
+
 
 #if !defined(WINDOWS_PORT)
 #define closesocket(s) close(s)
@@ -271,9 +275,9 @@ static void registry_flush (pool_handle_t poolfd) {
 		if ((entry != NULL) && (entry->pfd != poolfd)) {
 			// Fill the cmd buffer with an error message
 			entry->buf->pio_cmd = PIOC_ERROR_V2;
-			entry->buf->pio_data.pioc_error.tlserrno = EPIPE;
+			entry->buf->pio_data.pioc_error.tlserrno = E_TLSPOOL_CLIENT_DISCONNECT;
 			strncpy (entry->buf->pio_data.pioc_error.message,
-				"Disconnected from the TLS Pool",
+				"TLS Pool connection closed",
 				sizeof (entry->buf->pio_data.pioc_error.message));
 			// Signal continuation to the recipient
 			pthread_mutex_unlock (entry->sig);
@@ -565,8 +569,10 @@ static void *master_thread (void *path) {
 					// TLS Pool is waiting for a callback;
 					// Send it an ERROR message instead.
 					cmd.pio_cmd = PIOC_ERROR_V2;
-					cmd.pio_data.pioc_error.tlserrno = EPIPE;
-					strncpy (cmd.pio_data.pioc_error.message, "Client prematurely left TLS Pool negotiations", sizeof (cmd.pio_data.pioc_error.message));
+					cmd.pio_data.pioc_error.tlserrno = E_TLSPOOL_CLIENT_REFUSES_CALLBACK;
+					strncpy (cmd.pio_data.pioc_error.message,
+							"TLS Pool client will not partake in callback",
+							sizeof (cmd.pio_data.pioc_error.message));
 #ifdef WINDOWS_PORT
 					np_send_command (&cmd);
 #else

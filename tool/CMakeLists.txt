@@ -1,5 +1,8 @@
 include_directories(${BDB_INCLUDE_DIR})
 
+# Include the error table from ../src
+use_com_err_table (errortable)
+
 add_library(_tool_common OBJECT runterminal.c ../src/donai.c)
 target_compile_definitions(_tool_common PUBLIC -DDONAI_ONLY_TEXTPROC)
 

@@ -10,8 +10,12 @@
 
 #include <unistd.h>
 #include <syslog.h>
-#include <errno.h>
 #include <time.h>
+
+#include <errno.h>
+#include <com_err.h>
+#include <errortable.h>
+
 #include <tlspool/internal.h>
 #ifndef WINDOWS_PORT
 #include <sys/socket.h>
@@ -172,7 +176,8 @@ void register_lidentry_command (struct command *cmd) {
 	}
 	pthread_mutex_unlock (&lidentry_lock);
 	if (error) {
-		send_error (cmd, EBUSY, "Another LID entry process is active");
+		send_error (cmd, E_TLSPOOL_LIDENTRY_NOT_VACANT,
+				"TLS Pool has no vacancy for localid selection");
 		return;
 	}
 }

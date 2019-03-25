@@ -3,7 +3,10 @@
 #include "whoami.h"
 
 #include <syslog.h>
+
 #include <errno.h>
+#include <com_err.h>
+#include <errortable.h>
 
 #include <sys/stat.h>
 

@@ -6,9 +6,12 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
-#include <errno.h>
 #include <pthread.h>
 #include <assert.h>
+
+#include <errno.h>
+#include <com_err.h>
+#include <errortable.h>
 
 #ifndef WINDOWS_PORT
 #include <unistd.h>
@@ -826,8 +829,8 @@ static void free_callbacks_by_clientfd (pool_handle_t clientfd) {
 			errcmd->cmd.pio_reqid = 0;  // Don't know how to set it
 			errcmd->cmd.pio_cbid = i + 1;
 			errcmd->cmd.pio_cmd = PIOC_ERROR_V2;
-			errcmd->cmd.pio_data.pioc_error.tlserrno = ECONNRESET;
-			snprintf (errcmd->cmd.pio_data.pioc_error.message, 127, "Client fd %d closed", clientfd);
+			errcmd->cmd.pio_data.pioc_error.tlserrno = E_TLSPOOL_CLIENT_DISCONNECT;
+			snprintf (errcmd->cmd.pio_data.pioc_error.message, 127, "TLS Pool client fd %d closed", clientfd);
 printf ("DEBUG: Freeing callback with cbid=%d for clientfd %d\n", i+1, clientfd);
 			post_callback (errcmd);
 printf ("DEBUG: Freed   callback with cbid=%d for clientfd %d\n", i+1, clientfd);
@@ -859,7 +862,8 @@ printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
 		if (facilities & PIOF_FACILITY_STARTTLS) {
 			starttls_prng (cmd);
 		} else {
-			send_error (cmd, EACCES, "The STARTTLS facility is disabled in the TLS Pool configuration");
+			send_error (cmd, E_TLSPOOL_FACILITY_STARTTLS,
+				"TLS Pool setup excludes STARTTLS facility");
 		}
 		return;
 	case PIOC_CONTROL_DETACH_V2:
@@ -877,7 +881,7 @@ printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
 		register_lidentry_command (cmd);
 		return;
 	default:
-		send_error (cmd, ENOSYS, "Command not implemented");
+		send_error (cmd, E_TLSPOOL_COMMAND_UNKNOWN, "TLS Pool command unrecognised");
 		return;
 	}
 }

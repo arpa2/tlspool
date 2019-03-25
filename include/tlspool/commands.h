@@ -107,7 +107,7 @@ enum anciltype {
 #pragma pack(push,2)
 
 struct pioc_error {
-	int tlserrno;			// See <errno.h>
+	int tlserrno;			// Constrained to int32_t values
 	char message [128];
 };
 
@@ -195,14 +195,46 @@ typedef struct pioc_lidentry lidentry_t;
 
 /* An error packet is sent if the other party is unwilling to continue
  * the current exchange.  It explains why, through a code and message,
- * in the pioc_error type.  Error codes are defined in <errno.h>
+ * in the pioc_error type.  Error codes are defined in <errno.h> or
+ * the are generated with com_err (see below).
  */
 #define PIOC_SUCCESS_V2				0x00000000
 
 
 /* An error packet is sent if the other party is unwilling to continue
  * the current exchange.  It explains why, through a code and message,
- * in the pioc_error type.  Error codes are defined in <errno.h>
+ * in the pioc_error type.  Error codes are defined in <errno.h> or
+ * the are generated from error tables with compile_et, part of the
+ * com_err suite.  The use of com_err is to merge ranges of error
+ * codes from a variety of sources.
+ *
+ * We no longer support values other than valid int32_t values in the
+ * integer field.  We never used that either, since we focussed on
+ * values taken from <errno.h>.  We make this explicit because we
+ * intend to focus on embedded systems, and although DER can pack any
+ * INTEGER size, we want to limit what these systems need to handle
+ * to what is usable for us and practical for them.
+ *
+ * Similar to this range limit, com_err was conceived in 1989, when
+ * 32-bit integers were called long and when (apparently) int32_t
+ * integers were not heard of.  The specification is clear however,
+ * that error tables need 3 or 4 character names and produce error
+ * codes with a table code in the top 24 bits and a code within the
+ * error range in the bottom 8 bits.  This still works today; there
+ * are 16,777,215 (not counting range 0 which is reserved for POSIX
+ * errors from <errno.h>) and the risk of clashes is only 50% when
+ * more than 4000 libraries are merged in one application.
+ *
+ * The limit also makes it possible to move values without loss,
+ * tlserrno <- errno <- tlserrno <- errno <- ...
+ *
+ * Note that we are storing values in errno that cannot be resolved
+ * with strerror() or perror() but that require their substitutes
+ * error_message() and com_err() from the com_err suite.
+ *
+ * Finally, any POSIX error codes unequal to 0, usually in the range
+ * 1..255, are generated locally.  The TLS Pool no longer generates
+ * these codes, in light of upcoming support for remote access.
  */
 #define PIOC_ERROR_V2				0x00000001
 

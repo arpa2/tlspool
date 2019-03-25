@@ -6,7 +6,10 @@
 #include <string.h>
 
 #include <syslog.h>
+
 #include <errno.h>
+#include <com_err.h>
+#include <errortable.h>
 
 #ifndef WINDOWS_PORT
 #include <arpa/inet.h>

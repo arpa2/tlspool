@@ -10,32 +10,15 @@
 #include <stdarg.h>
 
 #include <syslog.h>
+
 #include <errno.h>
+#include <com_err.h>
+#include <errortable.h>
 
 #include <db.h>
 
 #include <tlspool/internal.h>
 
-
-#ifndef ENOKEY
-#define ENOKEY ENOENT
-#endif
-
-#ifndef EREMOTEIO
-#define EREMOTEIO EIO
-#endif
-
-#ifndef ENODATA
-#define ENODATA ENOENT
-#endif
-
-#ifndef ENOTRECOVERABLE
-#define ENOTRECOVERABLE EIO
-#endif
-
-#ifndef EBADSLT
-#define EBADSLT ENOMEM
-#endif
 
 /* Data structures for logging configuration */
 
@@ -65,7 +48,7 @@ void setup_error (void) {
 	log_filter = cfg_log_filter ();
 	openlog ("TLS Pool", LOG_CONS | LOG_PID | log_perror, log_level);
 	if (pthread_key_create (&varkey_errstr, NULL) != 0) {
-		errno = EBADSLT;
+		errno = ENOMEM;
 		error_setstring ("Unable to allocate pthread key resource");
 		exit (1);
 	}
@@ -110,7 +93,7 @@ void error_posix2strings (char *new_errstr) {
 	error_setstring (new_errstr);
 }
 
-void error_db2posix (int db_errno, char *new_errstr) {
+void error_db2comerr (int db_errno, char *new_errstr) {
 	char *errstr;
 	//
 	// Sanity checks
@@ -124,71 +107,16 @@ void error_db2posix (int db_errno, char *new_errstr) {
 	//
 	// Report the descriptive error
 	if (new_errstr == NULL) {
+		new_errstr = db_strerror (db_errno);
+	}
+	if (new_errstr == NULL) {
 		new_errstr = "Undescribed database failure";
 	}
 	tlog (TLOG_DB, LOG_ERR, "DB error: %s", new_errstr);
 	error_setstring (new_errstr);
 	//
 	// Translate error to a POSIX errno value
-	if (db_errno > 0) {
-		errno = db_errno;
-		return;
-	}
-	switch (db_errno) {
-	case DB_BUFFER_SMALL:
-	case DB_LOG_BUFFER_FULL:
-		errno = ENOBUFS;
-		break;
-	case DB_DONOTINDEX:
-	case DB_KEYEMPTY:
-	case DB_FOREIGN_CONFLICT:
-	case DB_PAGE_NOTFOUND:
-	case DB_SECONDARY_BAD:
-		errno = ENOKEY;
-		break;
-	case DB_KEYEXIST:
-		errno = EACCES;
-		break;
-	case DB_LOCK_DEADLOCK:
-		errno = EDEADLK;
-		break;
-	case DB_LOCK_NOTGRANTED:
-		errno = ENOLCK;
-		break;
-	case DB_NOSERVER:
-#ifdef DB_NOSERVER_HOME
-	case DB_NOSERVER_HOME:
-#endif
-#ifdef DB_NOSERVER_ID
-	case DB_NOSERVER_ID:
-#endif
-	case DB_REP_DUPMASTER:
-	case DB_REP_HANDLE_DEAD:
-	case DB_REP_HOLDELECTION:
-	case DB_REP_IGNORE:
-	case DB_REP_ISPERM:
-	case DB_REP_JOIN_FAILURE:
-	case DB_REP_LEASE_EXPIRED:
-	case DB_REP_LOCKOUT:
-	case DB_REP_NEWSITE:
-	case DB_REP_NOTPERM:
-	case DB_REP_UNAVAIL:
-		errno = EREMOTEIO;
-		break;
-	case DB_NOTFOUND:
-		errno = ENODATA;
-		break;
-	case DB_OLD_VERSION:
-	case DB_VERSION_MISMATCH:
-		errno = ENOEXEC;
-		break;
-	case DB_RUNRECOVERY:
-	case DB_VERIFY_BAD:
-		errno = ENOTRECOVERABLE;
-		break;
-	default:
-		errno = ENOSYS;
-		break;
-	}
+	// See <tlspool/commands.h> above PIOC_ERROR_V2
+	errno = db_errno;
 }
 

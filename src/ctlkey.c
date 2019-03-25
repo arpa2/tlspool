@@ -31,8 +31,11 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <assert.h>
-#include <errno.h>
 #include <string.h>
+
+#include <errno.h>
+#include <com_err.h>
+#include <errortable.h>
 
 #include <pthread.h>
 
@@ -255,23 +258,23 @@ void ctlkey_detach (struct command *cmd) {
 	struct ctlkeynode **nodepp;
 	assert (pthread_mutex_lock (&ctlkey_registry_lock) == 0);
 	nodepp = &rootnode;
-	tlserrno = ENOENT;
-	errstr = "Unknown control key could not detach";
+	tlserrno = E_TLSPOOL_CTLKEY_NOT_FOUND;
+	errstr = "TLS Pool cannot find the control key";
 	while (*nodepp != NULL) {
 		int cmp = memcmp (ctlkey, (*nodepp)->ctlkey, TLSPOOL_CTLKEYLEN);
 		if (cmp == 0) {
 			/* Found the right node */
 			if ((*nodepp)->ctlfd == INVALID_POOL_HANDLE) {
-				tlserrno = EBUSY;
-				errstr = "Connection not under control";
+				tlserrno = E_TLSPOOL_CTLKEY_DETACHED;
+				errstr = "TLS Pool found the control key already detached";
 			} else if ((*nodepp)->ctlfd == cmd->clientfd) {
 				(*nodepp)->ctlfd = INVALID_POOL_HANDLE;
 				//FORK!=DETACH// ctlkey_signalling_raise ();
 				tlserrno = 0;
 				errstr = NULL;
 			} else {
-				tlserrno = EPERM;
-				errstr = "Connection is not yours to detach";
+				tlserrno = E_TLSPOOL_CTLKEY_NOT_YOURS;
+				errstr = "TLS Pool does not grant you the control key";
 			}
 			break;
 		} else if (cmp < 0) {
@@ -297,8 +300,8 @@ void ctlkey_reattach (struct command *cmd) {
 	struct ctlkeynode **nodepp;
 	assert (pthread_mutex_lock (&ctlkey_registry_lock) == 0);
 	nodepp = &rootnode;
-	tlserrno = ENOENT;
-	errstr = "Unknown control key could not reattach";
+	tlserrno = E_TLSPOOL_CTLKEY_NOT_FOUND;
+	errstr = "TLS Pool cannot find the control key";
 	while (*nodepp != NULL) {
 		int cmp = memcmp (ctlkey, (*nodepp)->ctlkey, TLSPOOL_CTLKEYLEN);
 		if (cmp == 0) {
@@ -309,8 +312,8 @@ void ctlkey_reattach (struct command *cmd) {
 				tlserrno = 0;
 				errstr = NULL;
 			} else {
-				tlserrno = EBUSY;
-				errstr = "Connection already under control";
+				tlserrno = E_TLSPOOL_CTLKEY_ATTACHED;
+				errstr = "TLS Pool found the control key already attached";
 			}
 			break;
 		} else if (cmp < 0) {
