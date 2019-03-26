@@ -16,9 +16,16 @@
 #
 # The common usage pattern is:
 #
-#  add_com_err_table     (my_complaints           COMERR_SRC        )
-#  add_executable        (my_sillyness  silly.c ${COMERR_SRC}       )
-#  target_link_libraries (my_sillyness          ${com_err_LIBRARIES})
+#  add_com_err_table     (mycomplaints)
+#  add_executable        (mysillyness silly.c ${COM_ERR_mycomplaints_SRC})
+#  target_link_libraries (mysillyness ${com_err_LIBRARIES})
+#
+# In other modules, the same error table can be loaded and used in
+# the same manner with
+#
+#  use_com_err_table     (mycomplaints)
+#  add_executable        (mysillyness silly.c ${COM_ERR_mycomplaints_SRC})
+#  target_link_libraries (mysillyness ${com_err_LIBRARIES})
 #
 # This adds a .et file from local source code.
 #

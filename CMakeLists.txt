@@ -68,6 +68,8 @@ if (EXPERIMENTAL_SRP_SUPPORT)
     add_definitions(-DEXPERIMENTAL_SRP)
 endif()
 
+option(EXPERIMENTAL_LIBEV "Experiment with libev as a event backend" OFF)
+
 # These are compile flags, not definitions, but it happens to work.
 add_definitions(-fPIC -pthread)
 if (DEBUG)
