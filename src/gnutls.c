@@ -1,4 +1,9 @@
-/* tlspool/starttls.c -- Setup and validation handler for TLS session */
+/* tlspool/gnutls.c -- Setup and validation handler for TLS session */
+
+/* This is an implementation of the general idea of STARTTLS.
+ * It happen to be done with GnuTLS, we embrace for a future
+ * where there could be alternative implementations too.
+ */
 
 #include "whoami.h"
 

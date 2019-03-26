@@ -31,7 +31,7 @@ set(tlspool_SRC
     pinentry.c
     remote.c
     service.c
-    starttls.c
+    ${STARTTLS_DRIVER}.c
     trust.c
     validate.c
     ${COM_ERR_errortable_SRC}
