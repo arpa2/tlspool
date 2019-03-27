@@ -864,20 +864,17 @@ static void  process_command_info (struct command *cmd) {
 	//
 	// Invoke a handler specific to the kind of information
 	switch (kind) {
-	case PIOK_INFO_CERT_SUBJECT:
-		starttls_info_peercert_subject (cmd, node, len, buf);
+	case PIOK_INFO_PEERCERT_SUBJECT:
+	case PIOK_INFO_MYCERT_SUBJECT:
+		starttls_info_cert_subject (cmd, node, len, buf);
 		break;
-	case PIOK_INFO_CERT_ISSUER:
-		starttls_info_peercert_issuer (cmd, node, len, buf);
+	case PIOK_INFO_PEERCERT_ISSUER:
+	case PIOK_INFO_MYCERT_ISSUER:
+		starttls_info_cert_issuer (cmd, node, len, buf);
 		break;
-	case PIOK_INFO_CERT_SUBJECT_UNIQUEID:
-		starttls_info_peercert_subject_uniqueid (cmd, node, len, buf);
-		break;
-	case PIOK_INFO_CERT_ISSUER_UNIQUEID:
-		starttls_info_peercert_issuer_uniqueid (cmd, node, len, buf);
-		break;
-	case PIOK_INFO_CERT_SUBJECTALTNAME:
-		starttls_info_peercert_subjectaltname (cmd, node, len, buf);
+	case PIOK_INFO_PEERCERT_SUBJECTALTNAME:
+	case PIOK_INFO_MYCERT_SUBJECTALTNAME:
+		starttls_info_cert_subjectaltname (cmd, node, len, buf);
 		break;
 	case PIOK_INFO_CHANBIND_TLS_UNIQUE:
 		starttls_info_chanbind_tls_unique (cmd, node, len, buf);

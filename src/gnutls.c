@@ -5584,9 +5584,10 @@ void starttls_prng (struct command *cmd) {
  * a time, it may be useful to loop around this function, until a positive result.
  * Such a loop would be an OR compisition of the various options.
  *
- * TODO: Should we overwrite the query with the result if it is okay, and return that?
+ * We will not only accept a value, but in case of a query, we will copy it.  This
+ * is why buf and len are both pointers.
  */
-static bool starttls_info_query (uint16_t len, uint8_t *buf, size_t findlen, uint8_t *findbuf) {
+static bool starttls_info_query (uint16_t *len, uint8_t *buf, size_t findlen, uint8_t *findbuf) {
 	if (findlen > TLSPOOL_INFOBUFLEN) {
 		/* Even if this is 0xffff or ~(size_t)0 then
 		 * it is still not going to be an information
@@ -5595,78 +5596,228 @@ static bool starttls_info_query (uint16_t len, uint8_t *buf, size_t findlen, uin
 		 */
 		return false;
 	}
-	if (len == 0xffff) {
+	if (*len == 0xffff) {
 		/* Any information is accceptable.  So this is, too.
 		 * Requirements could be imposed to avoid queries,
-		 * but not here.
+		 * but not here.  We will in fact complete the
+		 * query with the information found.
 		 */
+		memcpy (buf, findbuf, findlen);
+		*len = findlen;
 		return true;
 	}
-	return (len == findlen) && (0 == memcmp (buf, findbuf, len));
-	// if returning true { fill buf with those len bytes }
+	/* This is a match, so return the desired value */
+	return (*len == findlen) && (0 == memcmp (buf, findbuf, findlen));
 }
 
 
-/* Info query for the subject in the peer certificate */
-void starttls_info_peercert_subject (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
-	bool ok = (len == 0xffff);	/* Only query */
-	/* Not sure how to get this information out of GnuTLS...
-	 * Though we could use Quick DER to parse it, of course */
-	// int gnutls_x509_crt_get_dn (gnutls_x509_crt_t cert, char * buf, size_t * buf_size)
-	// int gnutls_x509_crt_get_issuer_dn (gnutls_x509_crt_t cert, char * buf, size_t * buf_size)
-	send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
-			"TLS Pool cannot answer the info query");
+/* An iterative form of the generic info query handler.  This iterates through
+ * a SEQUENCE OF or SET OF structure in DER, and treats every value found
+ * individually.  As soon as a match is found, it returns success.  It is
+ * semantically wrong to send a query through an iterator, as there are not
+ * grounds for selecting an instance.
+ */
+static bool starttls_info_iteration (uint16_t len, uint8_t *buf, struct dercursor findings) {
+	struct dercursor finding;
+	if (len > TLSPOOL_INFOBUFLEN) {
+		return false;
+	}
+	if (der_iterate_first (&findings, &finding)) do {
+		if (starttls_info_query (&len, buf, finding.derlen, finding.derptr)) {
+			return true;
+		}
+	} while (der_iterate_next (&finding));
+	return false;
 }
 
 
-/* Info query for the issuer in the peer certificate */
-void starttls_info_peercert_issuer (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
-	bool ok = (len == 0xffff);	/* Only query */
+/* Make a DER walk into one of the certificates and consider the
+ * element found in its entirety.  This may still require iteration
+ * within the field, so actual info processing is not yet done here.
+ */
+static bool starttls_info_walk (struct command *cmd, struct ctlkeynode *node,
+					const derwalk *walkpath, struct dercursor *out_data) {
+	bool ok = true;
 	struct ctlkeynode_tls *ckn = (struct ctlkeynode_tls *) node;
-	const gnutls_datum_t *peercert = NULL;
+	//
+	// Fetch the appropriate certificate
+	const gnutls_datum_t *cert_datum = NULL;
+	if (!ok) {
+		/* Already failed */
+		;
+	} else if ((cmd->cmd.pio_data.pioc_info.info_kind & 0x00000100) == 0x00000000) {
+		/* Peer certificate */
+		cert_datum = gnutls_certificate_get_peers (ckn->session, NULL);
+	} else {
+		/* My certificate */
+		cert_datum = gnutls_certificate_get_ours  (ckn->session);
+	}
+	ok = ok && (cert_datum != NULL);
+tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
+	//
+	// Walk into the certificate
+	struct dercursor crs = { .derptr =  NULL, .derlen = 0 };
 	if (ok) {
-		unsigned int listsz;
-		peercert = gnutls_certificate_get_peers (ckn->session, &listsz);
-		ok = (peercert != NULL);
+		crs.derptr = cert_datum->data;
+		crs.derlen = cert_datum->size;
+		ok = ok && (der_walk (&crs, walkpath) == 0);
+tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
+if (ok) tlog (TLOG_CERT, LOG_DEBUG, "Ran     into %d bytes of data", crs.derlen);
+		// ok = ok && (der_focus (&crs) == 0);
+		uint8_t tag;
+		uint8_t hlen;
+		size_t len;
+		ok = ok && (der_header (&crs, &tag, &len, &hlen) == 0);
+		crs.derptr -= hlen;
+		crs.derlen  = hlen + len;
+tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
+if (ok) tlog (TLOG_CERT, LOG_DEBUG, "Walked up to %d bytes of data", crs.derlen);
 	}
 	if (ok) {
-		/*** NOTES ***  (this returns the issuer's cert, but we want its name...)
-		int
-		gnutls_certificate_get_issuer (gnutls_certificate_credentials_t sc,
-					       gnutls_x509_crt_t cert,
-					       gnutls_x509_crt_t *issuer,
-					       unsigned int flags);
-		**/
+		*out_data = crs;
 	}
-	/* Not sure how to get this information out of GnuTLS...
-	 * Though we could use Quick DER to parse it, of course */
-	send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
-			"TLS Pool cannot answer the info query");
+	return ok;
 }
 
 
-/* Info query for the unique identity of the subject of the peer certificate */
-void starttls_info_peercert_subject_uniqueid (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+/* Info query for the subject in one of the certificates */
+void starttls_info_cert_subject (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = (len == 0xffff);	/* Only query */
+	static const derwalk cert2subject [] = {
+		DER_WALK_ENTER | DER_TAG_SEQUENCE,
+		DER_WALK_ENTER | DER_TAG_SEQUENCE,
+		DER_WALK_OPTIONAL,
+		DER_WALK_SKIP  | DER_TAG_CONTEXT(0),	// Version DEFAULT v1
+		DER_WALK_SKIP  | DER_TAG_INTEGER,	// CertificateSerialNumber
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// AlgorithmIdentifier
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// Name (a CHOICE with one option, grinn)
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// Validity
+		DER_WALK_END				// Arrived at the Name of the Subject
+	};
+	struct dercursor crs;
+	ok = ok && starttls_info_walk (cmd, node, cert2subject, &crs);
+	//
+	// Compare the finding with the request
+	ok = ok && starttls_info_query (&cmd->cmd.pio_data.pioc_info.len,
+				cmd->cmd.pio_data.pioc_info.buffer,
+				crs.derlen, crs.derptr);
+tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
+	//
+	// Report the requested information, or failure to find it
+	if (ok) {
+		send_command (cmd, -1);
+	} else {
+		send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
+				"TLS Pool cannot answer the info query");
+	}
+}
+
+
+/* Info query for the issuer in one of the certificates */
+void starttls_info_cert_issuer (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = (len == 0xffff);	/* Only query */
+	static const derwalk cert2subject [] = {
+		DER_WALK_ENTER | DER_TAG_SEQUENCE,
+		DER_WALK_ENTER | DER_TAG_SEQUENCE,
+		DER_WALK_OPTIONAL,
+		DER_WALK_SKIP  | DER_TAG_CONTEXT(0),	// Version DEFAULT v1
+		DER_WALK_SKIP  | DER_TAG_INTEGER,	// CertificateSerialNumber
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// AlgorithmIdentifier
+		DER_WALK_END				// Arrived at the Name of the Issuer
+	};
+	struct dercursor crs;
+	ok = ok && starttls_info_walk (cmd, node, cert2subject, &crs);
+	//
+	// Compare the finding with the request
+	ok = ok && starttls_info_query (&cmd->cmd.pio_data.pioc_info.len,
+				cmd->cmd.pio_data.pioc_info.buffer,
+				crs.derlen, crs.derptr);
+tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
+	//
+	// Report the requested information, or failure to find it
+	if (ok) {
+		send_command (cmd, -1);
+	} else {
+		send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
+				"TLS Pool cannot answer the info query");
+	}
+}
+
+
+/* Info query for the unique identity of the issuer of one of the certificates */
+void starttls_info_cert_issuer_uniqueid (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
 	bool ok = true;
-	/* Not sure how to get this information out of GnuTLS...
-	 * Though we could use Quick DER to parse it, of course */
-	send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
-			"TLS Pool cannot answer the info query");
+	struct ctlkeynode_tls *ckn = (struct ctlkeynode_tls *) node;
+	static const derwalk cert2issueruqid [] = {
+		DER_WALK_ENTER | DER_TAG_SEQUENCE,
+		DER_WALK_ENTER | DER_TAG_SEQUENCE,
+		DER_WALK_OPTIONAL,
+		DER_WALK_SKIP  | DER_TAG_CONTEXT(0),	// Version DEFAULT v1
+		DER_WALK_SKIP  | DER_TAG_INTEGER,	// CertificateSerialNumber
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// AlgorithmIdentifier
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// Name (a CHOICE with one option, grinn)
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// Validity
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// Name (a CHOICE with one option, grinn)
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// SubjectPublicKeyInfo
+		DER_WALK_ENTER | DER_TAG_CONTEXT(1),	// UniqueIdentifier, the issuerUniqueId
+							// Optional, so it may fail with a nice error
+		DER_WALK_END
+	};
+//TODO// This is generic code:
+	//
+	// Fetch the appropriate certificate
+	const gnutls_datum_t *cert_datum = NULL;
+	if (!ok) {
+		/* Already failed */
+		;
+	} else if (cmd->cmd.pio_data.pioc_info.info_kind & 0x00000100 == 0x00000000) {
+		/* Peer certificate */
+		cert_datum = gnutls_certificate_get_peers (ckn->session, NULL);
+	} else {
+		/* My certificate */
+		cert_datum = gnutls_certificate_get_ours  (ckn->session);
+	}
+	ok = ok && (cert_datum != NULL);
+tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
+	//
+	// Walk into the certificate
+	struct dercursor crs = { .derptr =  NULL, .derlen = 0 };
+	if (ok) {
+		crs.derptr = cert_datum->data;
+		crs.derlen = cert_datum->size;
+		ok = ok && (der_walk (&crs, cert2issueruqid) == 0);
+tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
+if (ok) tlog (TLOG_CERT, LOG_DEBUG, "Walked up to %d bytes of data", crs.derlen);
+	}
+//TODO// :generic interruption:maybe iterate:maybe search for extoid:
+	//
+	// Compare the finding with the request
+	ok = ok && starttls_info_query (&cmd->cmd.pio_data.pioc_info.len,
+				cmd->cmd.pio_data.pioc_info.buffer,
+				crs.derlen, crs.derptr);
+tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
+	//
+	// Report the requested information, or failure to find it
+	if (ok) {
+		send_command (cmd, -1);
+	} else {
+		send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
+				"TLS Pool cannot answer the info query");
+	}
+//TODO// :end of generic code
 }
 
 
-/* Info query for the unique identity of the issuer of the peer certificate */
-void starttls_info_peercert_issuer_uniqueid (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
-	bool ok = true;
-	/* Not sure how to get this information out of GnuTLS...
-	 * Though we could use Quick DER to parse it, of course */
-	send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
-			"TLS Pool cannot answer the info query");
-}
-
-
-/* Info query for a subjectAltName in the peer certificate */
-void starttls_info_peercert_subjectaltname (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+/* Info query for a subjectAltName in one of the certificates */
+void starttls_info_cert_subjectaltname (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	//NOTE// pool_datum_t lids [EXPECTED_LID_TYPE_COUNT];
+	//NOTE// void *remote_cert [CERTS_MAX_DEPTH];
+	//NOTE// int remote_cert_type;
+	//NOTE// void *remote_cert_raw;
+	//NOTE// raw = (gnutls_datum_t *) cmd->remote_cert_raw;
+	//NOTE// } else if (cmd->remote_cert_type == GNUTLS_CRT_X509) {
+	//NOTE// cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].data = NULL;
+	//NOTE// cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].size = 0;
 	bool ok = (len < sizeof (cmd->cmd.pio_data.pioc_info.buffer));	/* Only compare */
 }
 
@@ -5680,7 +5831,7 @@ void starttls_info_chanbind_tls_unique (struct command *cmd, struct ctlkeynode *
 	ok = ok && (GNUTLS_E_SUCCESS == gnutls_session_channel_binding (
 			ckn->session, GNUTLS_CB_TLS_UNIQUE, &cbbuf));
 	tlog (TLOG_TLS, LOG_INFO, "After channel binding (tls-unique) retrieval, ok=%d", ok);
-	ok = ok && starttls_info_query (len, buf, cbbuf.size, cbbuf.data);
+	ok = ok && starttls_info_query (&len, buf, cbbuf.size, cbbuf.data);
 	if (ok) {
 		memcpy (cmd->cmd.pio_data.pioc_info.buffer, cbbuf.data, cbbuf.size);
 		cmd->cmd.pio_data.pioc_info.len = cbbuf.size;

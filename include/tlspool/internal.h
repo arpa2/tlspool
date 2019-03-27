@@ -139,11 +139,9 @@ void cleanup_starttls (void);
 void starttls_pkcs11_provider (char *p11path);
 void starttls (struct command *cmd);
 void starttls_prng (struct command *cmd);
-void starttls_info_peercert_subject (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf);
-void starttls_info_peercert_issuer (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf);
-void starttls_info_peercert_subject_uniqueid (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf);
-void starttls_info_peercert_issuer_uniqueid (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf);
-void starttls_info_peercert_subjectaltname (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf);
+void starttls_info_cert_subject (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf);
+void starttls_info_cert_issuer (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf);
+void starttls_info_cert_subjectaltname (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf);
 void starttls_info_chanbind_tls_unique (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf);
 void starttls_info_chanbind_tls_server_end_point (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf);
 

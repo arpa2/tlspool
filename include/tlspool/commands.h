@@ -861,17 +861,15 @@ typedef struct pioc_lidentry lidentry_t;
  * more loosely structured and certainly not canonical.  But,
  * since it is often generated together and because all DER is
  * valid BER, it is usually DER.  Just thought you might care.
+ *
+ * The difference between _PEERCERT_ and _MYCERT_ is that
+ * the former looks at the remote certificate and the latter
+ * at the local certificate.
  */
-#define PIOK_INFO_CERT_SUBJECT			0x52800000
-#define PIOK_INFO_CERT_ISSUER			0x52800001
-
-
-/* PIOK_INFO_CERT_ISSUER_UNIQUEID and PIOK_INFO_CERT_ISSUER_UNIQUID
- * reference the fields issuerUniqueID and subjectUniqueID in the
- * TBSCertificate structure of RFC 5280.
- */
-#define PIOK_INFO_CERT_SUBJECT_UNIQUEID		0x52800002
-#define PIOK_INFO_CERT_ISSUER_UNIQUEID		0x52800003
+#define PIOK_INFO_PEERCERT_SUBJECT		0x52800000
+#define PIOK_INFO_PEERCERT_ISSUER		0x52800001
+#define PIOK_INFO_MYCERT_SUBJECT		0x52800100
+#define PIOK_INFO_MYCERT_ISSUER			0x52800101
 
 
 /* PIOK_INFO_CERT_SUBJECTALTNAME references the subjectAltName field
@@ -882,8 +880,13 @@ typedef struct pioc_lidentry lidentry_t;
  * certificates, and the KRB5PrincipalName from RFC 4556 that uses the
  * OtherName form to introduce an object identifier followed by the
  * realm and principal name of a Kerberos identity.
+ *
+ * The difference between _PEERCERT_ and _MYCERT_ is that
+ * the former looks at the remote certificate and the latter
+ * at the local certificate.
  */
-#define PIOK_INFO_CERT_SUBJECTALTNAME		0x52800004
+#define PIOK_INFO_PEERCERT_SUBJECTALTNAME	0x52800002
+#define PIOK_INFO_MYCERT_SUBJECTALTNAME		0x52800102
 
 
 /* PIOK_INFO_CHANBIND_TLS_UNIQUE returns the information for
