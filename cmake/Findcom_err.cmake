@@ -88,7 +88,7 @@ endmacro()
 macro(add_com_err_table _tablename)
 	add_custom_command (OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${_tablename}.h ${CMAKE_CURRENT_BINARY_DIR}/${_tablename}.c
 		COMMAND ${com_err_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR}/${_tablename}.et
-		# DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${_tablename}.et
+		DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${_tablename}.et
 		WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 	add_custom_target (error_table_${_tablename} ALL
 		DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${_tablename}.h ${CMAKE_CURRENT_BINARY_DIR}/${_tablename}.c)

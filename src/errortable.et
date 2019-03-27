@@ -118,4 +118,10 @@ error_code E_TLSPOOL_LIDENTRY_NOT_VACANT,
 error_code E_TLSPOOL_PINENTRY_NOT_VACANT,
 	"TLS Pool has no vacancy for PIN entry"
 
+error_code E_TLSPOOL_INFOKIND_UNKNOWN,
+	"TLS Pool does not support that kind of info"
+
+error_code E_TLSPOOL_INFO_NOT_FOUND,
+	"TLS Pool cannot answer the info query"
+
 end

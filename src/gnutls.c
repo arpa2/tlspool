@@ -5577,6 +5577,134 @@ void starttls_prng (struct command *cmd) {
 }
 
 
+/* General handling of info queries.  Though they all are different, they invariably
+ * come down to byte ranges; to comparing them and/or extracting them.  This generic
+ * part is covered in the starttls_info_query() function, returning true when the info
+ * is a good response, or false otherwise.  Since it handles a single piece of data at
+ * a time, it may be useful to loop around this function, until a positive result.
+ * Such a loop would be an OR compisition of the various options.
+ *
+ * TODO: Should we overwrite the query with the result if it is okay, and return that?
+ */
+static bool starttls_info_query (uint16_t len, uint8_t *buf, size_t findlen, uint8_t *findbuf) {
+	if (findlen > TLSPOOL_INFOBUFLEN) {
+		/* Even if this is 0xffff or ~(size_t)0 then
+		 * it is still not going to be an information
+		 * source.  At best could we say that in what
+		 * we return.
+		 */
+		return false;
+	}
+	if (len == 0xffff) {
+		/* Any information is accceptable.  So this is, too.
+		 * Requirements could be imposed to avoid queries,
+		 * but not here.
+		 */
+		return true;
+	}
+	return (len == findlen) && (0 == memcmp (buf, findbuf, len));
+	// if returning true { fill buf with those len bytes }
+}
+
+
+/* Info query for the subject in the peer certificate */
+void starttls_info_peercert_subject (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = (len == 0xffff);	/* Only query */
+	/* Not sure how to get this information out of GnuTLS...
+	 * Though we could use Quick DER to parse it, of course */
+	// int gnutls_x509_crt_get_dn (gnutls_x509_crt_t cert, char * buf, size_t * buf_size)
+	// int gnutls_x509_crt_get_issuer_dn (gnutls_x509_crt_t cert, char * buf, size_t * buf_size)
+	send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
+			"TLS Pool cannot answer the info query");
+}
+
+
+/* Info query for the issuer in the peer certificate */
+void starttls_info_peercert_issuer (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = (len == 0xffff);	/* Only query */
+	struct ctlkeynode_tls *ckn = (struct ctlkeynode_tls *) node;
+	const gnutls_datum_t *peercert = NULL;
+	if (ok) {
+		unsigned int listsz;
+		peercert = gnutls_certificate_get_peers (ckn->session, &listsz);
+		ok = (peercert != NULL);
+	}
+	if (ok) {
+		/*** NOTES ***  (this returns the issuer's cert, but we want its name...)
+		int
+		gnutls_certificate_get_issuer (gnutls_certificate_credentials_t sc,
+					       gnutls_x509_crt_t cert,
+					       gnutls_x509_crt_t *issuer,
+					       unsigned int flags);
+		**/
+	}
+	/* Not sure how to get this information out of GnuTLS...
+	 * Though we could use Quick DER to parse it, of course */
+	send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
+			"TLS Pool cannot answer the info query");
+}
+
+
+/* Info query for the unique identity of the subject of the peer certificate */
+void starttls_info_peercert_subject_uniqueid (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = true;
+	/* Not sure how to get this information out of GnuTLS...
+	 * Though we could use Quick DER to parse it, of course */
+	send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
+			"TLS Pool cannot answer the info query");
+}
+
+
+/* Info query for the unique identity of the issuer of the peer certificate */
+void starttls_info_peercert_issuer_uniqueid (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = true;
+	/* Not sure how to get this information out of GnuTLS...
+	 * Though we could use Quick DER to parse it, of course */
+	send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
+			"TLS Pool cannot answer the info query");
+}
+
+
+/* Info query for a subjectAltName in the peer certificate */
+void starttls_info_peercert_subjectaltname (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = (len < sizeof (cmd->cmd.pio_data.pioc_info.buffer));	/* Only compare */
+}
+
+
+/* Info query to retrieve a "tls-unique" channel binding */
+void starttls_info_chanbind_tls_unique (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = (len == 0xffff);	/* Only query */
+	struct ctlkeynode_tls *ckn = (struct ctlkeynode_tls *) node;
+	gnutls_datum_t cbbuf;	/* Who cleans up its contents? */
+	memset (&cbbuf, 0, sizeof (cbbuf));
+	ok = ok && (GNUTLS_E_SUCCESS == gnutls_session_channel_binding (
+			ckn->session, GNUTLS_CB_TLS_UNIQUE, &cbbuf));
+	tlog (TLOG_TLS, LOG_INFO, "After channel binding (tls-unique) retrieval, ok=%d", ok);
+	ok = ok && starttls_info_query (len, buf, cbbuf.size, cbbuf.data);
+	if (ok) {
+		memcpy (cmd->cmd.pio_data.pioc_info.buffer, cbbuf.data, cbbuf.size);
+		cmd->cmd.pio_data.pioc_info.len = cbbuf.size;
+		send_command (cmd, -1);
+	} else {
+		send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
+				"TLS Pool cannot answer the info query");
+	}
+	if (cbbuf.data != NULL) {
+		free (cbbuf.data);
+	}
+}
+
+
+/* Info query to retrieve a "tls-server-end-point" channel binding */
+void starttls_info_chanbind_tls_server_end_point (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = (len == 0xffff);	/* Only query */
+	/* This form of channel binding is not supported in GnuTLS.
+	 * We could use Quick DER to parse it, of course */
+	send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
+			"TLS Pool cannot answer the info query");
+}
+
+
 /* Flying signer functionality.  Create an on-the-fly certificate because
  * the lidentry daemon and/or application asks for this to represent the
  * local identity.  Note that this will only work if the remote party

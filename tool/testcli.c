@@ -65,6 +65,8 @@ int main (int argc, char **argv) {
 	int    chat_argc = 0;
 	char **chat_argv = NULL;
 	char *progname = NULL;
+	uint16_t chanbndlen = ~0;
+	uint8_t chanbnd [TLSPOOL_INFOBUFLEN];
 
 	// argv[1] is SNI or . for none;
 	// argv[2] is address and requires argv[3] for port
@@ -196,6 +198,17 @@ reconnect:
 			rndbuf [ 4], rndbuf [ 5], rndbuf [ 6], rndbuf [ 7],
 			rndbuf [ 8], rndbuf [ 9], rndbuf [10], rndbuf [11],
 			rndbuf [12], rndbuf [13], rndbuf [14], rndbuf [15]);
+	}
+	chanbndlen = ~0;
+	if (tlspool_info (PIOK_INFO_CHANBIND_TLS_UNIQUE, chanbnd, &chanbndlen, tlsdata_cli.ctlkey) == -1) {
+		printf ("ERROR %d: Could not retrieve tls-unique channel binding info\n", errno);
+	} else {
+		printf ("Channel binding info, tls-unique, 12 bytes of %d: "
+			"%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+			chanbndlen,
+			chanbnd [ 0], chanbnd [ 1], chanbnd [ 2], chanbnd [ 3],
+			chanbnd [ 4], chanbnd [ 5], chanbnd [ 6], chanbnd [ 7],
+			chanbnd [ 8], chanbnd [ 9], chanbnd [10], chanbnd [11]);
 	}
 	printf ("DEBUG: STARTTLS succeeded on testcli\n");
 	if (-1 == sigaction (SIGCONT, &sigcont_action, NULL)) {

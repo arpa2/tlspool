@@ -29,7 +29,7 @@ extern "C"
 #define TLSPOOL_CTLKEYLEN 16
 #define TLSPOOL_SERVICELEN 16
 #define TLSPOOL_PRNGBUFLEN 350
-#define TLSPOOL_INFOBUFLEN 350
+#define TLSPOOL_INFOBUFLEN (350-TLSPOOL_CTLKEYLEN)
 #define TLSPOOL_TIMEOUT_DEFAULT 0
 #define TLSPOOL_TIMEOUT_INFINITE (~(uint32_t)0)
 
@@ -161,9 +161,10 @@ struct pioc_prng {
 };
 
 struct pioc_info {
+	uint8_t ctlkey [TLSPOOL_CTLKEYLEN]; // Control key
 	uint32_t info_kind;
-	uint16_t info_len;
-	uint8_t info_buf [TLSPOOL_INFOBUFLEN];
+	uint16_t len;		// ~0 for "no value provided"
+	uint8_t buffer [TLSPOOL_INFOBUFLEN];
 };
 
 struct tlspool_command {
