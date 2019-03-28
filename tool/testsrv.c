@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
-
+#include <ctype.h>
 
 #include <unistd.h>
 #include <poll.h>
@@ -98,6 +98,15 @@ void graceful_exit (int signum) {
 }
 	
 
+void dump_printable (char *descr, char *info, int infolen) {
+	printf ("%s, #%d: ", descr);
+	while (infolen-- > 0) {
+		putchar (isalnum (*info) ? *info : '.');
+		info++;
+	}
+	putchar ('\n');
+}
+
 int main (int argc, char **argv) {
 	int sox, cnx, rc;
 	int plainfd;
@@ -113,6 +122,8 @@ int main (int argc, char **argv) {
 	bool do_chat = false;
 	int    chat_argc = 0;
 	char **chat_argv = NULL;
+	uint16_t infolen = 0;
+	uint8_t info [TLSPOOL_INFOBUFLEN];
 
 	// argv[1] is SNI or . as a wildcard;
 	// argv[2] is address and requires argv[3] for port
@@ -231,7 +242,7 @@ reconnect:
 		}
 		printf ("DEBUG: STARTTLS succeeded on testsrv\n");
 		if (tlspool_prng ("EXPERIMENTAL-tlspool-test", 0, NULL, 16, rndbuf, tlsdata_now.ctlkey) == -1) {
-			printf ("ERROR: Could not extract data with PRNG function\n");
+			printf ("ERROR %d: Could not extract data with PRNG function\n", errno);
 		} else {
 			printf ("PRNG bytes: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
 				rndbuf [ 0], rndbuf [ 1], rndbuf [ 2], rndbuf [ 3],
@@ -248,9 +259,62 @@ reconnect:
 				rndbuf [ 8], rndbuf [ 9], rndbuf [10], rndbuf [11],
 				rndbuf [12], rndbuf [13], rndbuf [14], rndbuf [15]);
 		}
+		infolen = 0xffff;
+		if (tlspool_info (PIOK_INFO_CHANBIND_TLS_UNIQUE, info, &infolen, tlsdata_now.ctlkey) == -1) {
+			printf ("ERROR %d: Could not retrieve tls-unique channel binding info\n", errno);
+		} else {
+			printf ("Channel binding info, tls-unique, 12 bytes of %d: "
+				"%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+				infolen,
+				info [ 0], info [ 1], info [ 2], info [ 3],
+				info [ 4], info [ 5], info [ 6], info [ 7],
+				info [ 8], info [ 9], info [10], info [11]);
+		}
+		infolen = 0xffff;
+		if (tlspool_info (PIOK_INFO_PEERCERT_SUBJECT, info, &infolen, tlsdata_now.ctlkey) == -1) {
+			printf ("ERROR %d: Could not retrieve Subject (peer)\n", errno);
+		} else {
+			dump_printable ("Subject, peer", info, infolen);
+		}
+		infolen = 0xffff;
+		if (tlspool_info (PIOK_INFO_PEERCERT_ISSUER, info, &infolen, tlsdata_now.ctlkey) == -1) {
+			printf ("ERROR %d: Could not retrieve Issuer (peer)\n", errno);
+		} else {
+			dump_printable ("Issuer,  peer", info, infolen);
+		}
+		strcpy ((char *) info + 2, "testcli@tlspool.arpa2.lab");
+		info [1] = strlen (info + 2);
+		info [0] = 0x81;  // DER_TAG_CONTEXT(1);
+		infolen = 2 + strlen ((char *) (info + 2));
+		if (tlspool_info (PIOK_INFO_PEERCERT_SUBJECTALTNAME, info, &infolen, tlsdata_now.ctlkey) == -1) {
+			printf ("ERROR %d: Could not retrieve SubjectAltName (peer)\n", errno);
+		} else {
+			dump_printable ("SubjectAltName, peer", info, infolen);
+		}
+		infolen = 0xffff;
+		if (tlspool_info (PIOK_INFO_MYCERT_SUBJECT, info, &infolen, tlsdata_now.ctlkey) == -1) {
+			printf ("ERROR %d: Could not retrieve Subject (mine)\n", errno);
+		} else {
+			dump_printable ("Subject, mine", info, infolen);
+		}
+		infolen = 0xffff;
+		if (tlspool_info (PIOK_INFO_MYCERT_ISSUER, info, &infolen, tlsdata_now.ctlkey) == -1) {
+			printf ("ERROR %d: Could not retrieve Issuer (mine)\n", errno);
+		} else {
+			dump_printable ("Issuer,  mine", info, infolen);
+		}
 		if (sigcont) {
 			printf ("Ignoring SIGCONT received prior to the new connection\n");
 			sigcont = 0;
+		}
+		strcpy ((char *) info + 2, "testsrv@tlspool.arpa2.lab");
+		info [1] = strlen (info + 2);
+		info [0] = 0x81;  // DER_TAG_CONTEXT(1);
+		infolen = 2 + strlen ((char *) (info + 2));
+		if (tlspool_info (PIOK_INFO_MYCERT_SUBJECTALTNAME, info, &infolen, tlsdata_now.ctlkey) == -1) {
+			printf ("ERROR %d: Could not retrieve SubjectAltName (mine)\n", errno);
+		} else {
+			dump_printable ("SubjectAltName, mine", info, infolen);
 		}
 		if (-1 == sigaction (SIGCONT, &sigcont_action, NULL)) {
 			perror ("Failed to install signal handler for SIGCONT");

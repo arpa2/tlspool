@@ -1218,8 +1218,6 @@ int tlspool_prng (char *label,
 		errno = EINVAL;
 		return -1;
 	}
-
-
 	/* Prepare command structure */
 	poolfd = tlspool_open_poolhandle (NULL);
 	if (poolfd == INVALID_POOL_HANDLE) {
@@ -1248,7 +1246,6 @@ int tlspool_prng (char *label,
 	} else {
 		cmd.pio_data.pioc_prng.in2_len = -1;
 	}
-
 #ifdef WINDOWS_PORT
 if (np_send_command (&cmd) == -1) {
 	// errno inherited from np_send_command ()
@@ -1270,12 +1267,113 @@ if (np_send_command (&cmd) == -1) {
 	switch (cmd.pio_cmd) {
 	case PIOC_ERROR_V2:
 		/* Bad luck, we failed */
-		syslog (LOG_INFO, "TLS Pool error to tlspool_ping(): %s", cmd.pio_data.pioc_error.message);
+		syslog (LOG_INFO, "TLS Pool error to tlspool_prng(): %s", cmd.pio_data.pioc_error.message);
 		errno = cmd.pio_data.pioc_error.tlserrno;
 		return -1;
 	case PIOC_PRNG_V2:
 		/* Wheee!!! we're done */
 		memcpy (prng_buf, cmd.pio_data.pioc_prng.buffer, prng_len);
+		return 0;
+	default:
+		/* V2 protocol error */
+		errno = EPROTO;
+		return -1;
+	}
+}
+
+
+/* Check or retrieve information from the TLS Pool.  Use kind_info to select
+ * the kind of information, with a PIOK_INFO_xxx tag from <tlspool/commands.h>.
+ *
+ * The amount of data will not exceed TLSPOOL_INFOBUFLEN, and you should
+ * provide a buffer that can hold at least that number of bytes.  In addition,
+ * you should provide a pointer to a length.  Initialise this length to ~0
+ * to perform a query.  Any other length indicates a match, including the
+ * value 0 for a match with an empty string.
+ *
+ * You should provide the ctlkey from the tlspool_starttls() exchange to
+ * be able to reference the connection that you intend to query.
+ *
+ * This function returns zero on success, and -1 on failure.  In case of
+ * failure, errno will be set.  Specifically useful to know is that errno
+ * is set to E_TLSPOOL_INFOKIND_UNKNOWN when the TLS Pool has no code to
+ * provide the requested information (and so its current version will not
+ * provide it to any query) and to E_TLSPOOL_INFO_NOT_FOUND when the
+ * TLS Pool cannot answer the info query for other reasons, such as not
+ * having the information available in the current connection.
+ * 
+ * The error ENOSYS is returned when the TLS Pool has no implementation
+ * for the query you made.
+ */
+int tlspool_info (uint32_t info_kind,
+			uint8_t infobuf [TLSPOOL_INFOBUFLEN], uint16_t *infolenptr,
+			uint8_t *ctlkey) {
+	struct tlspool_command cmd;
+	pthread_mutex_t recvwait = PTHREAD_MUTEX_INITIALIZER;
+	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
+	int entry_reqid = -1;
+	pool_handle_t poolfd = INVALID_POOL_HANDLE;
+	/* Sanity check */
+	if ((*infolenptr > TLSPOOL_INFOBUFLEN) && (*infolenptr != 0xffff)) {
+		errno = EINVAL;
+		return -1;
+	}
+	/* Prepare command structure */
+	poolfd = tlspool_open_poolhandle (NULL);
+	if (poolfd == INVALID_POOL_HANDLE) {
+		errno = ENODEV;
+		return -1;
+	}
+	/* Finish setting up the registry entry */
+	regent.pfd = poolfd;
+	pthread_mutex_lock (&recvwait);		// Will await unlock by master
+	/* Determine the request ID */
+	if (registry_update (&entry_reqid, &regent) != 0) {
+		errno = EBUSY;
+		return -1;
+	}
+	/* Construct the command message */
+	memset (&cmd, 0, sizeof (cmd));	/* Do not leak old stack info */
+	cmd.pio_reqid = entry_reqid;
+	cmd.pio_cbid = 0;
+	cmd.pio_cmd = PIOC_INFO_V2;
+	cmd.pio_data.pioc_info.info_kind = info_kind;
+	cmd.pio_data.pioc_info.len = *infolenptr;
+	memcpy (cmd.pio_data.pioc_info.ctlkey, ctlkey, TLSPOOL_CTLKEYLEN);
+	if ((*infolenptr > 0) && (*infolenptr < TLSPOOL_INFOBUFLEN)) {
+		memcpy (cmd.pio_data.pioc_info.buffer, infobuf, *infolenptr);
+	}
+	/* Send the command message */
+#ifdef WINDOWS_PORT
+if (np_send_command (&cmd) == -1) {
+	// errno inherited from np_send_command ()
+	registry_update (&entry_reqid, NULL);
+	return -1;
+}
+#else
+	/* Send the request */
+	if (send (poolfd, &cmd, sizeof (cmd), MSG_NOSIGNAL) == -1) {
+		// Let SIGPIPE be reported as EPIPE
+		registry_update (&entry_reqid, NULL);
+		// errno inherited from sendmsg()
+		return -1;
+	}
+#endif
+	/* Await response and process it */
+	registry_recvmsg (&regent);
+	registry_update (&entry_reqid, NULL);
+	switch (cmd.pio_cmd) {
+	case PIOC_ERROR_V2:
+		/* Bad luck, we failed */
+		syslog (LOG_INFO, "TLS Pool error to tlspool_info(): %s", cmd.pio_data.pioc_error.message);
+		errno = cmd.pio_data.pioc_error.tlserrno;
+		return -1;
+	case PIOC_INFO_V2:
+		/* Wheee!!! we're done */
+		*infolenptr = cmd.pio_data.pioc_info.len;
+		if ((*infolenptr > 0) && (*infolenptr < TLSPOOL_INFOBUFLEN)) {
+			memcpy (infobuf, cmd.pio_data.pioc_info.buffer, *infolenptr);
+		}
 		return 0;
 	default:
 		/* V2 protocol error */

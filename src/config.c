@@ -3,6 +3,7 @@
 #include "whoami.h"
 
 #include <stdlib.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
@@ -91,6 +92,9 @@ enum VARS {
 	CFGVAR_KRB_SERVER_KEYTAB,
 	CFGVAR_KRB_CLIENT_CREDCACHE,
 	CFGVAR_KRB_SERVER_CREDCACHE,
+	CFGVAR_POSTQUANTUM_AUTH,
+	CFGVAR_POSTQUANTUM_ENCRYPT,
+	CFGVAR_POSTQUANTUM_HANDSHAKE,
 	//
 	CFGVAR_LENGTH,
 	CFGVAR_NONE = -1
@@ -145,6 +149,9 @@ struct cfgopt config_options [] = {
 	"kerberos_server_keytab",   cfg_setvar,	CFGVAR_KRB_SERVER_KEYTAB,
 	"kerberos_client_credcache",cfg_setvar,	CFGVAR_KRB_CLIENT_CREDCACHE,
 	"kerberos_server_credcache",cfg_setvar,	CFGVAR_KRB_SERVER_CREDCACHE,
+	"quantum_proof_authentication",cfg_setvar, CFGVAR_POSTQUANTUM_AUTH,
+	"quantum_proof_encryption",cfg_setvar,	CFGVAR_POSTQUANTUM_ENCRYPT,
+	"quantum_proof_handshake",cfg_setvar,	CFGVAR_POSTQUANTUM_HANDSHAKE,
 	//
 	NULL,			NULL,		CFGVAR_NONE
 };
@@ -709,3 +716,53 @@ char *cfg_krb_server_credcache (void) {
 	return configvars [CFGVAR_KRB_SERVER_CREDCACHE];
 }
 
+static char *nope [] = { "NO", "No", "no", "FALSE", "False", "false", "NOPE", "Nope", "nope", "NAY", "Nay", "nay", "0", NULL };
+static char *yep [] = { "YES", "Yes", "yes", "TRUE", "True", "true", "YEP", "Yep", "yep", "AYE", "Aye", "aye", "1", NULL };
+
+/* Tactical phase 1.  Default to no because we lack general algorithms */
+bool cfg_postquantum_auth (void) {
+	// Commemmorable selection:
+	static char **jawohl = yep;
+	if (configvars [CFGVAR_POSTQUANTUM_AUTH] != NULL) {
+		while (*jawohl) {
+			if (strstr (configvars [CFGVAR_POSTQUANTUM_AUTH], *jawohl)) {
+				return true;
+			}
+			jawohl++;
+		}
+	}
+	// No match; err on the forgiving side
+	return false;
+}
+
+/* Tactical phase 1.  Default to no because we lack general algorithms */
+bool cfg_postquantum_encrypt (void) {
+	// Commemmorable selection:
+	static char **jawohl = yep;
+	if (configvars [CFGVAR_POSTQUANTUM_ENCRYPT] != NULL) {
+		while (*jawohl) {
+			if (strstr (configvars [CFGVAR_POSTQUANTUM_ENCRYPT], *jawohl)) {
+				return true;
+			}
+			jawohl++;
+		}
+	}
+	// No match; err on the forgiving side
+	return false;
+}
+
+/* Tactical phase 1.  Default to no because we lack general algorithms */
+bool cfg_postquantum_handshake (void) {
+	// Commemmorable selection:
+	static char **jawohl = yep;
+	if (configvars [CFGVAR_POSTQUANTUM_HANDSHAKE] != NULL) {
+		while (*jawohl) {
+			if (strstr (configvars [CFGVAR_POSTQUANTUM_HANDSHAKE], *jawohl)) {
+				return true;
+			}
+			jawohl++;
+		}
+	}
+	// No match; err on the forgiving side
+	return false;
+}

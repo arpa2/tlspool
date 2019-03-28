@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <ctype.h>
 
 #include <unistd.h>
 #include <poll.h>
@@ -50,6 +51,15 @@ void graceful_exit (int signum) {
 	exit (exit_val);
 }
 
+void dump_printable (char *descr, char *info, int infolen) {
+	printf ("%s, #%d: ", descr);
+	while (infolen-- > 0) {
+		putchar (isalnum (*info) ? *info : '.');
+		info++;
+	}
+	putchar ('\n');
+}
+
 
 int main (int argc, char **argv) {
 	int plainfd;
@@ -65,6 +75,8 @@ int main (int argc, char **argv) {
 	int    chat_argc = 0;
 	char **chat_argv = NULL;
 	char *progname = NULL;
+	uint16_t infolen = 0;
+	uint8_t info [TLSPOOL_INFOBUFLEN];
 
 	// argv[1] is SNI or . for none;
 	// argv[2] is address and requires argv[3] for port
@@ -196,6 +208,59 @@ reconnect:
 			rndbuf [ 4], rndbuf [ 5], rndbuf [ 6], rndbuf [ 7],
 			rndbuf [ 8], rndbuf [ 9], rndbuf [10], rndbuf [11],
 			rndbuf [12], rndbuf [13], rndbuf [14], rndbuf [15]);
+	}
+	infolen = 0xffff;
+	if (tlspool_info (PIOK_INFO_CHANBIND_TLS_UNIQUE, info, &infolen, tlsdata_cli.ctlkey) == -1) {
+		printf ("ERROR %d: Could not retrieve tls-unique channel binding info\n", errno);
+	} else {
+		printf ("Channel binding info, tls-unique, 12 bytes of %d: "
+			"%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
+			infolen,
+			info [ 0], info [ 1], info [ 2], info [ 3],
+			info [ 4], info [ 5], info [ 6], info [ 7],
+			info [ 8], info [ 9], info [10], info [11]);
+	}
+	infolen = 0xffff;
+	if (tlspool_info (PIOK_INFO_PEERCERT_SUBJECT, info, &infolen, tlsdata_cli.ctlkey) == -1) {
+		printf ("ERROR %d: Could not retrieve Subject (peer)\n", errno);
+	} else {
+		dump_printable ("Subject, peer", info, infolen);
+	}
+	infolen = 0xffff;
+	if (tlspool_info (PIOK_INFO_PEERCERT_ISSUER, info, &infolen, tlsdata_cli.ctlkey) == -1) {
+		printf ("ERROR %d: Could not retrieve Issuer (peer)\n", errno);
+	} else {
+		dump_printable ("Issuer,   peer", info, infolen);
+	}
+	strcpy ((char *) info + 2, "testsrv@tlspool.arpa2.lab");
+	info [1] = strlen (info + 2);
+	info [0] = 0x81;  // DER_TAG_CONTEXT(1);
+	infolen = 2 + strlen ((char *) (info + 2));
+	if (tlspool_info (PIOK_INFO_PEERCERT_SUBJECTALTNAME, info, &infolen, tlsdata_cli.ctlkey) == -1) {
+		printf ("ERROR %d: Could not retrieve SubjectAltName (peer)\n", errno);
+	} else {
+		dump_printable ("SubjectAltName, peer", info, infolen);
+	}
+	infolen = 0xffff;
+	if (tlspool_info (PIOK_INFO_MYCERT_SUBJECT, info, &infolen, tlsdata_cli.ctlkey) == -1) {
+		printf ("ERROR %d: Could not retrieve Subject (mine)\n", errno);
+	} else {
+		dump_printable ("Subject, mine", info, infolen);
+	}
+	infolen = 0xffff;
+	if (tlspool_info (PIOK_INFO_MYCERT_ISSUER, info, &infolen, tlsdata_cli.ctlkey) == -1) {
+		printf ("ERROR %d: Could not retrieve Issuer (mine)\n", errno);
+	} else {
+		dump_printable ("Issuer,   mine", info, infolen);
+	}
+	strcpy ((char *) info + 2, "testcli@tlspool.arpa2.lab");
+	info [1] = strlen (info + 2);
+	info [0] = 0x81;  // DER_TAG_CONTEXT(1);
+	infolen = 2 + strlen ((char *) (info + 2));
+	if (tlspool_info (PIOK_INFO_MYCERT_SUBJECTALTNAME, info, &infolen, tlsdata_cli.ctlkey) == -1) {
+		printf ("ERROR %d: Could not retrieve SubjectAltName (mine)\n", errno);
+	} else {
+		dump_printable ("SubjectAltName, mine", info, infolen);
 	}
 	printf ("DEBUG: STARTTLS succeeded on testcli\n");
 	if (-1 == sigaction (SIGCONT, &sigcont_action, NULL)) {

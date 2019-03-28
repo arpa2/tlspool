@@ -839,6 +839,62 @@ printf ("DEBUG: Freed   callback with cbid=%d for clientfd %d\n", i+1, clientfd)
 }
 
 
+/* Process an info query; it depends on what is being asked,
+ * where it should be directed.  Not everything is TLS :-)
+ */
+static void  process_command_info (struct command *cmd) {
+	uint8_t *ctlkey = cmd->cmd.pio_data.pioc_info.ctlkey;
+	uint32_t kind   = cmd->cmd.pio_data.pioc_info.info_kind;
+	uint16_t len    = cmd->cmd.pio_data.pioc_info.len;
+	uint8_t *buf    = cmd->cmd.pio_data.pioc_info.buffer;
+	//
+	// Is the control key valid?
+	struct ctlkeynode *node = ctlkey_find (cmd->cmd.pio_data.pioc_info.ctlkey, security_tls, cmd->clientfd);
+	if (node == NULL) {
+		send_error (cmd, E_TLSPOOL_CTLKEY_NOT_FOUND,
+					"TLS Pool cannot find the control key");
+		goto done;
+	}
+	//
+	// Ensure proper sizing of the request
+	if ((len > sizeof (cmd->cmd.pio_data.pioc_info.buffer)) && (len != 0xffff)) {
+		send_error (cmd, E_TLSPOOL_COMMAND_NOTIMPL, "TLS Pool command or variety not implemented");
+		goto done_unfind;
+	}
+	//
+	// Invoke a handler specific to the kind of information
+	switch (kind) {
+	case PIOK_INFO_PEERCERT_SUBJECT:
+	case PIOK_INFO_MYCERT_SUBJECT:
+		starttls_info_cert_subject (cmd, node, len, buf);
+		break;
+	case PIOK_INFO_PEERCERT_ISSUER:
+	case PIOK_INFO_MYCERT_ISSUER:
+		starttls_info_cert_issuer (cmd, node, len, buf);
+		break;
+	case PIOK_INFO_PEERCERT_SUBJECTALTNAME:
+	case PIOK_INFO_MYCERT_SUBJECTALTNAME:
+		starttls_info_cert_subjectaltname (cmd, node, len, buf);
+		break;
+	case PIOK_INFO_CHANBIND_TLS_UNIQUE:
+		starttls_info_chanbind_tls_unique (cmd, node, len, buf);
+		break;
+	case PIOK_INFO_CHANBIND_TLS_SERVER_END_POINT:
+		starttls_info_chanbind_tls_server_end_point (cmd, node, len, buf);
+		break;
+	default:
+		send_error (cmd, E_TLSPOOL_INFOKIND_UNKNOWN, "TLS Pool does not support that kind of info");
+		break;
+	}
+	//
+	// Cleanup; this involves unlocking the ctlkey to other messages
+done_unfind:
+	ctlkey_unfind (node);
+done:
+	;
+}
+
+
 /* Process a command packet that entered on a TLS pool socket
  */
 static void process_command (struct command *cmd) {
@@ -865,6 +921,9 @@ printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
 			send_error (cmd, E_TLSPOOL_FACILITY_STARTTLS,
 				"TLS Pool setup excludes STARTTLS facility");
 		}
+		return;
+	case PIOC_INFO_V2:
+		process_command_info (cmd);
 		return;
 	case PIOC_CONTROL_DETACH_V2:
 		ctlkey_detach (cmd);

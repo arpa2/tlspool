@@ -31,13 +31,14 @@ set(tlspool_SRC
     pinentry.c
     remote.c
     service.c
-    starttls.c
+    ${STARTTLS_DRIVER}.c
     trust.c
     validate.c
     ${COM_ERR_errortable_SRC}
 )
 
 add_executable(tlspool-daemon ${tlspool_SRC})
+target_compile_definitions(tlspool-daemon PRIVATE -DTLSPOOL_VERSION="${TLSPool_VERSION}")
 target_link_libraries(tlspool-daemon
     ${BDB_LIBRARY}
     ${GNUTLS_LIBRARY}

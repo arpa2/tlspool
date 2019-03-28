@@ -68,6 +68,23 @@ if (EXPERIMENTAL_SRP_SUPPORT)
     add_definitions(-DEXPERIMENTAL_SRP)
 endif()
 
+option(EXPERIMENTAL_LIBEV "Experiment with libev as a event backend" OFF)
+
+# Constrain the acceptable STARTTLS driver names
+# to those that are supported in our source code
+# set_property (CACHE STARTTLS_DRIVER PROPERTY STRINGS gnutls openssl mbedtls)
+if (NOT STARTTLS_DRIVER)
+    if (GnuTLS_FOUND)
+        set (STARTTLS_DRIVER gnutls CACHE STRING "Select the driving software for the STARTTLS feature")
+    endif()
+endif()
+if (NOT STARTTLS_DRIVER)
+    # For now, require a STARTTLS_DRIVER choice
+    # Later, consider using it to select available features (see PIOC_PING_V2)
+    message (FATAL_ERROR "You need _some_ driver for STARTTLS")
+endif()
+set_property (CACHE STARTTLS_DRIVER PROPERTY STRINGS gnutls)
+
 # These are compile flags, not definitions, but it happens to work.
 add_definitions(-fPIC -pthread)
 if (DEBUG)

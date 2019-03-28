@@ -1,4 +1,9 @@
-/* tlspool/starttls.c -- Setup and validation handler for TLS session */
+/* tlspool/gnutls.c -- Setup and validation handler for TLS session */
+
+/* This is an implementation of the general idea of STARTTLS.
+ * It happen to be done with GnuTLS, we embrace for a future
+ * where there could be alternative implementations too.
+ */
 
 #include "whoami.h"
 
@@ -3314,6 +3319,19 @@ static void valexp_Cc_start (void *vcmd, struct valexp *ve, char pred) {
 }
 
 
+/* valexp_Qq_start -- validation function for the GnuTLS backend.
+ * This function ensures a post-quantum cipher suite.
+ * While _Q_ focusses on encryption, _q_ focusses on authentication.
+ * There is currently no variable to protect the handshake, as that
+ * may well prove impossible.
+ */
+static void valexp_Qq_start (void *vcmd, struct valexp *ve, char pred) {
+	/* Work to be done for TLS designers! */
+	/* Once we get TLS-KDH going we should update the code below */
+	valexp_setpredicate (ve, pred, 0);
+}
+
+
 static void valexp_error_start (void *handler_data, struct valexp *ve, char pred) {
 	assert (0);
 }
@@ -3384,6 +3402,9 @@ static void valexp_switch_start (void *handler_data, struct valexp *ve, char pre
 	case 'c':
 		valexp_Cc_start (handler_data, ve, pred);
 		break;
+	case 'Q':
+	case 'q':
+		valexp_Qq_start (handler_data, ve, pred);
 	default:
 		// Called on an unregistered symbol, that spells failure
 		valexp_setpredicate (ve, pred, 0);
@@ -3880,7 +3901,21 @@ fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), 
 	//  - CTYPEs, SRP, ANON-or-not --> fill in as + or - characters
 	if (gtls_errno == GNUTLS_E_SUCCESS) {
 		char priostr [512];
+		//
+		// Check for Post Quantum algorithm requests; except for
+		// TLS-KDH these are not available yet, so when any of them
+		// is set in this early stage, the handshake should fail.
+		bool pq_auth = cfg_postquantum_auth ();
+		bool pq_encr = cfg_postquantum_encrypt ();
+		bool pq_shak = cfg_postquantum_handshake ();
 #ifdef HAVE_TLS_KDH
+		//
+		// With TLS-KDH we can achieve Post Quantum authentication
+		// and encryption.  When using KXOVER though, mind the gap!
+		// The handshake cannot be protected; it may never be.
+		if (pq_shak) {
+			gtls_errno = GNUTLS_E_NO_CIPHER_SUITES;
+		}
 		snprintf (priostr, sizeof (priostr)-1,
 			// "NORMAL:-RSA:" -- also ECDH-RSA, ECDHE-RSA, ...DSA...
 			"NONE:"
@@ -3910,6 +3945,15 @@ fprintf (stderr, "DEBUG: Got errno = %d / %s at %d\n", errno, strerror (errno), 
 #endif
 			);
 #else
+		//
+		// Beyond TLS-KDH, the hopes for Post Quantum security
+		// are basically none.  This will be remedied, and at
+		// that time we should update the generation of the
+		// priority string with the algorithm preferences.
+		if (pq_auth || pq_encr || pq_shak) {
+			gtls_errno = GNUTLS_E_NO_CIPHER_SUITES;
+		}
+		//
 		// It's not possible to make good decisions on certificate type
 		// for both sides based on knowledge of local authentication
 		// abilities.  So we permit all (but would like to be subtler).
@@ -5530,6 +5574,280 @@ void starttls_prng (struct command *cmd) {
 	} else {
 		send_command (cmd, -1);
 	}
+}
+
+
+/* General handling of info queries.  Though they all are different, they invariably
+ * come down to byte ranges; to comparing them and/or extracting them.  This generic
+ * part is covered in the starttls_info_query() function, returning true when the info
+ * is a good response, or false otherwise.  Since it handles a single piece of data at
+ * a time, it may be useful to loop around this function, until a positive result.
+ * Such a loop would be an OR compisition of the various options.
+ *
+ * We will not only accept a value, but in case of a query, we will copy it.  This
+ * is why buf and len are both pointers.
+ */
+static bool starttls_info_query (uint16_t *len, uint8_t *buf, size_t findlen, uint8_t *findbuf) {
+	if (findlen > TLSPOOL_INFOBUFLEN) {
+		/* Even if this is 0xffff or ~(size_t)0 then
+		 * it is still not going to be an information
+		 * source.  At best could we say that in what
+		 * we return.
+		 */
+		return false;
+	}
+	if (*len == 0xffff) {
+		/* Any information is accceptable.  So this is, too.
+		 * Requirements could be imposed to avoid queries,
+		 * but not here.  We will in fact complete the
+		 * query with the information found.
+		 */
+		memcpy (buf, findbuf, findlen);
+		*len = findlen;
+		return true;
+	}
+	/* This is a match, so return the desired value */
+	return (*len == findlen) && (0 == memcmp (buf, findbuf, findlen));
+}
+
+
+/* An iterative form of the generic info query handler.  This iterates through
+ * a SEQUENCE OF or SET OF structure in DER, and treats every value found
+ * individually.  As soon as a match is found, it returns success.  It is
+ * semantically wrong to send a query through an iterator, as there are not
+ * grounds for selecting an instance.
+ */
+static bool starttls_info_iteration (uint16_t len, uint8_t *buf, struct dercursor findings) {
+	struct dercursor finding;
+	if (len > TLSPOOL_INFOBUFLEN) {
+		return false;
+	}
+	if (der_iterate_first (&findings, &finding)) do {
+		if (starttls_info_query (&len, buf, finding.derlen, finding.derptr)) {
+			return true;
+		}
+	} while (der_iterate_next (&finding));
+	return false;
+}
+
+
+/* Make a DER walk into one of the certificates and consider the
+ * element found in its entirety.  This may still require iteration
+ * within the field, so actual info processing is not yet done here.
+ */
+static bool starttls_info_walk (struct command *cmd, struct ctlkeynode *node,
+					const derwalk *walkpath, struct dercursor *out_data) {
+	bool ok = true;
+	struct ctlkeynode_tls *ckn = (struct ctlkeynode_tls *) node;
+	//
+	// Fetch the appropriate certificate
+	const gnutls_datum_t *cert_datum = NULL;
+	if (!ok) {
+		/* Already failed */
+		;
+	} else if ((cmd->cmd.pio_data.pioc_info.info_kind & 0x00000100) == 0x00000000) {
+		/* Peer certificate */
+		cert_datum = gnutls_certificate_get_peers (ckn->session, NULL);
+	} else {
+		/* My certificate */
+		cert_datum = gnutls_certificate_get_ours  (ckn->session);
+	}
+	ok = ok && (cert_datum != NULL);
+	//
+	// Walk into the certificate
+	struct dercursor crs = { .derptr =  NULL, .derlen = 0 };
+	if (ok) {
+		crs.derptr = cert_datum->data;
+		crs.derlen = cert_datum->size;
+		ok = ok && (der_walk (&crs, walkpath) == 0);
+		// ok = ok && (der_focus (&crs) == 0);
+		uint8_t tag;
+		uint8_t hlen;
+		size_t len;
+		ok = ok && (der_header (&crs, &tag, &len, &hlen) == 0);
+		crs.derptr -= hlen;
+		crs.derlen  = hlen + len;
+	}
+	if (ok) {
+		*out_data = crs;
+	}
+	return ok;
+}
+
+
+/* Info query for the subject in one of the certificates */
+void starttls_info_cert_subject (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = (len == 0xffff);	/* Only query */
+	static const derwalk cert2subject [] = {
+		DER_WALK_ENTER | DER_TAG_SEQUENCE,
+		DER_WALK_ENTER | DER_TAG_SEQUENCE,
+		DER_WALK_OPTIONAL,
+		DER_WALK_SKIP  | DER_TAG_CONTEXT(0),	// Version DEFAULT v1
+		DER_WALK_SKIP  | DER_TAG_INTEGER,	// CertificateSerialNumber
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// AlgorithmIdentifier
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// Name (a CHOICE with one option, grinn)
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// Validity
+		DER_WALK_END				// Arrived at the Name of the Subject
+	};
+	struct dercursor crs;
+	ok = ok && starttls_info_walk (cmd, node, cert2subject, &crs);
+	//
+	// Compare the finding with the request
+	ok = ok && starttls_info_query (&cmd->cmd.pio_data.pioc_info.len,
+				cmd->cmd.pio_data.pioc_info.buffer,
+				crs.derlen, crs.derptr);
+	//
+	// Report the requested information, or failure to find it
+	if (ok) {
+		send_command (cmd, -1);
+	} else {
+		send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
+				"TLS Pool cannot answer the info query");
+	}
+}
+
+
+/* Info query for the issuer in one of the certificates */
+void starttls_info_cert_issuer (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = (len == 0xffff);	/* Only query */
+	static const derwalk cert2issuer [] = {
+		DER_WALK_ENTER | DER_TAG_SEQUENCE,
+		DER_WALK_ENTER | DER_TAG_SEQUENCE,
+		DER_WALK_OPTIONAL,
+		DER_WALK_SKIP  | DER_TAG_CONTEXT(0),	// Version DEFAULT v1
+		DER_WALK_SKIP  | DER_TAG_INTEGER,	// CertificateSerialNumber
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// AlgorithmIdentifier
+		DER_WALK_END				// Arrived at the Name of the Issuer
+	};
+	struct dercursor crs;
+	ok = ok && starttls_info_walk (cmd, node, cert2issuer, &crs);
+	//
+	// Compare the finding with the request
+	ok = ok && starttls_info_query (&cmd->cmd.pio_data.pioc_info.len,
+				cmd->cmd.pio_data.pioc_info.buffer,
+				crs.derlen, crs.derptr);
+	//
+	// Report the requested information, or failure to find it
+	if (ok) {
+		send_command (cmd, -1);
+	} else {
+		send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
+				"TLS Pool cannot answer the info query");
+	}
+}
+
+
+/* Info query for a subjectAltName in one of the certificates;
+ * These sit in extensions, and so must search those until we
+ * find a matching OID (which is easily memcmp()d for) and
+ * then we enter the value, which is a SEQUENCE OF GeneralName;
+ * the GeneralName is what the user wants us to match (not extract).
+ *
+ * The applicable OID is 2.5.29.17, which encodes to DER bytes
+ * 0x55, 0x1d, 0x11  -- yeah, they used a weird compressor...
+ */
+void starttls_info_cert_subjectaltname (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = (len < sizeof (cmd->cmd.pio_data.pioc_info.buffer));	/* Only compare */
+	static const derwalk cert2extensions [] = {
+		DER_WALK_ENTER | DER_TAG_SEQUENCE,
+		DER_WALK_ENTER | DER_TAG_SEQUENCE,
+		DER_WALK_OPTIONAL,
+		DER_WALK_SKIP  | DER_TAG_CONTEXT(0),	// Version DEFAULT v1
+		DER_WALK_SKIP  | DER_TAG_INTEGER,	// CertificateSerialNumber
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// AlgorithmIdentifier
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// Name (a CHOICE with one option, grinn)
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// Validity
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// Name (a CHOICE with one option, grinn)
+		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// SubjectPublicKeyInfo
+		//TODO// DER_WALK_OPTIONAL,
+		//TODO// DER_WALK_SKIP  | DER_TAG_CONTEXT(1),	// UniqueIdentifier, the issuerUniqueId
+		//TODO// DER_WALK_OPTIONAL,
+		//TODO// DER_WALK_SKIP  | DER_TAG_CONTEXT(2),	// UniqueIdentifier, the subjectUniqueId
+		DER_WALK_ENTER | DER_TAG_CONTEXT(3),	// Extenions with tag [3] EXPLICIT
+							// It is optional, so we may get an error
+		//NOTHERE// DER_WALK_ENTER | DER_TAG_SEQUENCE,	// The SEQUENCE inside [3] is also visible
+		DER_WALK_END
+	};
+	static const uint8_t oid_san [] = { 0x06, 0x03, 0x55, 0x1d, 0x11 };
+	//
+	// Find the certificate extensions and check presence through the [3] tag
+	struct dercursor exts;
+	ok = ok && starttls_info_walk (cmd, node, cert2extensions, &exts);
+	//
+	// Iterate over extensions
+	struct dercursor iter;
+	bool done = false;
+	ok = ok && (der_enter (&exts) == 0);
+	if (ok && der_iterate_first (&exts, &iter)) do {
+		struct dercursor ext = iter;
+		// ok = ok && (der_focus (&ext) == 0) && (der_enter (&ext) == 0);
+		ok = ok && (der_focus (&ext) == 0);
+		tlog (TLOG_CERT, LOG_DEBUG, "Found an extension sized %d -- 0x%02x 0x%02x 0x%02x...\n",
+				ext.derlen, ext.derptr [0], ext.derptr [1], ext.derptr [2]);
+		bool extok = ok;
+		extok = extok && (ext.derlen > sizeof (oid_san));
+		extok = extok && (memcmp (ext.derptr, oid_san, sizeof (oid_san)) == 0);
+		extok = extok && (der_skip (&ext) == 0);
+		if ((ext.derlen > 3) && (*ext.derptr == DER_TAG_BOOLEAN)) {
+			// skip the optional "critical" flag
+			extok = extok && (der_skip (&ext) == 0);
+		}
+		extok = extok && (*ext.derptr == DER_TAG_OCTETSTRING) && (der_enter (&ext) == 0);
+		struct dercursor saniter;
+		if (extok && der_iterate_first (&ext, &saniter)) do {
+			struct dercursor general_name = saniter;
+			extok = extok && (der_enter (&general_name) == 0);
+			if (extok && starttls_info_query (&len, buf,
+					general_name.derlen, general_name.derptr)) {
+				done = true;
+				goto found_ext;
+			}
+		} while (extok && der_iterate_next (&saniter));
+	} while (der_iterate_next (&iter));
+found_ext:
+	ok = ok & done;
+	//
+	// Report the requested information, or failure to find it
+	if (ok) {
+		send_command (cmd, -1);
+	} else {
+		send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
+				"TLS Pool cannot answer the info query");
+	}
+}
+
+
+/* Info query to retrieve a "tls-unique" channel binding */
+void starttls_info_chanbind_tls_unique (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = (len == 0xffff);	/* Only query */
+	struct ctlkeynode_tls *ckn = (struct ctlkeynode_tls *) node;
+	gnutls_datum_t cbbuf;	/* Who cleans up its contents? */
+	memset (&cbbuf, 0, sizeof (cbbuf));
+	ok = ok && (GNUTLS_E_SUCCESS == gnutls_session_channel_binding (
+			ckn->session, GNUTLS_CB_TLS_UNIQUE, &cbbuf));
+	tlog (TLOG_TLS, LOG_INFO, "After channel binding (tls-unique) retrieval, ok=%d", ok);
+	ok = ok && starttls_info_query (&len, buf, cbbuf.size, cbbuf.data);
+	if (ok) {
+		memcpy (cmd->cmd.pio_data.pioc_info.buffer, cbbuf.data, cbbuf.size);
+		cmd->cmd.pio_data.pioc_info.len = cbbuf.size;
+		send_command (cmd, -1);
+	} else {
+		send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
+				"TLS Pool cannot answer the info query");
+	}
+	if (cbbuf.data != NULL) {
+		free (cbbuf.data);
+	}
+}
+
+
+/* Info query to retrieve a "tls-server-end-point" channel binding */
+void starttls_info_chanbind_tls_server_end_point (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = (len == 0xffff);	/* Only query */
+	/* This form of channel binding is not supported in GnuTLS.
+	 * We could use Quick DER to parse it, of course */
+	send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
+			"TLS Pool cannot answer the info query");
 }
 
 
