@@ -5653,7 +5653,6 @@ static bool starttls_info_walk (struct command *cmd, struct ctlkeynode *node,
 		cert_datum = gnutls_certificate_get_ours  (ckn->session);
 	}
 	ok = ok && (cert_datum != NULL);
-tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
 	//
 	// Walk into the certificate
 	struct dercursor crs = { .derptr =  NULL, .derlen = 0 };
@@ -5661,8 +5660,6 @@ tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
 		crs.derptr = cert_datum->data;
 		crs.derlen = cert_datum->size;
 		ok = ok && (der_walk (&crs, walkpath) == 0);
-tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
-if (ok) tlog (TLOG_CERT, LOG_DEBUG, "Ran     into %d bytes of data", crs.derlen);
 		// ok = ok && (der_focus (&crs) == 0);
 		uint8_t tag;
 		uint8_t hlen;
@@ -5670,8 +5667,6 @@ if (ok) tlog (TLOG_CERT, LOG_DEBUG, "Ran     into %d bytes of data", crs.derlen)
 		ok = ok && (der_header (&crs, &tag, &len, &hlen) == 0);
 		crs.derptr -= hlen;
 		crs.derlen  = hlen + len;
-tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
-if (ok) tlog (TLOG_CERT, LOG_DEBUG, "Walked up to %d bytes of data", crs.derlen);
 	}
 	if (ok) {
 		*out_data = crs;
@@ -5701,7 +5696,6 @@ void starttls_info_cert_subject (struct command *cmd, struct ctlkeynode *node, u
 	ok = ok && starttls_info_query (&cmd->cmd.pio_data.pioc_info.len,
 				cmd->cmd.pio_data.pioc_info.buffer,
 				crs.derlen, crs.derptr);
-tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
 	//
 	// Report the requested information, or failure to find it
 	if (ok) {
@@ -5716,7 +5710,7 @@ tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
 /* Info query for the issuer in one of the certificates */
 void starttls_info_cert_issuer (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
 	bool ok = (len == 0xffff);	/* Only query */
-	static const derwalk cert2subject [] = {
+	static const derwalk cert2issuer [] = {
 		DER_WALK_ENTER | DER_TAG_SEQUENCE,
 		DER_WALK_ENTER | DER_TAG_SEQUENCE,
 		DER_WALK_OPTIONAL,
@@ -5726,13 +5720,12 @@ void starttls_info_cert_issuer (struct command *cmd, struct ctlkeynode *node, ui
 		DER_WALK_END				// Arrived at the Name of the Issuer
 	};
 	struct dercursor crs;
-	ok = ok && starttls_info_walk (cmd, node, cert2subject, &crs);
+	ok = ok && starttls_info_walk (cmd, node, cert2issuer, &crs);
 	//
 	// Compare the finding with the request
 	ok = ok && starttls_info_query (&cmd->cmd.pio_data.pioc_info.len,
 				cmd->cmd.pio_data.pioc_info.buffer,
 				crs.derlen, crs.derptr);
-tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
 	//
 	// Report the requested information, or failure to find it
 	if (ok) {
@@ -5744,11 +5737,18 @@ tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
 }
 
 
-/* Info query for the unique identity of the issuer of one of the certificates */
-void starttls_info_cert_issuer_uniqueid (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
-	bool ok = true;
-	struct ctlkeynode_tls *ckn = (struct ctlkeynode_tls *) node;
-	static const derwalk cert2issueruqid [] = {
+/* Info query for a subjectAltName in one of the certificates;
+ * These sit in extensions, and so must search those until we
+ * find a matching OID (which is easily memcmp()d for) and
+ * then we enter the value, which is a SEQUENCE OF GeneralName;
+ * the GeneralName is what the user wants us to match (not extract).
+ *
+ * The applicable OID is 2.5.29.17, which encodes to DER bytes
+ * 0x55, 0x1d, 0x11  -- yeah, they used a weird compressor...
+ */
+void starttls_info_cert_subjectaltname (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
+	bool ok = (len < sizeof (cmd->cmd.pio_data.pioc_info.buffer));	/* Only compare */
+	static const derwalk cert2extensions [] = {
 		DER_WALK_ENTER | DER_TAG_SEQUENCE,
 		DER_WALK_ENTER | DER_TAG_SEQUENCE,
 		DER_WALK_OPTIONAL,
@@ -5759,43 +5759,53 @@ void starttls_info_cert_issuer_uniqueid (struct command *cmd, struct ctlkeynode 
 		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// Validity
 		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// Name (a CHOICE with one option, grinn)
 		DER_WALK_SKIP  | DER_TAG_SEQUENCE,	// SubjectPublicKeyInfo
-		DER_WALK_ENTER | DER_TAG_CONTEXT(1),	// UniqueIdentifier, the issuerUniqueId
-							// Optional, so it may fail with a nice error
+		//TODO// DER_WALK_OPTIONAL,
+		//TODO// DER_WALK_SKIP  | DER_TAG_CONTEXT(1),	// UniqueIdentifier, the issuerUniqueId
+		//TODO// DER_WALK_OPTIONAL,
+		//TODO// DER_WALK_SKIP  | DER_TAG_CONTEXT(2),	// UniqueIdentifier, the subjectUniqueId
+		DER_WALK_ENTER | DER_TAG_CONTEXT(3),	// Extenions with tag [3] EXPLICIT
+							// It is optional, so we may get an error
+		//NOTHERE// DER_WALK_ENTER | DER_TAG_SEQUENCE,	// The SEQUENCE inside [3] is also visible
 		DER_WALK_END
 	};
-//TODO// This is generic code:
+	static const uint8_t oid_san [] = { 0x06, 0x03, 0x55, 0x1d, 0x11 };
 	//
-	// Fetch the appropriate certificate
-	const gnutls_datum_t *cert_datum = NULL;
-	if (!ok) {
-		/* Already failed */
-		;
-	} else if (cmd->cmd.pio_data.pioc_info.info_kind & 0x00000100 == 0x00000000) {
-		/* Peer certificate */
-		cert_datum = gnutls_certificate_get_peers (ckn->session, NULL);
-	} else {
-		/* My certificate */
-		cert_datum = gnutls_certificate_get_ours  (ckn->session);
-	}
-	ok = ok && (cert_datum != NULL);
-tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
+	// Find the certificate extensions and check presence through the [3] tag
+	struct dercursor exts;
+	ok = ok && starttls_info_walk (cmd, node, cert2extensions, &exts);
 	//
-	// Walk into the certificate
-	struct dercursor crs = { .derptr =  NULL, .derlen = 0 };
-	if (ok) {
-		crs.derptr = cert_datum->data;
-		crs.derlen = cert_datum->size;
-		ok = ok && (der_walk (&crs, cert2issueruqid) == 0);
-tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
-if (ok) tlog (TLOG_CERT, LOG_DEBUG, "Walked up to %d bytes of data", crs.derlen);
-	}
-//TODO// :generic interruption:maybe iterate:maybe search for extoid:
-	//
-	// Compare the finding with the request
-	ok = ok && starttls_info_query (&cmd->cmd.pio_data.pioc_info.len,
-				cmd->cmd.pio_data.pioc_info.buffer,
-				crs.derlen, crs.derptr);
-tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
+	// Iterate over extensions
+	struct dercursor iter;
+	bool done = false;
+	ok = ok && (der_enter (&exts) == 0);
+	if (ok && der_iterate_first (&exts, &iter)) do {
+		struct dercursor ext = iter;
+		// ok = ok && (der_focus (&ext) == 0) && (der_enter (&ext) == 0);
+		ok = ok && (der_focus (&ext) == 0);
+		tlog (TLOG_CERT, LOG_DEBUG, "Found an extension sized %d -- 0x%02x 0x%02x 0x%02x...\n",
+				ext.derlen, ext.derptr [0], ext.derptr [1], ext.derptr [2]);
+		bool extok = ok;
+		extok = extok && (ext.derlen > sizeof (oid_san));
+		extok = extok && (memcmp (ext.derptr, oid_san, sizeof (oid_san)) == 0);
+		extok = extok && (der_skip (&ext) == 0);
+		if ((ext.derlen > 3) && (*ext.derptr == DER_TAG_BOOLEAN)) {
+			// skip the optional "critical" flag
+			extok = extok && (der_skip (&ext) == 0);
+		}
+		extok = extok && (*ext.derptr == DER_TAG_OCTETSTRING) && (der_enter (&ext) == 0);
+		struct dercursor saniter;
+		if (extok && der_iterate_first (&ext, &saniter)) do {
+			struct dercursor general_name = saniter;
+			extok = extok && (der_enter (&general_name) == 0);
+			if (extok && starttls_info_query (&len, buf,
+					general_name.derlen, general_name.derptr)) {
+				done = true;
+				goto found_ext;
+			}
+		} while (extok && der_iterate_next (&saniter));
+	} while (der_iterate_next (&iter));
+found_ext:
+	ok = ok & done;
 	//
 	// Report the requested information, or failure to find it
 	if (ok) {
@@ -5804,21 +5814,6 @@ tlog (TLOG_CERT, LOG_DEBUG, "ok=%d at line %d\n", ok, __LINE__);
 		send_error (cmd, E_TLSPOOL_INFO_NOT_FOUND,
 				"TLS Pool cannot answer the info query");
 	}
-//TODO// :end of generic code
-}
-
-
-/* Info query for a subjectAltName in one of the certificates */
-void starttls_info_cert_subjectaltname (struct command *cmd, struct ctlkeynode *node, uint16_t len, uint8_t *buf) {
-	//NOTE// pool_datum_t lids [EXPECTED_LID_TYPE_COUNT];
-	//NOTE// void *remote_cert [CERTS_MAX_DEPTH];
-	//NOTE// int remote_cert_type;
-	//NOTE// void *remote_cert_raw;
-	//NOTE// raw = (gnutls_datum_t *) cmd->remote_cert_raw;
-	//NOTE// } else if (cmd->remote_cert_type == GNUTLS_CRT_X509) {
-	//NOTE// cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].data = NULL;
-	//NOTE// cmd->lids [LID_TYPE_X509 - LID_TYPE_MIN].size = 0;
-	bool ok = (len < sizeof (cmd->cmd.pio_data.pioc_info.buffer));	/* Only compare */
 }
 
 

@@ -280,7 +280,16 @@ reconnect:
 		if (tlspool_info (PIOK_INFO_PEERCERT_ISSUER, info, &infolen, tlsdata_now.ctlkey) == -1) {
 			printf ("ERROR %d: Could not retrieve Issuer (peer)\n", errno);
 		} else {
-			dump_printable ("Issuer, peer", info, infolen);
+			dump_printable ("Issuer,  peer", info, infolen);
+		}
+		strcpy ((char *) info + 2, "testcli@tlspool.arpa2.lab");
+		info [1] = strlen (info + 2);
+		info [0] = 0x81;  // DER_TAG_CONTEXT(1);
+		infolen = 2 + strlen ((char *) (info + 2));
+		if (tlspool_info (PIOK_INFO_PEERCERT_SUBJECTALTNAME, info, &infolen, tlsdata_now.ctlkey) == -1) {
+			printf ("ERROR %d: Could not retrieve SubjectAltName (peer)\n", errno);
+		} else {
+			dump_printable ("SubjectAltName, peer", info, infolen);
 		}
 		infolen = 0xffff;
 		if (tlspool_info (PIOK_INFO_MYCERT_SUBJECT, info, &infolen, tlsdata_now.ctlkey) == -1) {
@@ -292,11 +301,20 @@ reconnect:
 		if (tlspool_info (PIOK_INFO_MYCERT_ISSUER, info, &infolen, tlsdata_now.ctlkey) == -1) {
 			printf ("ERROR %d: Could not retrieve Issuer (mine)\n", errno);
 		} else {
-			dump_printable ("Issuer, mine", info, infolen);
+			dump_printable ("Issuer,  mine", info, infolen);
 		}
 		if (sigcont) {
 			printf ("Ignoring SIGCONT received prior to the new connection\n");
 			sigcont = 0;
+		}
+		strcpy ((char *) info + 2, "testsrv@tlspool.arpa2.lab");
+		info [1] = strlen (info + 2);
+		info [0] = 0x81;  // DER_TAG_CONTEXT(1);
+		infolen = 2 + strlen ((char *) (info + 2));
+		if (tlspool_info (PIOK_INFO_MYCERT_SUBJECTALTNAME, info, &infolen, tlsdata_now.ctlkey) == -1) {
+			printf ("ERROR %d: Could not retrieve SubjectAltName (mine)\n", errno);
+		} else {
+			dump_printable ("SubjectAltName, mine", info, infolen);
 		}
 		if (-1 == sigaction (SIGCONT, &sigcont_action, NULL)) {
 			perror ("Failed to install signal handler for SIGCONT");
