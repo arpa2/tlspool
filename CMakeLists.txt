@@ -83,7 +83,7 @@ if (NOT STARTTLS_DRIVER)
     # Later, consider using it to select available features (see PIOC_PING_V2)
     message (FATAL_ERROR "You need _some_ driver for STARTTLS")
 endif()
-set_property (CACHE STARTTLS_DRIVER PROPERTY STRINGS gnutls)
+set_property (CACHE STARTTLS_DRIVER PROPERTY STRINGS gnutls mbedtls)
 
 # These are compile flags, not definitions, but it happens to work.
 add_definitions(-fPIC -pthread)
