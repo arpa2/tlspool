@@ -6,7 +6,7 @@
 organization = "ARPA2 Laboratories"
 
 # The organizational unit of the subject.
-unit = "Testing Unit"
+unit = "Test Servers"
 
 # The locality of the subject.
 locality = "Internet"
@@ -18,7 +18,7 @@ state = "Freedom"
 # country = GR
 
 # The common name of the certificate owner.
-cn = "TLS Pool Test CA"
+cn = "TLS Pool Test X.509 Server"
 
 # A user id of the certificate owner.
 #uid = "clauper"
@@ -56,7 +56,7 @@ serial = 001
 
 # In how many days, counting from today, this certificate will expire.
 # Use -1 if there is no expiration date.
-expiration_days = 700
+expiration_days = 70
 
 # Alternatively you may set concrete dates and time. The GNU date string 
 # formats are accepted. See:
@@ -70,6 +70,8 @@ expiration_days = 700
 # A dnsname in case of a WWW server.
 #dns_name = "www.none.org"
 #dns_name = "www.morethanone.org"
+dns_name = "playground.arpa2.lab"
+dns_name = "localhost"
 
 # A subject alternative name URI
 #uri = "http://www.example.com"
@@ -78,7 +80,7 @@ expiration_days = 700
 #ip_address = "192.168.1.1"
 
 # An email in case of a person
-email = "testca@@tlspool.arpa2.lab"
+# email = "testsrv@tlspool.arpa2.lab"
 
 # Challenge password used in certificate requests
 # challenge_password = 123456
@@ -91,10 +93,7 @@ email = "testca@@tlspool.arpa2.lab"
 #crl_dist_points = "http://www.getcrl.crl/getcrl/"
 
 # Whether this is a CA certificate or not
-ca
-
-# for microsoft smart card logon
-# key_purpose_oid = 1.3.6.1.4.1.311.20.2.2
+# ca
 
 # Whether this certificate will be used to sign data (needed
 # in TLS DHE ciphersuites). This is the digitalSignature flag
@@ -108,13 +107,16 @@ signing_key
 encryption_key
 
 
+# for microsoft smart card logon
+# key_purpose_oid = 1.3.6.1.4.1.311.20.2.2
+
 ### Other predefined key purpose OIDs
 
 # Whether this certificate will be used for a TLS client
 #tls_www_client
 
 # Whether this certificate will be used for a TLS server
-#tls_www_server
+tls_www_server
 
 # Whether this certificate will be used to sign data (needed
 # in TLS DHE ciphersuites).
@@ -126,7 +128,7 @@ signing_key
 encryption_key
 
 # Whether this key will be used to sign other certificates.
-cert_signing_key
+# cert_signing_key
 
 # Whether this key will be used to sign CRLs.
 crl_signing_key
@@ -135,7 +137,7 @@ crl_signing_key
 #code_signing_key
 
 # Whether this key will be used to sign OCSP data.
-#ocsp_signing_key
+ocsp_signing_key
 
 # Whether this key will be used for time stamping.
 #time_stamping_key

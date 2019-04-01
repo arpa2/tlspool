@@ -31,7 +31,7 @@ cn = "TLS Pool Test X.509 Server"
 # any OID here.
 # For example set the X.520 Title and the X.520 Pseudonym
 # by using OID and string pairs.
-#dn_oid = 2.5.4.12 Dr. 
+#dn_oid = 2.5.4.12 Dr.
 #dn_oid = 2.5.4.65 jackal
 
 # This is deprecated and should not be used in new
@@ -41,10 +41,10 @@ cn = "TLS Pool Test X.509 Server"
 # An alternative way to set the certificate's distinguished name directly
 # is with the "dn" option. The attribute names allowed are:
 # C (country), street, O (organization), OU (unit), title, CN (common name),
-# L (locality), ST (state), placeOfBirth, gender, countryOfCitizenship, 
-# countryOfResidence, serialNumber, telephoneNumber, surName, initials, 
-# generationQualifier, givenName, pseudonym, dnQualifier, postalCode, name, 
-# businessCategory, DC, UID, jurisdictionOfIncorporationLocalityName, 
+# L (locality), ST (state), placeOfBirth, gender, countryOfCitizenship,
+# countryOfResidence, serialNumber, telephoneNumber, surName, initials,
+# generationQualifier, givenName, pseudonym, dnQualifier, postalCode, name,
+# businessCategory, DC, UID, jurisdictionOfIncorporationLocalityName,
 # jurisdictionOfIncorporationStateOrProvinceName,
 # jurisdictionOfIncorporationCountryName, XmppAddr, and numeric OIDs.
 
@@ -58,7 +58,7 @@ serial = 001
 # Use -1 if there is no expiration date.
 expiration_days = 70
 
-# Alternatively you may set concrete dates and time. The GNU date string 
+# Alternatively you may set concrete dates and time. The GNU date string
 # formats are accepted. See:
 # http://www.gnu.org/software/tar/manual/html_node/Date-input-formats.html
 
@@ -202,4 +202,3 @@ ocsp_signing_key
 # this is the 5th CRL by this CA
 # Comment the field for a time-based number.
 #crl_number = 5
-

@@ -112,13 +112,19 @@ PRIVKEYGEN += privkey7
 PRIVKEY7=$(P11URI);id=%30%37;object=obj7label;type=private
 endif
 
+PRIVKEY8=$(shell $(P11TOOL) --list-privkeys '$(P11URI)' | sed -e '/object=obj8label/!d' -e 's/^[ \t]*URL: //')
+ifeq ($(PRIVKEY8),)
+PRIVKEYGEN += privkey8
+PRIVKEY8=$(P11URI);id=%30%38;object=obj8label;type=private
+endif
+
 
 #
 # General rules for cleaning and filling (together, rebuilding) parts
 #
 
 TARGET_PKCS11=$(PRIVKEYGEN)
-TARGET_CERT=tlspool-test-client-cert.der tlspool-test-server-cert.der tlspool-test-ca-cert.der tlspool-test-flying-signer.der tlspool-test-webhost-cert.der tlspool-test-srp
+TARGET_CERT=tlspool-test-client-cert.der tlspool-test-server-cert.der tlspool-test-ca-cert.der tlspool-test-flying-signer.der tlspool-test-webhost-cert.der tlspool-test-playground-cert.der tlspool-test-srp
 TARGET_PGP=tlspool-test-client-pubkey.pgp tlspool-test-server-pubkey.pgp
 TARGET_DB=localid.db disclose.db trust.db
 TARGET_DBE=tlspool.env
@@ -194,7 +200,7 @@ fill-db: $(TARGET_DBE) $(TARGET_DB)
 # $(P11TOOL) --generate-rsa --bits $(RSABITS) --label objXlabel --id objXid --outfile xxx.pem '$(P11URI)'
 # ...
 
-.PHONY: privkey1 privkey2 privkey3 privkey4 privkey5 privkey6 privkey7
+.PHONY: privkey1 privkey2 privkey3 privkey4 privkey5 privkey6 privkey7 privkey8
 
 privkey1:
 	@echo 'Generating private key #1 on PKCS #11 token'
@@ -224,6 +230,10 @@ privkey7:
 	@echo 'Generating private key #7 on PKCS #11 token'
 	$(P11TOOL) --generate-rsa --bits $(RSABITS) --label=obj7label --id=3037 --outfile=/dev/null '$(P11URI)'
 
+privkey8:
+	@echo 'Generating private key #8 on PKCS #11 token'
+	$(P11TOOL) --generate-rsa --bits $(RSABITS) --label=obj8label --id=3038 --outfile=/dev/null '$(P11URI)'
+
 
 #
 # Produce binary DER certificates (without going through the textual "PEM" form)
@@ -248,9 +258,9 @@ tlspool-test-client-cert.der: tlspool-test-client-cert.template
 	$(CERTTOOL) --certificate-info --infile $@ --inder --outfile $(@:.der=.pem)
 
 # Key 4: X.509 Server Certificate with user@ domain name
-tlspool-test-server-cert.der: tlspool-test-server-cert.template
+tlspool-test-server-cert.der: tlspool-test-server-cert.template tlspool-test-ca-cert.der
 	echo Using PRIVKEY4, '$(PRIVKEY4)'
-	$(CERTTOOL) --outfile $@ --outder --generate-self-signed --load-privkey='$(PRIVKEY4)' --template=$<
+	$(CERTTOOL) --outfile $@ --outder --generate-certificate --load-ca-certificate=tlspool-test-ca-cert.pem --load-ca-privkey='$(PRIVKEY5)' --load-privkey='$(PRIVKEY4)' --template=$<
 	$(CERTTOOL) --certificate-info --infile $@ --inder --outfile $(@:.der=.pem)
 
 # Key 5: Test CA (for chained certificates)
@@ -271,9 +281,14 @@ tlspool-test-flying-signer.der: tlspool-test-flying-signer.template
 	$(CERTTOOL) --certificate-info --infile $@ --inder --outfile $(@:.der=.pem)
 
 # Key 7: X.509 Server Certificate with just a host name
-tlspool-test-webhost-cert.der: tlspool-test-webhost-cert.template
+tlspool-test-webhost-cert.der: tlspool-test-webhost-cert.template tlspool-test-ca-cert.der
 	echo Using PRIVKEY7, '$(PRIVKEY7)'
-	$(CERTTOOL) --outfile $@ --outder --generate-self-signed --load-privkey='$(PRIVKEY7)' --template=$<
+	$(CERTTOOL) --outfile $@ --outder --generate-certificate --load-ca-certificate=tlspool-test-ca-cert.pem --load-ca-privkey='$(PRIVKEY5)' --load-privkey='$(PRIVKEY7)' --template=$<
+
+# Key 8: X.509 Server Certificate with just a host name
+tlspool-test-playground-cert.der: tlspool-test-playground-cert.template
+	echo Using PRIVKEY8, '$(PRIVKEY8)'
+	$(CERTTOOL) --outfile $@ --outder --generate-self-signed --load-privkey='$(PRIVKEY8)' --template=$<
 
 
 # Turn a .der into a .keyid
@@ -310,6 +325,7 @@ localid.db: tlspool.env
 	$(TOOLDIR)/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server '1' /dev/null
 	$(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server '1' /dev/null
 	$(TOOLDIR)/set_localid $(CONFFILE) tlspool.arpa2.lab x.509,server,client '$(PRIVKEY7)' tlspool-test-webhost-cert.der
+	$(TOOLDIR)/set_localid $(CONFFILE) playground.arpa2.lab x.509,server,client '$(PRIVKEY8)' tlspool-test-playground-cert.der
 	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
 
 disclose.db: tlspool.env localid.db
