@@ -41,7 +41,7 @@ PGPRSABITS ?= 2048
 # The directory with tools, defaulting to ../tool in the git base
 # Note that testdata is meant for developers, so assuming git is usually the best
 #
-TOOLDIR ?= $(shell pwd)/../tool
+TOOLDIR ?= $(shell pwd)/../build/tool
 
 #
 # Load a few things from tlspool.conf; these are assumed present while testing
@@ -252,15 +252,15 @@ tlspool-test-server-pubkey.pgp:
 	$(CERTTOOL) --pgp-certificate-info --infile $@ --inraw --outfile $(@:.pgp=.asc)
 
 # Key 3: X.509 Client Certificate
-tlspool-test-client-cert.der: tlspool-test-client-cert.template
+tlspool-test-client-cert.der: tlspool-test-client-cert.template tlspool-test-ca-cert.der
 	echo Using PRIVKEY3, '$(PRIVKEY3)'
-	$(CERTTOOL) --outfile $@ --outder --generate-self-signed --load-privkey='$(PRIVKEY3)' --template=$<
+	$(CERTTOOL) --outfile $@ --outder --generate-certificate --load-ca-certificate=tlspool-test-ca-cert.pem --load-ca-privkey='$(PRIVKEY5)' --load-privkey='$(PRIVKEY3)' --template=$<
 	$(CERTTOOL) --certificate-info --infile $@ --inder --outfile $(@:.der=.pem)
 
 # Key 4: X.509 Server Certificate with user@ domain name
-tlspool-test-server-cert.der: tlspool-test-server-cert.template
+tlspool-test-server-cert.der: tlspool-test-server-cert.template tlspool-test-ca-cert.der
 	echo Using PRIVKEY4, '$(PRIVKEY4)'
-	$(CERTTOOL) --outfile $@ --outder --generate-self-signed --load-privkey='$(PRIVKEY4)' --template=$<
+	$(CERTTOOL) --outfile $@ --outder --generate-certificate --load-ca-certificate=tlspool-test-ca-cert.pem --load-ca-privkey='$(PRIVKEY5)' --load-privkey='$(PRIVKEY4)' --template=$<
 	$(CERTTOOL) --certificate-info --infile $@ --inder --outfile $(@:.der=.pem)
 
 # Key 5: Test CA (for chained certificates)
@@ -281,14 +281,14 @@ tlspool-test-flying-signer.der: tlspool-test-flying-signer.template
 	$(CERTTOOL) --certificate-info --infile $@ --inder --outfile $(@:.der=.pem)
 
 # Key 7: X.509 Server Certificate with just a host name
-tlspool-test-webhost-cert.der: tlspool-test-webhost-cert.template
+tlspool-test-webhost-cert.der: tlspool-test-webhost-cert.template tlspool-test-ca-cert.der
 	echo Using PRIVKEY7, '$(PRIVKEY7)'
-	$(CERTTOOL) --outfile $@ --outder --generate-self-signed --load-privkey='$(PRIVKEY7)' --template=$<
+	$(CERTTOOL) --outfile $@ --outder --generate-certificate --load-ca-certificate=tlspool-test-ca-cert.pem --load-ca-privkey='$(PRIVKEY5)' --load-privkey='$(PRIVKEY7)' --template=$<
 
 # Key 8: X.509 Server Certificate with just a host name
-tlspool-test-playground-cert.der: tlspool-test-playground-cert.template
+tlspool-test-playground-cert.der: tlspool-test-playground-cert.template tlspool-test-ca-cert.der
 	echo Using PRIVKEY8, '$(PRIVKEY8)'
-	$(CERTTOOL) --outfile $@ --outder --generate-self-signed --load-privkey='$(PRIVKEY8)' --template=$<
+	$(CERTTOOL) --outfile $@ --outder --generate-certificate --load-ca-certificate=tlspool-test-ca-cert.pem --load-ca-privkey='$(PRIVKEY5)' --load-privkey='$(PRIVKEY8)' --template=$<
 
 
 # Turn a .der into a .keyid
