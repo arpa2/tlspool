@@ -135,7 +135,7 @@ crl_signing_key
 #code_signing_key
 
 # Whether this key will be used to sign OCSP data.
-ocsp_signing_key
+#ocsp_signing_key
 
 # Whether this key will be used for time stamping.
 #time_stamping_key
