@@ -5,8 +5,8 @@ int os_sendmsg_command(pool_handle_t poolfd, struct tlspool_command *cmd, int fd
 	struct iovec iov;
 	struct cmsghdr *cmsg;
 	struct msghdr mh = { 0 };
-	iov.iov_base = &cmd;
-	iov.iov_len = sizeof(cmd);
+	iov.iov_base = cmd;
+	iov.iov_len = sizeof(struct tlspool_command);
 	mh.msg_iov = &iov;
 	mh.msg_iovlen = 1;
 	if (fd >= 0) {
@@ -19,6 +19,7 @@ int os_sendmsg_command(pool_handle_t poolfd, struct tlspool_command *cmd, int fd
 		*(int *)CMSG_DATA(cmsg) = fd;
 		cmsg->cmsg_len = CMSG_LEN(sizeof(int));
 	}
+	return sendmsg (poolfd, &mh, MSG_NOSIGNAL);
 }
 
 
@@ -123,6 +124,6 @@ pool_handle_t open_pool (void *path) {
 			newpoolfd = INVALID_POOL_HANDLE;
 		}
 	}
-// printf ("DEBUG: Trying new poolfd %d for path %s\n", poolfd, sun.sun_path);
+// printf ("DEBUG: Trying new poolfd %d for path %s\n", newpoolfd, sun.sun_path);
 	return newpoolfd;
 }

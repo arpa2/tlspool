@@ -590,7 +590,13 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 // printf ("\n");
 
 	/* Send the request */
-	os_sendmsg_command(poolfd, &cmd, renegotiate ? -1 : cryptfd);
+	if (os_sendmsg_command(poolfd, &cmd, renegotiate ? -1 : cryptfd) == -1) {
+		// Let SIGPIPE be reported as EPIPE
+		close (cryptfd);
+		registry_update (&entry_reqid, NULL);
+		// errno inherited from os_sendmsg_command()
+		return -1;
+	}
 	sentfd = cryptfd;  /* Close anytime after response and before fn end */
 
 	/* Handle responses until success or error */
@@ -629,7 +635,16 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 			/* We may now have a value to send in plainfd */
 			/* Now supply plainfd in the callback response */
 			sentfd = plainfd;
-			os_sendmsg_command(poolfd, &cmd, plainfd);
+			if (os_sendmsg_command(poolfd, &cmd, plainfd) == -1) {
+				// Let SIGPIPE be reported as EPIPE
+				if (sentfd >= 0) {
+					closesocket(sentfd);
+					sentfd = -1;
+				}
+				registry_update (&entry_reqid, NULL);
+				// errno inherited from np_send_command()
+				return -1;
+			}
 			break;	// Loop around and try again
 		case PIOC_STARTTLS_V2:
 			/* Wheee!!! we're done */
