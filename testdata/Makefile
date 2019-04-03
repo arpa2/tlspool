@@ -59,11 +59,11 @@ BDBENV=$(shell sed < $(CONFFILE) -n 's/^dbenv_dir //p')
 ifeq ($(P11PIN),)
 P11TOOL=p11tool --provider $(P11LIB) --login
 CERTTOOL=certtool --provider $(P11LIB)
-PGPTOOL=$(TOOLDIR)/pgp11_genkey
+PGPTOOL=$(TOOLDIR)/pgp11-genkey
 else
 P11TOOL=GNUTLS_PIN=$(P11PIN) p11tool --provider $(P11LIB) --login
 CERTTOOL=GNUTLS_PIN=$(P11PIN) certtool --provider $(P11LIB)
-PGPTOOL=GNUTLS_PIN=$(P11PIN) $(TOOLDIR)/pgp11_genkey
+PGPTOOL=GNUTLS_PIN=$(P11PIN) $(TOOLDIR)/pgp11-genkey
 endif
 
 #
@@ -314,28 +314,28 @@ tlspool.env:
 	chown $(DMNUSR):$(DMNGRP) $@
 
 localid.db: tlspool.env
-	$(TOOLDIR)/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab OpenPGP,client '$(PRIVKEY1)' tlspool-test-client-pubkey.pgp
-	$(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab OpenPGP,server '$(PRIVKEY2)' tlspool-test-server-pubkey.pgp
-	$(TOOLDIR)/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab x.509,client '$(PRIVKEY3)' tlspool-test-client-cert.der
-	$(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab x.509,server '$(PRIVKEY4)' tlspool-test-server-cert.der
-	$(TOOLDIR)/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab kerberos,client,server 'pkcs11:some;place' /dev/null
-	$(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab kerberos,client,server 'pkcs11:some;place' /dev/null
-	#REALISTIC-BUT-NOT-YET# $(TOOLDIR)/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server 'tI&' /dev/null
-	#REALISTIC-BUT-NOT-YET# $(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server 'It&' /dev/null
-	$(TOOLDIR)/set_localid $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server '1' /dev/null
-	$(TOOLDIR)/set_localid $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server '1' /dev/null
-	$(TOOLDIR)/set_localid $(CONFFILE) tlspool.arpa2.lab x.509,server,client '$(PRIVKEY7)' tlspool-test-webhost-cert.der
-	$(TOOLDIR)/set_localid $(CONFFILE) playground.arpa2.lab x.509,server,client '$(PRIVKEY8)' tlspool-test-playground-cert.der
+	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) testcli@tlspool.arpa2.lab OpenPGP,client '$(PRIVKEY1)' tlspool-test-client-pubkey.pgp
+	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) testsrv@tlspool.arpa2.lab OpenPGP,server '$(PRIVKEY2)' tlspool-test-server-pubkey.pgp
+	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) testcli@tlspool.arpa2.lab x.509,client '$(PRIVKEY3)' tlspool-test-client-cert.der
+	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) testsrv@tlspool.arpa2.lab x.509,server '$(PRIVKEY4)' tlspool-test-server-cert.der
+	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) testcli@tlspool.arpa2.lab kerberos,client,server 'pkcs11:some;place' /dev/null
+	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) testsrv@tlspool.arpa2.lab kerberos,client,server 'pkcs11:some;place' /dev/null
+	#REALISTIC-BUT-NOT-YET# $(TOOLDIR)/tlspool-localid-set $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server 'tI&' /dev/null
+	#REALISTIC-BUT-NOT-YET# $(TOOLDIR)/tlspool-localid-set $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server 'It&' /dev/null
+	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) testcli@tlspool.arpa2.lab valexp,client,server '1' /dev/null
+	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) testsrv@tlspool.arpa2.lab valexp,client,server '1' /dev/null
+	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) tlspool.arpa2.lab x.509,server,client '$(PRIVKEY7)' tlspool-test-webhost-cert.der
+	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) playground.arpa2.lab x.509,server,client '$(PRIVKEY8)' tlspool-test-playground-cert.der
 	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
 
 disclose.db: tlspool.env localid.db
-	$(TOOLDIR)/set_disclose $(CONFFILE) @.arpa2.lab testcli@tlspool.arpa2.lab testsrv@tlspool.arpa2.lab
-	$(TOOLDIR)/set_disclose $(CONFFILE) . tlspool.arpa2.lab
+	$(TOOLDIR)/tlspool-disclose-set $(CONFFILE) @.arpa2.lab testcli@tlspool.arpa2.lab testsrv@tlspool.arpa2.lab
+	$(TOOLDIR)/tlspool-disclose-set $(CONFFILE) . tlspool.arpa2.lab
 	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
 
 trust.db: tlspool.env tlspool-test-ca-cert.der tlspool-test-ca-cert.keyid tlspool-test-flying-signer.der tlspool-test-flying-signer.keyid
-	$(TOOLDIR)/set_trust $(CONFFILE) x509,client,server `cat tlspool-test-ca-cert.keyid` 1 tlspool-test-ca-cert.der
-	$(TOOLDIR)/set_trust $(CONFFILE) x509,client,server `cat tlspool-test-flying-signer.keyid` 1 tlspool-test-flying-signer.der
+	$(TOOLDIR)/tlspool-trust-set $(CONFFILE) x509,client,server `cat tlspool-test-ca-cert.keyid` 1 tlspool-test-ca-cert.der
+	$(TOOLDIR)/tlspool-trust-set $(CONFFILE) x509,client,server `cat tlspool-test-flying-signer.keyid` 1 tlspool-test-flying-signer.der
 	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
 
 clean: clean-db
