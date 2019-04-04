@@ -64,6 +64,9 @@ target_link_libraries(pgp11-genkey ${P11-Kit_LIBRARY} crypto)
 add_executable(tlspool-configvar configvar.c)
 target_link_libraries(tlspool-configvar tlspool_shared ${pthread_LIBRARIES})
 
+add_executable(pavlov pavlov.c)
+target_link_libraries(pavlov pavlov_shared ${com_err_LIBRARIES})
+
 install(
     TARGETS
         tlspool-configvar
@@ -83,5 +86,6 @@ install(
         # tlspool-test-peer # doesn't work yet?
         pgp11-genkey
         tlstunnel
+	pavlov
     DESTINATION ${CMAKE_INSTALL_SBINDIR}
 )

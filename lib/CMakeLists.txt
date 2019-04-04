@@ -10,12 +10,17 @@ set(libtlspool_async_SRC
     libtlspool_configvar.c
 )
 
+set(libpavlov_SRC
+    libpavlov.c
+)
+
 # Include the error table from ../src
 use_com_err_table (errortable)
 
 # Compile the files only once
 add_library(_libtlspool OBJECT ${libtlspool_SRC})
 add_library(_libtlspool_async OBJECT ${libtlspool_async_SRC})
+add_library(_libpavlov OBJECT ${libpavlov_SRC})
 
 # Make libraries out of the resulting objects; these
 # need to have unique names for CMake, and use OUTPUT_NAME
@@ -41,12 +46,22 @@ set_target_properties(tlspool_async_static PROPERTIES
     OUTPUT_NAME tlspool_async
 )
 
+# The pavlov library
+add_library(pavlov_shared SHARED $<TARGET_OBJECTS:_libpavlov>)
+set_target_properties(pavlov_shared PROPERTIES
+    OUTPUT_NAME pavlov
+)
+add_library(pavlov_static STATIC $<TARGET_OBJECTS:_libpavlov>)
+set_target_properties(pavlov_static PROPERTIES
+    OUTPUT_NAME pavlov
+)
+
 install(
-    TARGETS tlspool_shared
+    TARGETS tlspool_shared pavlov_shared
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 install(
-    TARGETS tlspool_static
+    TARGETS tlspool_static pavlov_static
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
