@@ -3,7 +3,7 @@
 tlstunnel \- Forward TLS/DTLS as TCP/UDP/SCTP, and vice versa.
 .SH SYNOPSIS
 .B tlstunnel
-.IR MODE " " OPTIONS " [" -- "] " CHATARGS
+.IR MODE " " OPTIONS " [" -- "] " <pavlov_cmd>...
 .SH DESCRIPTION
 .PP
 The
@@ -11,7 +11,7 @@ The
 command wraps TLS around connections that are otherwise plaintext.
 This can even be used for protocols that do STARTTLS in the
 course of their protocol interactions, due to a simple
-.IR chat (8)
+.IR pavlov (3)
 scripting facility.
 .PP
 The TLS facilities are drawn from a
@@ -146,22 +146,21 @@ Override the built-in default path for the socket pool.  This can be
 used to address a specific instance of the TLS Pool, for instance one
 that is run under a personal account, accessing a personally held
 PKCS #11 token.
-.BR "-C command" ", "--chat-command command"
+.BR "-p command" ", "--pavlov-command command"
 Specifies an alternative command in the style of
-.IR chat (8)
-to replace the builtin version, which was forked from
-.IR pppd (8).
-Note that an external command will normally be less efficient than the
+.IR pavlov (3)
+to replace the builtin version.
+An external command will normally be less efficient than the
 builtin variety.
 .PP
-The remaining commandline arguments form the \fICHATARGS\fR, which are passed
+The remaining commandline arguments form the \fI<pavlov_cmd>...\fR, which are passed
 on to the builtin or external
-.IR chat (8)
+.IR pavlov (3)
 facility.  This can be used to perform communication in plaintext over
 the soon-to-be TLS connection; it can be used to negotiate options over
 a textual protocol up to the agreement to switch to TLS.  This is
 precisely what
-.IR chat (8)
+.IR pavlov (3)
 was design for; except that the next-stage protocol was PPP and not TLS.
 .SH LIMITATIONS
 .PP
@@ -211,7 +210,7 @@ from various funding sources with an interest in a private and secure
 Internet that gives users control over their online presence.  This particular
 project has been sponsored in part by NCSC.
 .SH "SEE ALSO"
-.IR tlspool-daemon "(8), " tlspool_starttls "(3), " chat "(8), " pppd (8).
+.IR tlspool-daemon "(8), " tlspool_starttls "(3), " pavlov "(3)."
 .PP
 Online resources may be found on the project home page,
 .IR http://tlspool.arpa2.net .

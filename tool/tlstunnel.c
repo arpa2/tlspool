@@ -23,9 +23,7 @@
 #include <sys/resource.h>
 
 #include <tlspool/starttls.h>
-
-
-#include "chat_builtin.h"
+#include <arpa2/pavlov.h>
 
 
 static starttls_t tlsdata = {
@@ -33,7 +31,7 @@ static starttls_t tlsdata = {
 	.local = 0,
 };
 
-static char *chatcommand;
+static char *pavlovcommand;
 static char *tunnelcommand;
 static int global_argc;
 static char **global_argv;
@@ -65,7 +63,7 @@ static struct option command_options [] = {
 	{ "local-id",		1, NULL, 'L' },
 	{ "remote-id",		1, NULL, 'R' },
 	{ "tlspool-socket-path",1, NULL, 'S' },
-	{ "chat-command",	1, NULL, 'C' },
+	{ "pavlov-command",	1, NULL, 'p' },
 	{ NULL, 0, NULL, 0 }
 };
 
@@ -151,18 +149,18 @@ void parse_addrinfo (char *instr, char local_remote,
 }
 
 
-int chat (int plainfd) {
-	int chatexit = 0;
+int run_pavlov (int plainfd) {
+	int pavlovexit = 0;
 	//
-	// Without explicit chatcommand, invoke the builtin ppp-style chat
-	if (chatcommand == NULL) {
-		return chat_builtin (plainfd, tunnelcommand, global_argc, global_argv);
+	// Without explicit pavlovcommand, invoke pavlov scripting for expect/response
+	if (pavlovcommand == NULL) {
+		return pavlov (plainfd, plainfd, tunnelcommand, global_argc, global_argv);
 	}
 	//
-	// Fork off a STARTTLS chat session
+	// Fork off a STARTTLS pavlov session
 	switch (fork ()) {
 	case -1:
-		perror ("Failed to fork ppp-style chat script");
+		perror ("Failed to fork pavlov command");
 		return 1;
 	case 0:
 		close (0);
@@ -172,15 +170,15 @@ int chat (int plainfd) {
 			exit (2);
 		}
 		fprintf (stderr, "Starting script + args: %s, %s, %s...\n", tunnelcommand, global_argv [1], global_argv [2]);
-		execve (chatcommand, global_argv, NULL /*TODO:envp:params*/);
-		perror ("Failed to start alternative to the ppp-style chat");
-		exit (2);		// See tlstunnel-chat(8)
+		execve (pavlovcommand, global_argv, NULL /*TODO:envp:params*/);
+		perror ("Failed to start alternative to the pavlov command");
+		exit (2);
 	default:
-		wait (&chatexit);
-		if (!WIFEXITED (chatexit)) {
-			return 2;	// See tlstunnel-chat(8)
+		wait (&pavlovexit);
+		if (!WIFEXITED (pavlovexit)) {
+			return 2;
 		}
-		return WEXITSTATUS (chatexit);
+		return WEXITSTATUS (pavlovexit);
 	}
 }
 
@@ -246,7 +244,7 @@ int fmtcpy (char *dst, const char *src, size_t dstsz, starttls_t *tlsdata) {
 }
 
 
-//TODO// Spark thread with:  fd, localaddrinfo, role, remoteaddrinfo, chatcommand, tlsdata, tunnelcommand, argc, argv; only dynamic is fd, localaddrinfo; thread negotiates session and then goes down; curtlsdata is a thread local variable
+//TODO// Spark thread with:  fd, localaddrinfo, role, remoteaddrinfo, pavlovcommand, tlsdata, tunnelcommand, argc, argv; only dynamic is fd, localaddrinfo; thread negotiates session and then goes down; curtlsdata is a thread local variable
 
 /* Data structure passed to connection handler threads */
 struct fdinfo {
@@ -321,19 +319,19 @@ int connect_remote (starttls_t *curtlsdata, void *vlai) {
 
 
 /* The connection_thread() uses the facilities of starttls_xxx() to
- * request the plaintext fd.  It also runs chat() over the cryptfd before
+ * request the plaintext fd.  It also runs pavlov() over the cryptfd before
  * invoking starttls_xxx(), as a preamble to the encrypted link.
  *
  * When acting as a client:
  *  - local initiator cnx is plainfd
  *  - fwd/cryptfd is constructed early, using connect_remote()
- *  - fwd/cryptfd is then subjected to chat()
+ *  - fwd/cryptfd is then subjected to pavlov()
  *  - fwd/cryptfd is then passed into starttls_client()
  *  - cnx/plainfd is setup in int *privdata, connect_plaintext is NULL/default
  *
  * When acting as a server:
  *  - local intitiator cnx is cryptfd
- *  - cnx/cryptfd first subjected to chat()
+ *  - cnx/cryptfd first subjected to pavlov()
  *  - cnx/cryptfd is that passed into starttls_server()
  *  - fwd/plainfd is constructed on demand, in connect_plaintext()
  *  - fwd/plainfd construction is connect_remote() with privdata==localaddrinfo
@@ -359,10 +357,10 @@ void *connection_thread (void *vfdi) {
 		fwd = cryptfd = connect_remote (&curtlsdata, fdi->localaddrinfo);
 	}
 	//
-	// Perform chat on the cryptfd, as a preamble to starttls
-	setup = chat (cryptfd);
+	// Run pavlov on the cryptfd, as a preamble to starttls
+	setup = run_pavlov (cryptfd);
 	if (setup != 0) {
-		fprintf (stderr, "Failed chatting precursor to TLS, error code %d\n", setup);
+		fprintf (stderr, "Failed pavlovian precursor to TLS, error code %d\n", setup);
 		return NULL;
 	}
 	//
@@ -561,13 +559,13 @@ int main (int argc, char *argv []) {
 			}
 			cmdsoxpath = strdup (optarg);
 			break;
-		case 'C':
-			/* -C /usr/bin/chat for external chat replacement */
-			if (chatcommand) {
-				fprintf (stderr, "You can specify only one replacement for the ppp-style chat command\n");
+		case 'p':
+			/* -p /usr/bin/pavlov for external pavlov replacement */
+			if (pavlovcommand) {
+				fprintf (stderr, "You can specify only one replacement for the pavlov command\n");
 				exit (1);
 			}
-			chatcommand = strdup (optarg);
+			pavlovcommand = strdup (optarg);
 			break;
 		case -1:
 			parsing = 0;
@@ -612,11 +610,11 @@ int main (int argc, char *argv []) {
 		exit (1);
 	}
 	//
-	// Collect the chatscript arguments
+	// Collect the pavlov arguments
 	global_argv = argv + (optind - 1);   /* First is arg, not progname! */
 	global_argc = argc - (optind - 1);
 #ifdef DEBUG
-	printf ("argv_chat = %s, %s, %s... (skipped %d)\n", argv [argc_skip], argv [argc_skip+1], argv [argc_skip+1], argc_skip);
+	printf ("argv_pavlov = %s, %s, %s... (skipped %d)\n", argv [argc_skip], argv [argc_skip+1], argv [argc_skip+1], argc_skip);
 #endif
 	//
 	// Listen to the incoming address

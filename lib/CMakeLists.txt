@@ -56,6 +56,12 @@ set_target_properties(pavlov_static PROPERTIES
     OUTPUT_NAME pavlov
 )
 
+# POSIX extended regex on Windows sits in a separate library, gnurx
+if ("${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
+    target_link_libraries (pavlov_shared -lgnurx)
+    target_link_libraries (pavlov_static -lgnurx)
+endif()
+
 install(
     TARGETS tlspool_shared pavlov_shared
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

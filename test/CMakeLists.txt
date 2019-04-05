@@ -79,17 +79,17 @@ add_test(
 ### Run testcli and testsrv under Pypeline
 #
 #
-set (testcli  ${CMAKE_BINARY_DIR}/tool/tlspool-test-client)
-set (testsrv  ${CMAKE_BINARY_DIR}/tool/tlspool-test-server)
+set (testcli  ${CMAKE_BINARY_DIR}/tool/tlsclient)
+set (testsrv  ${CMAKE_BINARY_DIR}/tool/tlsserver)
 set (pypeline ${CMAKE_SOURCE_DIR}/test/pypeline)
 
 if (TEST_UNDER_TLSPOOL)
 add_test(
 	NAME ping6dance-srv2cli
 	COMMAND ${pypeline}
-		${testcli} . IP:LOCAL TCP:PORT      -5 -sSv "" ping EPROTONOTSUPPORTED ping6 pong6
+		${testcli} . IP:LOCAL TCP:PORT      -5 "?ping" "!EPROTONOTSUPPORTED" "?ping6" "!pong6"
 		--
-		${testsrv} . IP:LOCAL TCP:PORT SIG:HUP -sSv    ping EPROTONOTSUPPORTED ping6 pong6
+		${testsrv} . IP:LOCAL TCP:PORT SIG:HUP "!ping" "?EPROTONOTSUPPORTED" "!ping6" "?pong6"
 )
 endif()
 
@@ -97,9 +97,9 @@ if (TEST_UNDER_TLSPOOL)
 add_test(
 	NAME ping6dance-cli2srv
 	COMMAND ${pypeline}
-		${testcli} . IP:LOCAL TCP:PORT      -5 -sSv    ping EPROTONOTSUPPORTED ping6 pong6
+		${testcli} . IP:LOCAL TCP:PORT      -5 "!ping" "?EPROTONOTSUPPORTED" "!ping6" "?pong6"
 		--
-		${testsrv} . IP:LOCAL TCP:PORT SIG:HUP -sSv "" ping EPROTONOTSUPPORTED ping6 pong6
+		${testsrv} . IP:LOCAL TCP:PORT SIG:HUP "?ping" "!EPROTONOTSUPPORTED" "?ping6" "!pong6"
 )
 endif()
 

@@ -12,17 +12,26 @@ set (OPT_LIBEV)
 endif()
 target_compile_definitions(_tool_common PUBLIC -DDONAI_ONLY_TEXTPROC)
 
-add_executable(tlspool-test-client testcli.c socket.c chat_builtin.c $<TARGET_OBJECTS:_tool_common>)
-target_link_libraries(tlspool-test-client tlspool_shared ${pthread_LIBRARIES} ${OPT_LIBEV})
+add_executable(tlspool-chat-client chatcli.c socket.c $<TARGET_OBJECTS:_tool_common>)
+target_link_libraries(tlspool-chat-client tlspool_shared ${pthread_LIBRARIES} ${OPT_LIBEV})
 
-add_executable(tlspool-test-server testsrv.c socket.c chat_builtin.c $<TARGET_OBJECTS:_tool_common>)
-target_link_libraries(tlspool-test-server tlspool_shared ${pthread_LIBRARIES} ${OPT_LIBEV})
+add_executable(tlspool-chat-server chatsrv.c socket.c $<TARGET_OBJECTS:_tool_common>)
+target_link_libraries(tlspool-chat-server tlspool_shared ${pthread_LIBRARIES} ${OPT_LIBEV})
 
-add_executable(tlspool-test-peer testpeer.c socket.c chat_builtin.c $<TARGET_OBJECTS:_tool_common>)
-target_link_libraries(tlspool-test-peer tlspool_shared ${pthread_LIBRARIES} ${OPT_LIBEV})
+add_executable(tlspool-chat-peer chatpeer.c socket.c $<TARGET_OBJECTS:_tool_common>)
+target_link_libraries(tlspool-chat-peer tlspool_shared ${pthread_LIBRARIES} ${OPT_LIBEV})
 
-add_executable(tlstunnel tlstunnel.c chat_builtin.c)
-target_link_libraries(tlstunnel tlspool_shared ${pthread_LIBRARIES})
+add_executable(tlsclient tlsclient.c socket.c)
+target_link_libraries(tlsclient tlspool_shared pavlov_shared ${pthread_LIBRARIES} ${OPT_LIBEV})
+
+add_executable(tlsserver tlsserver.c socket.c)
+target_link_libraries(tlsserver tlspool_shared pavlov_shared ${pthread_LIBRARIES} ${OPT_LIBEV})
+
+add_executable(tlspeer tlspeer.c socket.c)
+target_link_libraries(tlspeer tlspool_shared pavlov_shared ${pthread_LIBRARIES} ${OPT_LIBEV})
+
+add_executable(tlstunnel tlstunnel.c)
+target_link_libraries(tlstunnel tlspool_shared pavlov_shared ${pthread_LIBRARIES})
 
 add_executable(tlspool-ping pingpool.c)
 target_link_libraries(tlspool-ping tlspool_shared ${pthread_LIBRARIES})
@@ -81,10 +90,13 @@ install(
         tlspool-disclose-set
         tlspool-localid-set
         tlspool-trust-set
-        tlspool-test-client
-        tlspool-test-server
-        # tlspool-test-peer # doesn't work yet?
+        tlspool-chat-client
+        tlspool-chat-server
+        # tlspool-chat-peer # doesn't work yet?
         pgp11-genkey
+	tlsclient
+	tlsserver
+	# tlspeer # doesn't work yet?
         tlstunnel
 	pavlov
     DESTINATION ${CMAKE_INSTALL_SBINDIR}

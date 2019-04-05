@@ -39,6 +39,7 @@ set(man3_SRCS
     tlspool_async_cancel
     tlspool_async_process
     tlspool_async_close
+    pavlov
 )
 set(man8_SRCS tlspool-daemon tlstunnel)
 
