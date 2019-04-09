@@ -1021,7 +1021,8 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, pool_handle
 	struct linger linger = { 1, 10 };
 	int have_client;
 	int retval = GNUTLS_E_SUCCESS;
-
+	int local_shutdown_done = 0;
+	int remote_shutdown_done = 0;
 client = INVALID_POOL_HANDLE;
 	inout [0].fd = local;
 	inout [1].fd = remote;
@@ -1049,22 +1050,30 @@ client = INVALID_POOL_HANDLE;
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat polling returned an error");
 			break;	// Polling sees an error
 		}
-		if (inout [0].revents & POLLIN) {
+		tlog (TLOG_COPYCAT, LOG_DEBUG, "inout [0].revents 0x%04x", inout [0].revents);
+		tlog (TLOG_COPYCAT, LOG_DEBUG, "inout [1].revents 0x%04x", inout [1].revents);
+		if (inout [0].revents & (POLLIN | POLLHUP)) {
 			// Read local and encrypt to remote
-			sz = recv (local, buf, sizeof (buf), RECV_FLAGS);
+			sz = (inout [0].revents & POLLIN) || !local_shutdown_done ? recv (local, buf, sizeof (buf), RECV_FLAGS) : 0;
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat received %d local bytes (or error<0) from %d", (int) sz, local);
 			if (sz == -1) {
 				tlog (TLOG_COPYCAT, LOG_ERR, "Error while receiving: %s", strerror (errno));
 				break;	// stream error
 			} else if (sz == 0) {
 				inout [0].events &= ~POLLIN;
-				shutdown (local, SHUT_RD);
+				if (!local_shutdown_done) {
+					tlog (TLOG_COPYCAT, LOG_DEBUG, "Sending gnutls_bye");
+					shutdown (local, SHUT_RD);
 #ifdef WINDOWS_PORT
-				setsockopt (remote, SOL_SOCKET, SO_LINGER, (const char *) &linger, sizeof (linger));
+					setsockopt (remote, SOL_SOCKET, SO_LINGER, (const char *) &linger, sizeof (linger));
 #else /* WINDOWS_PORT */
-				setsockopt (remote, SOL_SOCKET, SO_LINGER, &linger, sizeof (linger));
+					setsockopt (remote, SOL_SOCKET, SO_LINGER, &linger, sizeof (linger));
 #endif /* WINDOWS_PORT */
-				gnutls_bye (wrapped, GNUTLS_SHUT_WR);
+					gnutls_bye (wrapped, GNUTLS_SHUT_WR);
+					local_shutdown_done = 1;
+				} else {
+					tlog (TLOG_COPYCAT, LOG_DEBUG, "already done local shutdown");
+				}
 			} else if (gnutls_record_send (wrapped, buf, sz) != sz) {
 				tlog (TLOG_COPYCAT, LOG_ERR, "gnutls_record_send() failed to pass on the requested bytes");
 				break;	// communication error
@@ -1072,10 +1081,10 @@ client = INVALID_POOL_HANDLE;
 				tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat sent %d bytes to remote %d", (int) sz, remote);
 			}
 		}
-		if (inout [1].revents & POLLIN) {
+		if (inout [1].revents & (POLLIN | POLLHUP)) {
 			// Read remote and decrypt to local
 			gnutls_packet_t packet;
-			sz = gnutls_record_recv_packet (wrapped, &packet);
+			sz = (inout [1].revents & POLLIN) || !remote_shutdown_done ? gnutls_record_recv_packet (wrapped, &packet) : 0;
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat received %d remote bytes from %d (or error if <0)", (int) sz, remote);
 			if (sz < 0) {
 				//TODO// Process GNUTLS_E_REHANDSHAKE
@@ -1091,13 +1100,18 @@ client = INVALID_POOL_HANDLE;
 				}
 			} else if (sz == 0) {
 				inout [1].events &= ~POLLIN;
-				shutdown (remote, SHUT_RD);
+				if (!remote_shutdown_done) {
+					shutdown (remote, SHUT_RD);
 #ifdef WINDOWS_PORT
-				setsockopt (local, SOL_SOCKET, SO_LINGER, (const char *) &linger, sizeof (linger));
+					setsockopt (local, SOL_SOCKET, SO_LINGER, (const char *) &linger, sizeof (linger));
 #else /* WINDOWS_PORT */
-				setsockopt (local, SOL_SOCKET, SO_LINGER, &linger, sizeof (linger));
+					setsockopt (local, SOL_SOCKET, SO_LINGER, &linger, sizeof (linger));
 #endif /* WINDOWS_PORT */
-				shutdown (local, SHUT_WR);
+					shutdown (local, SHUT_WR);
+					remote_shutdown_done = 1;
+				} else {
+					tlog (TLOG_COPYCAT, LOG_DEBUG, "already done remote shutdown");
+				}
 			} else { /* sz > 0 */
 				gnutls_datum_t data;
 				gnutls_packet_get(packet, &data, NULL);
