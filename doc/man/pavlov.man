@@ -1,0 +1,160 @@
+.TH PAVLOV 3 "April 2019" "ARPA2.net" "System Management Commands"
+.SH NAME
+pavlov \- Simple expect/response command langauge
+.SH SYNOPSIS
+.B #include <arpa2/pavlov.h>
+.sp
+.B int pavlov (
+.RS
+.B int \fIfdin\fB, int \fIfdout\fB,
+.br
+.B char *\fIprogname\fB, int \fIargc\fB, char *\fIargv\fB[] )
+.RE
+.sp
+.B pavlov
+.I <arg>...
+.sp
+.SH DESCRIPTION
+.PP
+The
+.BR pavlov (3)
+function takes in a slight variation on what a normal
+.BR main ()
+program sees, namely input and output file descriptors
+\fIfdin\fR and \fIfdout\fR respectively.  Instead of
+receiving the program name in \fIargv[0]\fR, the
+.BR pavlov (3)
+function expects it in the \fIprogname\fR parameter.
+The use of \fIargc\fR and \fIargv\fR reflects this too;
+the program name is not expected in \fIargv[0]\fR, and
+instead the arguments start immediately.
+.PP
+The arguments provided reveal the expectations and
+responses of the
+.BR pavlov (3)
+function.  Each word is a simple operation, and will
+be executed in the order of appearance in the current
+program version.
+.PP
+The
+.B pavlov
+command is a straightforward wrapper around the library function,
+which is designed for use in programs that need an easily
+scriptable expectation/response interaction.  The command
+form is mostly useful for testing and development.
+.SH COMMANDS
+.PP
+The following commands are available:
+.TP
+.B ?\fI<regex>\fR
+matches a POSIX extended regular expression against a
+message as it arrives over \fIfdin\fR.  Note that this
+assumes that the input is not manually typed, as it
+would be with
+.BR chat (8),
+but is instead expected to arrive in bursts, like network
+packets.  The \fI<regex>\fR form is case-sensitive
+but may have multiple lines; the \fB^\fR and \fB$\fR
+symbols will respectively match the beginning and end
+of any of these lines.
+As soon as a match is found within the message, this
+command finishes; otherwise, another message is awaited.
+.TP
+.B !\fI<text>\fR
+prints the \fI<text>\fR to \fIfdout\fR.  It will
+unescape backslashes in the usual manner.  Support
+for groups in a prior \fI<regex>\fR is not built
+into the current version of
+.BR pavlov (3).
+.TP
+.B @\fI<msdelay>\fR
+waits for the number of milli-seconds indicated in
+the numeric \fI<msdelay>\fR value.
+.SH RETURN VALUE
+When the last command is completed without error,
+the function returns 0 and the program delivers
+that as its exit code.
+.PP
+Any error causes the function to return 1 and set
+.I errno
+to something appropriate.  The command will return
+this return value 1 as its exit code to aid any
+scripts wrapped around it, and it will print an
+error message to aid any human user.
+.SH EXAMPLE
+The smallest program for
+.B pavlov
+that runs to successful completion is an empty
+program.  Simply running the command without
+arguments, or calling the function with \fIargc\fR
+set to zero would lead to an immediate 0 return
+code.
+.PP
+A more typical sequence of commands would be
+.I pavlov ?bell @100 !drool
+to express that upon encountering the word
+.I bell
+on its input, the command should send out the word
+.I drool
+on its output after a 0.1 second delay.
+.PP
+The intention of
+.BR pavlov (3)
+however, is to jump through the slightly variable
+hoops that textual protocols need to be jumped to
+get a \fBSTARTTLS\fR command agreed on.  Once a
+TLS handshake is complete, protocols tend to start
+from scratch and forget the preceding unencrypted
+protocol.  Such a use case could be handled with
+a sequence such as this for an SMTP server:
+.TP
+.B ?^220 .*$
+to match an SMTP server's welcome message,
+.TP
+.B !EHLO orvelte.nep\r\n
+to send our mail server name and greet the server,
+.TP
+.B ?^250-STARTTLS$
+to await the option that we desire to use,
+.TP
+.B ?^250 .*$
+to wait for the end of the options,
+.TP
+.B !STARTTLS\r\n
+to request a switch to TLS,
+.TP
+.B ?^220 .*$
+to await acceptance.
+.PP
+This kind of exchange can indeed be useful in
+combination with the
+.BR tlstunnel (8)
+command.
+.SH AUTHOR
+.PP
+Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
+Pavlov starts its life as part of the TLS Pool, but may start a life
+of its own if it is considered generally useful.
+.SH "REPORTING BUGS"
+.PP
+For any discussion, including about bugs, please use the TLS Pool
+mailing list found on
+.IR http://lists.arpa2.org/mailman/listinfo/tls-pool .
+.PP
+Please read the software distribution's
+.IR README ", " INSTALL " and " TODO " files"
+for information about the
+.IR tlspool-daemon (8)
+implementation status.
+.SH COPYRIGHT
+.PP
+Copyright \(co 2019 Rick van Rein, ARPA2.net.
+.PP
+ARPA2 is funded from InternetWide.org, which in turns receives donations
+from various funding sources with an interest in a private and secure
+Internet that gives users control over their online presence.
+.SH "SEE ALSO"
+.IR tlstunnel "(8), " tlspool-daemon "(8), " chat (8).
+.PP
+Online resources may be found on the project home page,
+.IR http://tlspool.arpa2.net .

@@ -20,7 +20,8 @@
 
 #include "socket.h"
 #include "runterminal.h"
-#include "chat_builtin.h"
+
+// chat was removed immediately after 4af0d87c479d9eb9720f56b2fea9cfdd0d6d1fd5
 
 
 static int    vhostc;
@@ -119,16 +120,14 @@ int main (int argc, char **argv) {
 	bool do_timeout = false;
 	int signum = -1;
 	int timeout = -1;
-	bool do_chat = false;
-	int    chat_argc = 0;
-	char **chat_argv = NULL;
 	uint16_t infolen = 0;
 	uint8_t info [TLSPOOL_INFOBUFLEN];
 
 	// argv[1] is SNI or . as a wildcard;
 	// argv[2] is address and requires argv[3] for port
-	if ((argc == 1) || (argc == 3)) {
-		fprintf (stderr, "Usage: %s servername|. [address port [0|signum|-timeout [chatargs...]]]\n", argv [0]);
+	// argv[5+] were used for chat, but dropped after 4af0d87c479d9eb9720f56b2fea9cfdd0d6d1fd5
+	if ((argc == 1) || (argc == 3) || (argc > 5)) {
+		fprintf (stderr, "Usage: %s servername|. [address port [0|signum|-timeout]]\n", argv [0]);
 		exit (1);
 	}
 
@@ -175,13 +174,6 @@ int main (int argc, char **argv) {
 			do_signum = true;
 			signum = parsed;
 		}
-	}
-
-	// process optional argv[5+] with chat information
-	if (argc > 5) {
-		do_chat = true;
-		chat_argc = argc - 5;
-		chat_argv = argv + 5;
 	}
 
 	if (sigemptyset (&sigcontset) ||
@@ -330,18 +322,11 @@ reconnect:
 			printf ("SIGCONT will trigger renegotiation of the TLS handshake during a connection\n");
 		}
 		printf ("DEBUG: Local plainfd = %d\n", plainfd);
-		if (do_chat) {
-			if (chat_builtin (plainfd, progname, chat_argc, chat_argv) != 0) {
-				fprintf (stderr, "Chat session failed on the server side\n");
-				exit (1);
-			}
-		} else {
-			runterminal (plainfd, &sigcont, &tlsdata_now,
+		runterminal (plainfd, &sigcont, &tlsdata_now,
 				PIOF_STARTTLS_LOCALROLE_SERVER | PIOF_STARTTLS_REMOTEROLE_CLIENT | PIOF_STARTTLS_RENEGOTIATE,
 				"testsrv@tlspool.arpa2.lab",
 				NULL
-			);
-		}
+		);
 		printf ("DEBUG: Client connection terminated\n");
 		close (plainfd);
 		exit_val = 0;
