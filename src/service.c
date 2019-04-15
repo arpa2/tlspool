@@ -433,7 +433,7 @@ static void process_command (struct command *cmd) {
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Processing command 0x%08x, passfd=%d", cmd->cmd.pio_cmd, cmd->passfd);
 	union pio_data *d = &cmd->cmd.pio_data;
 	if (is_callback (cmd)) {
-printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
+tlog (TLOG_UNIXSOCK, LOG_DEBUG, "DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
 		post_callback (cmd);
 		return;
 	}
@@ -463,11 +463,9 @@ printf ("DEBUG: Processing callback command sent over fd=%d\n", cmd->clientfd);
 	case PIOC_CONTROL_REATTACH_V2:
 		ctlkey_reattach (cmd);
 		return;
-#ifndef WINDOWS_PORT
 	case PIOC_PINENTRY_V2:
 		register_pinentry_command (cmd);
 		return;
-#endif
 	case PIOC_LIDENTRY_REGISTER_V2:
 		register_lidentry_command (cmd);
 		return;
