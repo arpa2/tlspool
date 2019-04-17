@@ -4,11 +4,15 @@ include_directories(${BDB_INCLUDE_DIR})
 use_com_err_table (errortable)
 
 if (EXPERIMENTAL_LIBEV)
-add_library(_tool_common OBJECT runterminal-libev.c ../src/donai.c)
 set (OPT_LIBEV ev)
 else()
-add_library(_tool_common OBJECT runterminal.c       ../src/donai.c)
 set (OPT_LIBEV)
+endif()
+
+if (EXPERIMENTAL_LIBEV)
+add_library(_tool_common OBJECT runterminal-libev.c ../src/donai.c)
+else()
+add_library(_tool_common OBJECT runterminal.c       ../src/donai.c)
 endif()
 target_compile_definitions(_tool_common PUBLIC -DDONAI_ONLY_TEXTPROC)
 
@@ -36,8 +40,12 @@ target_link_libraries(tlstunnel tlspool_shared pavlov_shared ${pthread_LIBRARIES
 add_executable(tlspool-ping pingpool.c)
 target_link_libraries(tlspool-ping tlspool_shared ${pthread_LIBRARIES})
 
+if (EXPERIMENTAL_LIBEV)
+add_executable(tlspool-ping-async pingpool-async-libev.c)
+else()
 add_executable(tlspool-ping-async pingpool-async.c)
-target_link_libraries(tlspool-ping-async tlspool_async_shared ${pthread_LIBRARIES})
+endif()
+target_link_libraries(tlspool-ping-async tlspool_async_shared ${pthread_LIBRARIES} ${OPT_LIBEV})
 
 add_executable(tlspool-localid-select lidsel.c)
 target_link_libraries(tlspool-localid-select tlspool_shared ${pthread_LIBRARIES})
