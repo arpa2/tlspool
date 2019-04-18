@@ -110,7 +110,7 @@ void cleanup_service (void) {
  */
 static struct command *cmdpool = NULL;
 static int cmdpool_len = 1000;
-static struct command *allocate_command_for_clientfd (pool_handle_t fd) {
+static struct command *allocate_command_for_clientfd (int fd) {
 	static int cmdpool_pos = 0;
 	int pos;
 	struct command *cmd;
@@ -149,7 +149,7 @@ static struct command *allocate_command_for_clientfd (pool_handle_t fd) {
  *
  * TODO: This is O(cmdpool_len) so linked lists could help to avoid trouble.
  */
-static void free_commands_by_clientfd (pool_handle_t clientfd) {
+static void free_commands_by_clientfd (int clientfd) {
 	int i;
 	if (cmdpool == NULL) {
 		return;
@@ -325,7 +325,7 @@ struct command *send_callback_and_await_response (struct command *cmdresp, time_
  */
 static void post_callback (struct command *cmd) {
 	uint16_t cbid = cmd->cmd.pio_cbid - 1;
-	cblist [cbid].fd = INVALID_POOL_HANDLE;
+	cblist [cbid].fd = -1;
 	cblist [cbid].followup = cmd;
 	assert (pthread_mutex_lock (&cbfree_mutex) == 0);
 	tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Signaling on the semaphore of callback 0x%08x", &cblist [cbid]);
@@ -348,7 +348,7 @@ static void post_callback (struct command *cmd) {
  * in the TLS Pool when a clientfd is closed by the client (perhaps due to
  * a crash in response to the callback).
  */
-static void free_callbacks_by_clientfd (pool_handle_t clientfd) {
+static void free_callbacks_by_clientfd (int clientfd) {
 	int i;
 	for (i=0; i<1024; i++) {
 //TODO// == clientfd was >= 0 (and managed to get closes sent back to all)
@@ -494,7 +494,7 @@ void run_service (void) {
 	}
 	for (i=0; i<1024; i++) {
 		cblist [i].next = cbfree;
-		cblist [i].fd = INVALID_POOL_HANDLE; // Mark as unused
+		cblist [i].fd = -1; // Mark as unused
 		pthread_cond_init (&cblist [i].semaphore, NULL);
 		cblist [i].followup = NULL;
 		cbfree = &cblist [i];

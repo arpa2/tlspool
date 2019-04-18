@@ -61,7 +61,7 @@ static pthread_mutex_t have_master_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void *master_thread (void *path);
 
-static pool_handle_t poolfd = INVALID_POOL_HANDLE;		/* Blocked retrieval with tlspool_socket() */
+static int poolfd = -1;		/* Blocked retrieval with tlspool_socket() */
 
 static pthread_cond_t updated_poolfd = PTHREAD_COND_INITIALIZER;
 
@@ -108,9 +108,9 @@ int tlspool_pid (char *opt_pidfile) {
  * on the poolfd.  This is the process that actually contacts the TLS Pool
  * and sets up the poolfd socket.
  */
-pool_handle_t tlspool_open_poolhandle (char *path) {
-	pool_handle_t poolfdsample = poolfd;
-	if (poolfdsample == INVALID_POOL_HANDLE) {
+int tlspool_open_poolhandle (char *path) {
+	int poolfdsample = poolfd;
+	if (poolfdsample < 0) {
 		pthread_mutex_t local_cond_wait = PTHREAD_MUTEX_INITIALIZER;
 		//
 		// Now that we have established a (first) poolfd, start up
@@ -137,8 +137,8 @@ pool_handle_t tlspool_open_poolhandle (char *path) {
 				syslog(LOG_NOTICE, "Failed to create TLS Pool client master thread");
 				pthread_mutex_unlock(&have_master_lock);
 				tlspool_close_poolhandle(poolfd);
-				poolfd = INVALID_POOL_HANDLE;
-				return INVALID_POOL_HANDLE;
+				poolfd = -1;
+				return -1;
 			}
 			pthread_detach (thr);
 			//
@@ -158,7 +158,7 @@ pool_handle_t tlspool_open_poolhandle (char *path) {
 		// shared mutex -- which is why we use a local mutex per
 		// thread: we don't need to wait for unique access.
 		assert (pthread_mutex_lock (&local_cond_wait) == 0);
-		while (poolfdsample = poolfd, poolfdsample == INVALID_POOL_HANDLE) {
+		while (poolfdsample = poolfd, poolfdsample < 0) {
 			pthread_cond_wait (&updated_poolfd, &local_cond_wait);
 		}
 		pthread_mutex_unlock (&local_cond_wait);
@@ -175,7 +175,7 @@ pool_handle_t tlspool_open_poolhandle (char *path) {
 struct registry_entry {
 	pthread_mutex_t *sig;		/* Wait for master thread's recvmsg() */
 	struct tlspool_command *buf;	/* Buffer to hold received command */
-	pool_handle_t pfd;			/* Client thread's assumed poolfd */
+	int pfd;			/* Client thread's assumed poolfd */
 };
 
 static struct registry_entry **registry;
@@ -245,7 +245,7 @@ static int registry_update (int *reqid, struct registry_entry *entry) {
  * Any outstanding registry entries will be sent an ERROR value at this
  * time.
  */
-static void registry_flush (pool_handle_t poolfd) {
+static void registry_flush (int poolfd) {
 	int regid = tlspool_simultaneous_starttls ();
 	assert (pthread_mutex_lock (&registry_lock) == 0);
 	while (regid-- > 0) {
@@ -294,20 +294,20 @@ static void *master_thread (void *path) {
 		//
 		// If any old socket clients persist, tell them that the
 		// TLS Pool has been disconnected.
-		if (poolfd != INVALID_POOL_HANDLE) {
-			pool_handle_t poolfdcopy = poolfd;
+		if (poolfd >= 0) {
+			int poolfdcopy = poolfd;
 // printf ("DEBUG: Removing old poolfd %d\n", poolfd);
-			poolfd = INVALID_POOL_HANDLE;
-			registry_flush (INVALID_POOL_HANDLE);
+			poolfd = -1;
+			registry_flush (-1);
 			tlspool_close_poolhandle (poolfdcopy);
 		}
 		//
 		// First, connect to the TLS Pool; upon failure, retry
 		// with 1s, 2s, 4s, 8s, 16s, 32s, 32s, 32s, ... intervals.
 		usec = 1000000;
-		while (poolfd == INVALID_POOL_HANDLE) {
-			pool_handle_t newpoolfd = open_pool (path);			
-			if (newpoolfd != INVALID_POOL_HANDLE) {
+		while (poolfd < 0) {
+			int newpoolfd = open_pool (path);			
+			if (newpoolfd >= 0) {
 				poolfd = newpoolfd;
 			}
 			//
@@ -323,7 +323,7 @@ static void *master_thread (void *path) {
 // printf ("DEBUG: Signalled slave threads with poolfd %d\n", poolfd);
 			//
 			// Wait before repeating, with exponential back-off
-			if (poolfd == INVALID_POOL_HANDLE) {
+			if (poolfd < 0) {
 				os_usleep(usec);
 				usec <<= 1;
 				if (usec > 32000000) {
@@ -392,12 +392,12 @@ static void *master_thread (void *path) {
  * doing that yet.  Then, wait until a message has been received.
  */
 static void registry_recvmsg (struct registry_entry *entry) {
-	static pool_handle_t lastpoolfd = INVALID_POOL_HANDLE;
+	static int lastpoolfd = -1;
 	//
 	// Detect poolfd socket change for potential dangling recipients
 	if (entry->pfd != lastpoolfd) {
 		lastpoolfd = tlspool_open_poolhandle (NULL);
-		if ((entry->pfd != lastpoolfd) && (lastpoolfd != INVALID_POOL_HANDLE)) {
+		if ((entry->pfd != lastpoolfd) && (lastpoolfd >= 0)) {
 			// Signal PIOC_ERROR to outdated recipients.
 			// (That will include the current recipient.)
 			registry_flush (lastpoolfd);
@@ -434,12 +434,12 @@ int tlspool_ping (pingpool_t *pingdata) {
 	pthread_mutex_t recvwait = PTHREAD_MUTEX_INITIALIZER;
 	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
 	int entry_reqid = -1;
-	pool_handle_t poolfd = INVALID_POOL_HANDLE;
+	int poolfd = -1;
 
 	/* Prepare command structure */
 	poolfd = tlspool_open_poolhandle (NULL);
 // printf ("DEBUG: poolfd = %d\n", poolfd);
-	if (poolfd == INVALID_POOL_HANDLE) {
+	if (poolfd < 0) {
 		errno = ENODEV;
 		return -1;
 	}
@@ -511,7 +511,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 	pthread_mutex_t recvwait = PTHREAD_MUTEX_INITIALIZER;
 	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
 	int entry_reqid = -1;
-	pool_handle_t poolfd = INVALID_POOL_HANDLE;
+	int poolfd = -1;
 	int plainfd = -1;
 	int sentfd = -1;
 	int processing;
@@ -523,7 +523,7 @@ int tlspool_starttls (int cryptfd, starttls_t *tlsdata,
 	}
 	/* Prepare command structure */
 	poolfd = tlspool_open_poolhandle (NULL);
-	if (poolfd == INVALID_POOL_HANDLE) {
+	if (poolfd < 0) {
 		closesocket(cryptfd);
 		errno = ENODEV;
 		return -1;
@@ -682,7 +682,7 @@ int _tlspool_control_command (int cmdcode, uint8_t *ctlkey) {
 
 	/* Prepare command structure */
 	poolfd = tlspool_open_poolhandle (NULL);
-	if (poolfd == INVALID_POOL_HANDLE) {
+	if (poolfd < 0) {
 		errno = ENODEV;
 		return -1;
 	}
@@ -776,7 +776,7 @@ int tlspool_prng (char *label,
 	pthread_mutex_t recvwait = PTHREAD_MUTEX_INITIALIZER;
 	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
 	int entry_reqid = -1;
-	pool_handle_t poolfd = INVALID_POOL_HANDLE;
+	int poolfd = -1;
 	memset (prng_buf, 0, prng_len);
 
 	/* Sanity checks */
@@ -791,7 +791,7 @@ int tlspool_prng (char *label,
 
 	/* Prepare command structure */
 	poolfd = tlspool_open_poolhandle (NULL);
-	if (poolfd == INVALID_POOL_HANDLE) {
+	if (poolfd < 0) {
 		errno = ENODEV;
 		return -1;
 	}
@@ -873,7 +873,7 @@ int tlspool_info (uint32_t info_kind,
 	pthread_mutex_t recvwait = PTHREAD_MUTEX_INITIALIZER;
 	struct registry_entry regent = { .sig = &recvwait, .buf = &cmd };
 	int entry_reqid = -1;
-	pool_handle_t poolfd = INVALID_POOL_HANDLE;
+	int poolfd = -1;
 	/* Sanity check */
 	if ((*infolenptr > TLSPOOL_INFOBUFLEN) && (*infolenptr != 0xffff)) {
 		errno = EINVAL;
@@ -881,7 +881,7 @@ int tlspool_info (uint32_t info_kind,
 	}
 	/* Prepare command structure */
 	poolfd = tlspool_open_poolhandle (NULL);
-	if (poolfd == INVALID_POOL_HANDLE) {
+	if (poolfd < 0) {
 		errno = ENODEV;
 		return -1;
 	}

@@ -102,7 +102,7 @@ static pthread_mutex_t ctlkey_registry_lock = PTHREAD_MUTEX_INITIALIZER;
  * be -1 to signal it is detached.  The forked flag should be non-zero
  * to indicate that this is a forked connection.
  */
-int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, enum security_layer sec, pool_handle_t ctlfd, int forked) {
+int ctlkey_register (uint8_t *ctlkey, struct ctlkeynode *ckn, enum security_layer sec, int ctlfd, int forked) {
 	int i;
 	int todo;
 	struct ctlkeynode **nodepp;
@@ -191,7 +191,7 @@ int ctlkey_unregister (uint8_t *ctlkey) {
  * which means that a non-NULL return value must later be passed to a function
  * that unlocks the resource, ctlkey_unfind().
  */
-struct ctlkeynode *ctlkey_find (uint8_t *ctlkey, enum security_layer sec, pool_handle_t ctlfd) {
+struct ctlkeynode *ctlkey_find (uint8_t *ctlkey, enum security_layer sec, int ctlfd) {
 	struct ctlkeynode *ckn;
 	//
 	// Claim unique access; this lock survives until cltkey_unfind()
@@ -264,11 +264,11 @@ void ctlkey_detach (struct command *cmd) {
 		int cmp = memcmp (ctlkey, (*nodepp)->ctlkey, TLSPOOL_CTLKEYLEN);
 		if (cmp == 0) {
 			/* Found the right node */
-			if ((*nodepp)->ctlfd == INVALID_POOL_HANDLE) {
+			if ((*nodepp)->ctlfd < 0) {
 				tlserrno = E_TLSPOOL_CTLKEY_DETACHED;
 				errstr = "TLS Pool found the control key already detached";
 			} else if ((*nodepp)->ctlfd == cmd->clientfd) {
-				(*nodepp)->ctlfd = INVALID_POOL_HANDLE;
+				(*nodepp)->ctlfd = -1;
 				//FORK!=DETACH// ctlkey_signalling_raise ();
 				tlserrno = 0;
 				errstr = NULL;
@@ -306,7 +306,7 @@ void ctlkey_reattach (struct command *cmd) {
 		int cmp = memcmp (ctlkey, (*nodepp)->ctlkey, TLSPOOL_CTLKEYLEN);
 		if (cmp == 0) {
 			/* Found the right node */
-			if ((*nodepp)->ctlfd == INVALID_POOL_HANDLE) {
+			if ((*nodepp)->ctlfd < 0) {
 				(*nodepp)->ctlfd = cmd->clientfd;
 				//FORK!=DETACH// ctlkey_signalling_raise ();
 				tlserrno = 0;
@@ -342,7 +342,7 @@ void ctlkey_reattach (struct command *cmd) {
  * be cleaned up.  Note that detaching is not done before the TLS handshake
  * is complete.
  */
-static void _ctlkey_close_ctlfd_recurse (pool_handle_t clisox, struct ctlkeynode **nodepp) {
+static void _ctlkey_close_ctlfd_recurse (int clisox, struct ctlkeynode **nodepp) {
 	struct ctlkeynode *node = *nodepp;
 	if (node == NULL) {
 		return;
@@ -355,7 +355,7 @@ static void _ctlkey_close_ctlfd_recurse (pool_handle_t clisox, struct ctlkeynode
 		assert (*nodepp == node);
 //DEBUG// fprintf(stderr,"Unregistering control key (automatically, as controlling fd closes)\n");
 		if (node->forked) {
-			node->ctlfd = INVALID_POOL_HANDLE;
+			node->ctlfd = -1;
 		} else {
 			_ctlkey_unregister_nodepp (nodepp);
 			// Now we know that *nodepp has changed, it is no longer
@@ -367,7 +367,7 @@ static void _ctlkey_close_ctlfd_recurse (pool_handle_t clisox, struct ctlkeynode
 		}
 	}
 }
-void ctlkey_close_ctlfd (pool_handle_t clisox) {
+void ctlkey_close_ctlfd (int clisox) {
 	assert (pthread_mutex_lock (&ctlkey_registry_lock) == 0);
 	_ctlkey_close_ctlfd_recurse (clisox, &rootnode);
 	pthread_mutex_unlock (&ctlkey_registry_lock);

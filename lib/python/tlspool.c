@@ -3039,7 +3039,7 @@ static swig_module_info swig_module = {swig_types, 12, 0, 0, 0, 0};
 
 	typedef char service_t [16];
 
-	typedef int pool_handle_t;
+	typedef int int;
 
 	typedef struct {
 		int tlserrno;
@@ -5263,7 +5263,7 @@ SWIGINTERN PyObject *_wrap__open_poolhandle(PyObject *SWIGUNUSEDPARM(self), PyOb
   char *buf1 = 0 ;
   int alloc1 = 0 ;
   PyObject * obj0 = 0 ;
-  pool_handle_t result;
+  int result;
   
   if (!PyArg_ParseTuple(args,(char *)"O:_open_poolhandle",&obj0)) SWIG_fail;
   res1 = SWIG_AsCharPtrAndSize(obj0, &buf1, NULL, &alloc1);
@@ -5273,7 +5273,7 @@ SWIGINTERN PyObject *_wrap__open_poolhandle(PyObject *SWIGUNUSEDPARM(self), PyOb
   arg1 = (char *)(buf1);
   {
     SWIG_PYTHON_THREAD_BEGIN_ALLOW;
-    result = (pool_handle_t)tlspool_open_poolhandle(arg1);
+    result = (int)tlspool_open_poolhandle(arg1);
     SWIG_PYTHON_THREAD_END_ALLOW;
   }
   resultobj = SWIG_From_int((int)(result));
@@ -5617,7 +5617,7 @@ static swig_type_info _swigt__p_a_16__uint8_t = {"_p_a_16__uint8_t", "uint8_t (*
 static swig_type_info _swigt__p_char = {"_p_char", "char *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_control_data = {"_p_control_data", "control_data *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_error_data = {"_p_error_data", "error_data *", 0, 0, (void*)0, 0};
-static swig_type_info _swigt__p_int = {"_p_int", "int *|pool_handle_t *", 0, 0, (void*)0, 0};
+static swig_type_info _swigt__p_int = {"_p_int", "int *|int *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_ping_data = {"_p_ping_data", "ping_data *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_prng_data = {"_p_prng_data", "prng_data *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_socket_data = {"_p_socket_data", "socket_data *", 0, 0, (void*)0, 0};

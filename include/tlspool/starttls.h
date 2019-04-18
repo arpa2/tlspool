@@ -28,10 +28,10 @@ extern "C"
 
 #ifdef WINDOWS_PORT
 #include <windows.h>
-#else
-#include <unistd.h>
+#include <io.h>
 #endif /* WINDOWS_PORT */
 
+#include <unistd.h>
 
 /*
  * These functions are used by application software to turn an existing
@@ -63,11 +63,6 @@ typedef struct {
 	DWORD dwState;
 	BOOL fPendingIO;
 } PIPEINST, *LPPIPEINST;
-typedef LPPIPEINST pool_handle_t;
-#define INVALID_POOL_HANDLE NULL
-#else /* WINDOWS_PORT */
-typedef int pool_handle_t;
-#define INVALID_POOL_HANDLE -1
 #endif /* WINDOWS_PORT */ 
 
 /* Setup the TLS pool socket to use, if it is not the default path name
@@ -77,19 +72,13 @@ typedef int pool_handle_t;
  * be called with NULL in the first call, in which case the default location
  * is used.
  */
-pool_handle_t tlspool_open_poolhandle (char *path);
+int tlspool_open_poolhandle (char *path);
 
 /* Close a pool handle
  */
-#ifdef WINDOWS_PORT
-static inline void tlspool_close_poolhandle (pool_handle_t poolh) {
-	CloseHandle (poolh);
-}
-#else /* WINDOWS_PORT */
-static inline void tlspool_close_poolhandle (pool_handle_t poolh) {
+static inline void tlspool_close_poolhandle (int poolh) {
 	close (poolh);
 }
-#endif /* WINDOWS_PORT */
 
 
 /* The library function for ping, which is called to establish the API
