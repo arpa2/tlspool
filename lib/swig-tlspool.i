@@ -45,8 +45,6 @@
 
 	typedef char service_t [16];
 
-	typedef int pool_handle_t;
-
 	typedef struct {
 		int tlserrno;
 		char message [128];

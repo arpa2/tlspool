@@ -109,7 +109,7 @@ bool tlspool_async_open (struct tlspool_async_pool *pool,
 	}
 #else
 	sox = open_named_pipe ((LPCTSTR) socket_path);
-	if (sox == INVALID_POOL_HANDLE) {
+	if (sox < 0) {
 		//TODO// errno = ... (if not set yet)
 		return false;
 	}
@@ -399,5 +399,5 @@ bool tlspool_async_close (struct tlspool_async_pool *pool,
 }
 
 
-//TODO// How to register with an event loop?  The pool_handle_t is strange on Windows...
+//TODO// How to register with an event loop?  The int is strange on Windows...
 

@@ -590,7 +590,7 @@ int main (int argc, char *argv []) {
 		exit (1);
 	}
 	if (cmdsoxpath) {
-		if (tlspool_open_poolhandle (cmdsoxpath) == INVALID_POOL_HANDLE) {
+		if (tlspool_open_poolhandle (cmdsoxpath) < 0) {
 			perror ("Failed to open TLS Pool command socket");
 			exit (1);
 		}

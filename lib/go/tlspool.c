@@ -238,7 +238,7 @@ static void* Swig_malloc(int c) {
 
 	typedef char service_t [16];
 
-	typedef int pool_handle_t;
+	typedef int int;
 
 	typedef struct {
 		int tlserrno;
@@ -1060,7 +1060,7 @@ intgo _wrap_Internal_pid_tlspool_03ad2d7a43d805c7(_gostring_ _swig_go_0) {
 
 intgo _wrap_Internal_open_poolhandle_tlspool_03ad2d7a43d805c7(_gostring_ _swig_go_0) {
   char *arg1 = (char *) 0 ;
-  pool_handle_t result;
+  int result;
   intgo _swig_go_result;
   
   
@@ -1069,7 +1069,7 @@ intgo _wrap_Internal_open_poolhandle_tlspool_03ad2d7a43d805c7(_gostring_ _swig_g
   arg1[_swig_go_0.n] = '\0';
   
   
-  result = (pool_handle_t)tlspool_open_poolhandle(arg1);
+  result = (int)tlspool_open_poolhandle(arg1);
   _swig_go_result = result; 
   free(arg1); 
   return _swig_go_result;

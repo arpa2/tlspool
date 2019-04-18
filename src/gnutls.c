@@ -1014,7 +1014,7 @@ void cleanup_starttls (void) {
  * GNUTLS_E_REHANDSHAKE which client or server side may receive when an
  * attempt is made to renegotiate the security of the connection.
  */
-static int copycat (int local, int remote, gnutls_session_t wrapped, pool_handle_t client) {
+static int copycat (int local, int remote, gnutls_session_t wrapped, int client) {
 	char buf [1024];
 	struct pollfd inout [3];
 	ssize_t sz;
@@ -1024,14 +1024,14 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, pool_handle
 	bool local_shutdown_done = false;
 	bool remote_shutdown_done = false;
 	
-	client = INVALID_POOL_HANDLE;
+	client = -1;
 	inout [0].fd = local;
 	inout [1].fd = remote;
 #ifdef WINDOWS_PORT
 	have_client = 0;
 #else
 	inout [2].fd = client;
-	have_client = inout [2].fd != INVALID_POOL_HANDLE;
+	have_client = inout [2].fd >= 0;
 #endif
 	if (!have_client) {
 		inout [2].revents = 0;	// Will not be written by poll
@@ -5384,7 +5384,7 @@ fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__
 		ckn->cryptfd = cryptfd;
 		ckn->plainfd = plainfd;
 //DEBUG// fprintf (stderr, "Registering control key\n");
-		if (renegotiating || (ctlkey_register (orig_starttls.ctlkey, &ckn->regent, security_tls, detach ? INVALID_POOL_HANDLE : cmd->clientfd, forked) == 0)) {
+		if (renegotiating || (ctlkey_register (orig_starttls.ctlkey, &ckn->regent, security_tls, detach ? -1 : cmd->clientfd, forked) == 0)) {
 			int copied = GNUTLS_E_SUCCESS;
 			send_command (replycmd, -1);		// app sent plainfd to us
 			if (preauth) {
@@ -5408,12 +5408,12 @@ fprintf (stderr, "ctlkey_unregister under ckn=%p at %d\n", (void *)ckn, __LINE__
 					tlog (TLOG_COPYCAT, LOG_DEBUG, "Passed on %d remote bytes from anonymous precursor to %d\n", preauthlen, plainfd);
 					free (preauth);
 					preauth = NULL;
-					copied = copycat (plainfd, cryptfd, session, detach ? INVALID_POOL_HANDLE : cmd->clientfd);
+					copied = copycat (plainfd, cryptfd, session, detach ? -1 : cmd->clientfd);
 				} else {
 					tlog (TLOG_COPYCAT, LOG_DEBUG, "Failed to pass on %d remote bytes from anonymous precursor to %d\n", preauthlen, plainfd);
 				}
 			} else {
-				copied = copycat (plainfd, cryptfd, session, detach ? INVALID_POOL_HANDLE : cmd->clientfd);
+				copied = copycat (plainfd, cryptfd, session, detach ? -1 : cmd->clientfd);
 			}
 			// Renegotiate if copycat asked us to
 			if (copied == GNUTLS_E_REHANDSHAKE) {

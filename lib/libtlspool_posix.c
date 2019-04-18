@@ -1,7 +1,7 @@
 /* This file is #include'd by libtlspool.c */
 #define closesocket(s) close(s)
 
-int os_sendmsg_command(pool_handle_t poolfd, struct tlspool_command *cmd, int fd) {
+int os_sendmsg_command(int poolfd, struct tlspool_command *cmd, int fd) {
 	struct iovec iov;
 	struct cmsghdr *cmsg;
 	struct msghdr mh = { 0 };
@@ -23,7 +23,7 @@ int os_sendmsg_command(pool_handle_t poolfd, struct tlspool_command *cmd, int fd
 }
 
 
-int os_recvmsg_command(pool_handle_t poolfd, struct tlspool_command *cmd) {
+int os_recvmsg_command(int poolfd, struct tlspool_command *cmd) {
 	struct iovec iov;
 	struct cmsghdr *cmsg;
 	struct msghdr mh = { 0 };
@@ -110,18 +110,18 @@ int os_usleep(unsigned int usec) {
 	return usleep(usec);
 }
 
-pool_handle_t open_pool (void *path) {
+int open_pool (void *path) {
 	struct sockaddr_un sun;
 	//
 	// Setup path information -- value and size were checked
 	memset (&sun, 0, sizeof (sun));
 	strcpy (sun.sun_path, (char *) path);
 	sun.sun_family = AF_UNIX;
-	pool_handle_t newpoolfd = socket (AF_UNIX, SOCK_STREAM, 0);
-	if (newpoolfd != INVALID_POOL_HANDLE) {
+	int newpoolfd = socket (AF_UNIX, SOCK_STREAM, 0);
+	if (newpoolfd >= 0) {
 		if (connect (newpoolfd, (struct sockaddr *) &sun, SUN_LEN (&sun)) != 0) {
 			tlspool_close_poolhandle (newpoolfd);
-			newpoolfd = INVALID_POOL_HANDLE;
+			newpoolfd = -1;
 		}
 	}
 // printf ("DEBUG: Trying new poolfd %d for path %s\n", newpoolfd, sun.sun_path);

@@ -61,7 +61,7 @@
  */
 static pthread_mutex_t pinentry_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct command *pinentry_cmd = NULL;
-static pool_handle_t pinentry_client = INVALID_POOL_HANDLE;
+static int pinentry_client = -1;
 static time_t pinentry_timeout = 0;
 
 
@@ -112,7 +112,7 @@ void register_pinentry_command (struct command *cmd) {
  * being closed.  The PINENTRY facility is freed up immediately for the next
  * requestor.
  */
-void pinentry_forget_clientfd (pool_handle_t fd) {
+void pinentry_forget_clientfd (int fd) {
 	assert (pthread_mutex_lock (&pinentry_lock) == 0);
 	if (pinentry_client == fd) {
 		// No response possible.  Service reclaims for cmd pooling
@@ -120,7 +120,7 @@ void pinentry_forget_clientfd (pool_handle_t fd) {
 		// Immediately free up for any new PINENTRY request
 		pinentry_timeout = 0;
 		// The following is needless but more consistent with restart
-		pinentry_client = INVALID_POOL_HANDLE;
+		pinentry_client = -1;
 	}
 	pthread_mutex_unlock (&pinentry_lock);
 }

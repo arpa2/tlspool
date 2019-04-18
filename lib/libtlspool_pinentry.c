@@ -60,7 +60,7 @@ int tlspool_pin_service (char *path, uint32_t regflags, int responsetimeout_usec
 
 	/* Access the TLS Pool socket */
 	if (path == NULL) {
-		path = tlspool_configvar (NULL, "daemon_pidfile");
+		path = tlspool_configvar (NULL, "socket_name");
 	}
 	if (path == NULL) {
 		path = TLSPOOL_DEFAULT_SOCKET_PATH;

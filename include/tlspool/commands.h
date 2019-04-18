@@ -15,8 +15,10 @@ extern "C"
 #define _usleep(usec) (Sleep((usec) / 1000))
 #define poll(fds, nfds, timeout) WSAPoll(fds, nfds, timeout)
 #include <winsock2.h>
+#define DPRINTF(...) tlog (TLOG_UNIXSOCK, LOG_DEBUG, __VA_ARGS__)
 #else /* WINDOWS_PORT */
 #define _usleep(usec) usleep(usec)
+#define DPRINTF(...) fprintf (stderr, __VA_ARGS__)
 #endif /* WINDOWS_PORT */
 
 

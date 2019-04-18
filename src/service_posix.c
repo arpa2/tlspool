@@ -5,7 +5,7 @@ static struct soxinfo soxinfo [1024];
 static struct pollfd soxpoll [1024];
 
 /* Register a socket.  It is assumed that first all server sockets register */
-static void register_socket (pool_handle_t sox, uint32_t soxinfo_flags) {
+static void register_socket (int sox, uint32_t soxinfo_flags) {
 	int flags = fcntl (sox, F_GETFD);
 	flags |= O_NONBLOCK;
 	fcntl (sox, F_SETFD, flags);
@@ -27,7 +27,7 @@ static void register_socket (pool_handle_t sox, uint32_t soxinfo_flags) {
 /* TODO: This may copy information back and thereby avoid processing in the
  * current loop passthrough.  No problem, poll() will show it once more. */
 static void unregister_client_socket_byindex (int soxidx) {
-	pool_handle_t sox = soxpoll [soxidx].fd;
+	int sox = soxpoll [soxidx].fd;
 	free_callbacks_by_clientfd (sox);
 	free_commands_by_clientfd (sox);
 	pinentry_forget_clientfd (sox);
@@ -75,7 +75,7 @@ static int os_send_command (struct command *cmd, int passfd)
 }
 
 /* Receive a command.  Return nonzero on success, zero on failure. */
-static int receive_command (pool_handle_t sox, struct command *cmd) {
+static int receive_command (int sox, struct command *cmd) {
 	int newfds [2];
 	int newfdcnt = 0;
 	char anc [CMSG_SPACE (sizeof (int))];
@@ -116,12 +116,12 @@ static int receive_command (pool_handle_t sox, struct command *cmd) {
 	return 1;
 }
 
-void register_server_socket (pool_handle_t srvsox) {
+void register_server_socket (int srvsox) {
 	register_socket (srvsox, SOF_SERVER);
 }
 
 
-void register_client_socket (pool_handle_t clisox) {
+void register_client_socket (int clisox) {
 	register_socket (clisox, SOF_CLIENT);
 }
 
@@ -130,7 +130,7 @@ void register_client_socket (pool_handle_t clisox) {
  *  - to trigger a thread that is hoping writing after EAGAIN
  *  - to read a message and further process it
  */
-void process_activity (pool_handle_t sox, int soxidx, struct soxinfo *soxi, short int revents) {
+void process_activity (int sox, int soxidx, struct soxinfo *soxi, short int revents) {
 	if (revents & POLLOUT) {
 		//TODO// signal waiting thread that it may continue
 		tlog (TLOG_UNIXSOCK, LOG_CRIT, "Eekk!!  Could send a packet?!?  Unregistering client");
@@ -141,8 +141,8 @@ void process_activity (pool_handle_t sox, int soxidx, struct soxinfo *soxi, shor
 		if (soxi->flags & SOF_SERVER) {
 			struct sockaddr sa;
 			socklen_t salen = sizeof (sa);
-			pool_handle_t newsox = accept (sox, &sa, &salen);
-			if (newsox != INVALID_POOL_HANDLE) {
+			int newsox = accept (sox, &sa, &salen);
+			if (newsox >= 0) {
 				tlog (TLOG_UNIXSOCK, LOG_NOTICE, "Received incoming connection.  Registering it");
 				register_client_socket (newsox);
 			}
@@ -167,7 +167,7 @@ static void os_run_service ()
 		tlog (TLOG_UNIXSOCK, LOG_DEBUG, "Polled %d sockets, returned %d", num_sox, polled);
 		for (i=0; i<num_sox; i++) {
 			if (soxpoll [i].revents & (POLLHUP|POLLERR|POLLNVAL)) {
-				pool_handle_t sox = soxpoll [i].fd;
+				int sox = soxpoll [i].fd;
 				tlog (TLOG_UNIXSOCK, LOG_NOTICE, "Unregistering socket %d", sox);
 				unregister_client_socket_byindex (i);
 				close (sox);

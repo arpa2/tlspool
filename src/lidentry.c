@@ -53,7 +53,7 @@
  */
 static pthread_mutex_t lidentry_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct command *lidentry_cmd = NULL;
-static pool_handle_t lidentry_client = INVALID_POOL_HANDLE;
+static int lidentry_client = -1;
 static time_t lidentry_rereg_timeout = 0;
 static uint32_t lidentry_regflags;	// Setup during registration
 static uint32_t lidentry_timeout;	// Setup during registration (#sec)
@@ -187,7 +187,7 @@ void register_lidentry_command (struct command *cmd) {
  * being closed.  The LIDENTRY facility is freed up immediately for the next
  * requestor.
  */
-void lidentry_forget_clientfd (pool_handle_t fd) {
+void lidentry_forget_clientfd (int fd) {
 	assert (pthread_mutex_lock (&lidentry_lock) == 0);
 printf ("DEBUG: forgetting LID entry clientfd %d (if it is %d and not -1)\n", fd, lidentry_client);
 	// Only respond when the current client wants to be forgotten
@@ -197,7 +197,7 @@ printf ("DEBUG: forgetting LID entry clientfd %d (if it is %d and not -1)\n", fd
 		// Immediately free up for any new LIDENTRY request
 		lidentry_rereg_timeout = 0;
 		// The following is needless but more consistent with restart
-		lidentry_client = INVALID_POOL_HANDLE;
+		lidentry_client = -1;
 		// Forcefully free the callback sequence claim
 		lidentry_cbseq_claimed = 0;
 		// Note: Callbacks waiting on fd should receive an ERROR reply
