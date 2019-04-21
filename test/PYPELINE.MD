@@ -81,7 +81,7 @@ convenient time; this is useful for programs that otherwise run
 forever, because they have no clue about the amount of work
 that has been done, such as a daemon.
 
-The end game of `pyperline` proceeds in three phases.  During
+The end game of `pypeline` proceeds in three phases.  During
 phase 1, it waits until all programs without a signal have
 ended.  During phase 2, any programs with a signal that are
 still running will be sent all the signals that were given.
@@ -90,7 +90,7 @@ have also ended.  At that point, the overall exit value for
 the test is determined and returned as the overall result.
 
 
-## Pyperline can provide Resources
+## Pypeline can provide Resources
 
 A number of command line arguments is special.  The are used to
 name resources to be allocated, supplied as a textual value
@@ -185,4 +185,24 @@ after all the programs have finished.
 
 Now the complete return value is constructed; any error
 exits with value 1 but all ok exits.
+
+
+## Colourful like an Easter Egg
+
+If you have the Python package `colored` installed, you
+will get output with as much graphical splendour (and
+style...) as an easter egg:
+
+  * **programs** each use their own colour
+  * **stderr** is printed in bold, on separate lines, timed with stdout
+  * **debug** lines are dimmed (or not bold) if they contain `DEBUG`
+  * **exit codes** are printed in bold
+  * **sections** have headers in reverse video
+
+You can use `less -R` for paging through these files,
+or `export LESS=R` to fixate it.
+You do need a colour terminal, sorry about that `;-)`
+
+Colouring is per line, so `grep` will show program colours too.
+You may even be able to search for colours...
 

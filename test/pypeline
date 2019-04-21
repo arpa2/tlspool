@@ -25,6 +25,7 @@
 import os
 import sys
 import time
+import string
 import re
 
 import socket
@@ -38,6 +39,29 @@ import tempfile
 if len (sys.argv) < 2 or sys.argv [1] == '--' or sys.argv [-1] == '--':
 	sys.stderr.write ('Usage: %s cmd1 arg1a arg1b -- cmd2 arg2a -- cmd3 arg3a arg3b\n' % (sys.argv [0],))
 	sys.exit (1)
+
+
+# Introduce colours when they are available
+try:
+        from colored import fg, bg, attr, colors
+	colours = map (string.lower, colors.names)
+	colours.remove ('white')
+	colours.remove ('black')
+	colours.remove ('grey_0')
+	colours.remove ('grey_100')
+except:
+        def attr (_col):
+                return ''
+        fg = attr
+        bg = attr
+	colours = [ 'BLASS' ]
+
+colour_idx = 0
+def pick_colour ():
+	global colours, colour_idx
+	colour = colours [colour_idx % len (colours)]
+	colour_idx += 1
+	return colour
 
 
 # The prox and zigs lists collect the arguments in [0] and any
@@ -115,6 +139,20 @@ for argi in sys.argv [1:]:
 phase1_mutex = threading.Condition ()
 phase1_threads = set ()
 
+class ErrorTapper (threading.Thread):
+
+	def __init__ (self, stderr, addfun):
+		threading.Thread.__init__ (self)
+		self.stderr = stderr
+		self.addfun = addfun
+
+	def run (self):
+		nextln = self.stderr.readline ()
+		while nextln != '':
+			self.addfun (nextln)
+			nextln = self.stderr.readline ()
+
+
 class SyncedProcess (threading.Thread):
 
 	def __init__ (self, argv, name=None, signals=[], ok_exit=set ([0])):
@@ -122,12 +160,17 @@ class SyncedProcess (threading.Thread):
 		self.error = None
 		self.signals = signals
 		self.ok_exit = ok_exit
+		self.colour = pick_colour ()
 		self.proc = subprocess.Popen (
 						argv,
 						stdin=None,
 						stdout=subprocess.PIPE,
+						stderr=subprocess.PIPE,
 						universal_newlines=True)
 		self.sofar = ''
+		self.sobad = ''
+		self.ertap = ErrorTapper (self.proc.stderr, self.errorline)
+		self.ertap.start ()
 		self.copyloop ('--\n')
 		self.phase1locker = len (signals) == 0
 		if self.phase1locker:
@@ -144,8 +187,16 @@ class SyncedProcess (threading.Thread):
 					sys.stderr.write ('Program output ended before marker "%s"\n' % (terminator.strip (),))
 					self.error = 1
 					return
-				sys.stdout.write ('%s: %s' % (self.name, nextln))
+				attrs = attr ('dim') if 'DEBUG' in nextln else ''
+				attrs += fg (self.colour)
+				sys.stdout.write (attrs + '%s: %s' % (self.name, nextln) + attr (0))
 			self.sofar += nextln
+
+	def errorline (self, nextln):
+		attrs = attr ('bold') if not 'DEBUG' in nextln else ''
+		attrs += fg (self.colour)
+		sys.stdout.write (attrs + '%s: %s' % (self.name, nextln) + attr (0))
+		self.sobad += nextln
 
 	def run (self):
 		self.copyloop ('')
@@ -172,8 +223,12 @@ class SyncedProcess (threading.Thread):
 		self.proc.poll ()
 		return self.proc.returncode
 
+	def fetch_errors (self):
+		return self.sobad
+
 	def final_result (self):
 		self.join ()
+		self.ertap.join ()
 		if self.proc.returncode is None:
 			self.proc.wait ()
 		return self.error or self.proc.returncode
@@ -184,6 +239,7 @@ class SyncedProcess (threading.Thread):
 
 	def final_output (self):
 		self.join ()
+		self.ertap.join ()
 		if self.proc.returncode is None:
 			self.proc.wait ()
 		return self.sofar
@@ -198,10 +254,10 @@ for (proc,zig,excitement) in zip (prox,zigz,exok):
 		while proc [pni] != '--' and proc [pni] [:1] == '-':
 			pni += 1
 	name = proc [pni].split ('/') [-1].split ('\\') [-1]
-	sys.stdout.write ('pypeline: initial: %s == %r\n' % (name,proc))
+	sys.stdout.write ('pypeline: initial: %s == %r\n' % (name,proc) + attr (0))
 	newsyncer = SyncedProcess (proc, name=name, signals=zig, ok_exit=excitement)
 	syncprox.append (newsyncer)
-	sys.stdout.write ('pypeline: freerun: %s\n' % (name,))
+	sys.stdout.write ('pypeline: freerun: %s\n' % (name,) + attr (0))
 	newsyncer.start ()
 
 #
@@ -223,14 +279,14 @@ for (proc,zig,excitement) in zip (prox,zigz,exok):
 # is in the ordering in phases, not the ordering on the command line.
 #
 
-sys.stdout.write ('pypeline: end game, stage 1/3.  Await self-terminating programs.\n')
+sys.stdout.write ('pypeline: end game, stage 1/3.  Await self-terminating programs.\n' + attr (0))
 phase1_mutex.acquire ()
 while len (phase1_threads) > 0:
 	active = phase1_threads.copy ()
 	phase1_mutex.wait ()
 	for sync in active:
 		if sync not in phase1_threads:
-			sys.stdout.write ('pypeline: stopped: %s\n' % (sync.name,))
+			sys.stdout.write ('pypeline: stopped: %s\n' % (sync.name,) + attr (0))
 phase1_mutex.release ()
 
 sys.stdout.write ('pypeline: end game, stage 2/3.  Sending registered termination signals.\n')
@@ -242,11 +298,20 @@ exitval = 0
 for (sync,proc) in zip (syncprox,prox):
 	(result,result_ok) = sync.final_judgement ()
 	if result_ok:
-		sys.stdout.write ('pypeline: success: %s -> exit (%d)\n' % (sync.name, result))
+		sys.stdout.write (('\n\npypeline: success: %s -> ' + attr ('bold') + 'exit (%d)' + attr (0) + '\n') % (sync.name, result))
 	else:
-		sys.stdout.write ('pypeline: failure: %s -> exit (%d)\n' % (sync.name, result))
+		sys.stdout.write ((    'pypeline: failure: %s -> ' + attr ('bold') + 'exit (%d)' + attr (0) + '\n') % (sync.name, result))
 		exitval = 1
-	sys.stdout.write ('\nFINAL OUTPUT FROM %s IS:\n%s\n\n' % (sync.name.upper (), sync.final_output ()))
+	sys.stdout.write ('\n' + fg (sync.colour) + attr ('reverse') + attr ('bold') + (('FINAL ERRORS FROM %s ARE:' + attr (0) + '\n') % (sync.name.upper (),)))
+	for ln in sync.fetch_errors ().split ('\n'):
+		attrs = attr ('bold') if not 'DEBUG' in ln else ''
+		attrs += fg (sync.colour)
+		sys.stdout.write (attrs + ln + attr (0) + '\n')
+	sys.stdout.write (fg (sync.colour) + attr ('reverse') + (('FINAL OUTPUT FROM %s IS:' + attr (0) + '\n')  % (sync.name.upper (),)))
+	for ln in sync.final_output ().split ('\n'):
+		attrs = attr ('dim') if 'DEBUG' in ln else ''
+		attrs += fg (sync.colour)
+		sys.stdout.write (attrs + ln + attr (0) + '\n')
 
 if tmpdir is not None:
 	for tmpfn in os.listdir (tmpdir):
