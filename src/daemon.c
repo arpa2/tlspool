@@ -71,17 +71,25 @@ int main (int argc, char *argv []) {
 	char *cfgfile = NULL;
 	int parsing = 1;
 	int kill_competition = 0;
+	int foreground = 0;
 
 	/*
 	 * Cmdline argument parsing
 	 */
 	while (parsing) {
-		int opt = getopt (argc, argv, "Vkc:");
+		int opt = getopt (argc, argv, "Vfkc:");
 		switch (opt) {
 		case 'V':
 			fputs (version_string, stdout);
 			fputc ('\n', stdout);
 			exit (0);
+			break;
+		case 'f':
+			if (foreground) {
+				fprintf (stderr, "You can only flag foreground once\n");
+				exit (1);
+			}
+			foreground = 1;
 			break;
 		case 'k':
 			if (kill_competition) {
@@ -109,35 +117,33 @@ int main (int argc, char *argv []) {
 	//TODO// setup syslogging
 
 	//UNDO// sigset_t sigblockmask;
-#if defined(HAVE_SYSTEMD) || defined(WINDOWS_PORT)
-	int pid = -2;	/* Skip setsid() but otherwise proceed */
-#else
-	int pid = fork ();
-#endif
+	int pid = -2;
+	if (!foreground) {
+		pid = fork ();
+	}
 	switch (pid) {
 	case -1:
 		perror ("Failed to fork daemon");
 		exit (1);
 	case 0:
-#ifndef WINDOWS_PORT
-		// Detach from the startup session
-		setsid ();
-#endif
+		if (!foreground) {
+			// Detach from the startup session
+			setsid ();
+		}
 	case -2:
-#ifdef WINDOWS_PORT
+		#ifdef WINDOWS_PORT
 		setup_winsock();
-#endif
-
-#ifndef WINDOWS_PORT
-		//TODO// close the common fd's 0/1/2
-		// Setup a SIGHUP handler to gracefully stop service
-		if (sigaction (SIGHUP, &hupaction, NULL) != 0) {
-			perror ("Failed to setup HUP signal handler");
+		#endif
+		if (!foreground) {
+			//TODO// close the common fd's 0/1/2
+			// Setup a SIGHUP handler to gracefully stop service
+			if (sigaction (SIGHUP, &hupaction, NULL) != 0) {
+				perror ("Failed to setup HUP signal handler");
+			}
+			if (signal (SIGPIPE, SIG_IGN) == SIG_ERR) {
+				perror ("Failed to protect daemon from SIGPIPE");
+			}
 		}
-		if (signal (SIGPIPE, SIG_IGN) == SIG_ERR) {
-			perror ("Failed to protect daemon from SIGPIPE");
-		}
-#endif
 		//UNDO// // Block SIGINT, which is used between copycat() threads
 		//UNDO// sigemptyset (&sigblockmask);
 		//UNDO// sigaddset (&sigblockmask, SIGINT);

@@ -3,7 +3,10 @@
 tlspool-daemon \- Centralises TLS away from application name spaces.
 .SH SYNOPSIS
 .B tlspool-daemon
-[\fI-k\fR] [\fI-c configfile\fR]
+[\fI-k\fR] [\fI-f\fR] [\fI-c configfile\fR]
+.sp
+.B tlspool-daemon
+-V
 .SH DESCRIPTION
 .PP
 The
@@ -68,6 +71,14 @@ program running at the UNIX domain socket for the TLS Pool.  An exchange
 will be initiated to stop the previous
 .B tlspool-daemon
 daemon and then the current one will continue to be setup.
+.TP
+\fB\-f\fR
+runs the
+.B tlspool-daemon
+in the foreground.  This option should always be used for Systemd and Windows.
+.TP
+\fB\-V\fR
+reports the current version of the TLS Pool.
 .SH AUTHOR
 .PP
 Written by Rick van Rein of OpenFortress.nl, for the ARPA2.net project.
