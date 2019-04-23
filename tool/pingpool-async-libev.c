@@ -107,6 +107,7 @@ int main (int argc, char *argv []) {
 	//
 	// Run the event loop to process the one callback we installed
 	ev_run (loop, EVRUN_ONCE);
+	assert (callback_done);
 	//
 	// Continue as if we completed an asynchronous call
 	print_pioc_ping (pp, "TLS Pool");
