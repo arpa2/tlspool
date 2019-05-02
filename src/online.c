@@ -49,7 +49,7 @@
 #include <gnutls/gnutls.h>
 #include <gnutls/crypto.h>
 
-#include <quick-der/api.h>
+#include <arpa2/quick-der.h>
 
 #include <tlspool/commands.h>
 #include <tlspool/internal.h>
@@ -1264,7 +1264,7 @@ static int dane_attrcmp_eval (online_data_t dta, val_t hdl, char *param) {
 				continue;  // Failed
 			}
 		}
-		if (der_header (&cert, &der_tag, &der_ilen, &der_hlen)) {
+		if (der_header2 (cert, &der_tag, &der_ilen, &der_hlen)) {
 			continue;  // Failed
 		}
 		cert.derlen = der_hlen + der_ilen;
