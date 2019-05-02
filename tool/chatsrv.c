@@ -321,7 +321,7 @@ reconnect:
 		} else {
 			printf ("SIGCONT will trigger renegotiation of the TLS handshake during a connection\n");
 		}
-		printf ("DEBUG: Local plainfd = %d, localid = %s, remoteid = %s\n", plainfd, tlsdata_now.localid, tlsdata_now.remoteid);
+		printf ("DEBUG: Local plainfd = %d\n", plainfd);
 		runterminal (plainfd, &sigcont, &tlsdata_now,
 				PIOF_STARTTLS_LOCALROLE_SERVER | PIOF_STARTTLS_REMOTEROLE_CLIENT | PIOF_STARTTLS_RENEGOTIATE,
 				"testsrv@tlspool.arpa2.lab",
