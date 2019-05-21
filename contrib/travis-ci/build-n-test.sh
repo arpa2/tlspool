@@ -77,7 +77,7 @@ cmake_depend_git quick-der https://github.com/vanrein/quick-der
 info Configuring...
 cmd mkdir -p build
 cmd cd build
-cmd cmake -D DEBUG:BOOL=ON -D TEST_UNDER_TLSPOOL:BOOL=ON ..
+cmd cmake -D DEBUG:BOOL=ON -D TEST_UNDER_TLSPOOL:BOOL=ON -DCMAKE_INSTALL_PREFIX=/ ..
 
 info Building...
 cmd make
@@ -97,15 +97,15 @@ cmd chmod go+rx /var/lib/softhsm && mkdir -p /var/lib/softhsm/tokens && chmod go
 cmd su -c 'softhsm2-util --init-token --free --label TLS_Pool_dev_data --so-pin=sekreet --pin=1234' tlspool
 
 info Setting up test data...
-chown -R tlspool ../testdata && ( cd ../testdata ; su -c 'TOOLDIR=../build/tool make all' tlspool || su -c 'TOOLDIR=../build/tool make all' tlspool )
-#RUNHERE# sed < ../etc/tlspool.conf > /etc/tlspool.conf -E -e '/^db_/p' -e '/^db_/d' -e 's+ (file:)?\.\./+ \1'`pwd`'/../+' -e 's+^dnssec_rootkey .*+dnssec_rootkey /etc/dnsroot-tlspool+'
+mkdir -p /var/db/tlspool
+chown tlspool /var/db/tlspool
+chown -R tlspool ../testdata && ( cd ../testdata ; su -c 'TOOLDIR=../build/tool make all' tlspool || su -c 'TOOLDIR=../build/tool make all' tlspool ) && su -c 'cp -pir ../build/testdata/* /var/db/tlspool' tlspool
 
 info Starting System Logging...
 cmd /etc/init.d/rsyslog start
 
 info Starting the TLS Pool...
-#RUNHERE# cmd tlspool-daemon -kc /etc/tlspool.conf
-cmd tlspool-daemon -kc ../etc/tlspool.conf
+cmd tlspool-daemon -kc /etc/tlspool.conf
 
 info Running Tests...
 cmd_ok ctest > ctest.tty
