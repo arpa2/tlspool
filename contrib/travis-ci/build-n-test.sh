@@ -99,7 +99,7 @@ cmd su -c 'softhsm2-util --init-token --free --label TLS_Pool_dev_data --so-pin=
 info Setting up test data...
 mkdir -p /var/db/tlspool
 chown tlspool /var/db/tlspool
-chown -R tlspool ../testdata && ( cd ../testdata ; su -c 'TOOLDIR=../build/tool make all' tlspool || su -c 'TOOLDIR=../build/tool make all' tlspool ) && su -c 'cp -pir ../build/testdata/* /var/db/tlspool' tlspool
+chown -R tlspool ../testdata && ( cd ../testdata ; su -c 'TOOLDIR=../build/tool make all' tlspool || su -c 'TOOLDIR=../build/tool make all' tlspool ) && su -c 'cp -pir ../testdata/* /var/db/tlspool' tlspool
 
 info Starting System Logging...
 cmd /etc/init.d/rsyslog start
