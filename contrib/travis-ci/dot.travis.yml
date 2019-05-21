@@ -1,0 +1,20 @@
+# Travis CI script based on https://github.com/pypa/python-manylinux-demo
+
+notifications:
+  email: false
+
+matrix:
+  include:
+    - sudo: required
+      services:
+        - docker
+      env: DOCKER_IMAGE=arpa2/build-bin
+           PYTHON=python
+           PYINST=easy_install
+
+install:
+  - docker pull $DOCKER_IMAGE
+
+# Last statement is the ONLY ONE whose output matters
+script:
+  - docker run --rm -e PLAT=$PLAT -e PYTHON=$PYTHON -e PYINST=$PYINST -v `pwd`:/io $DOCKER_IMAGE /io/contrib/travis-ci/build-n-test.sh
