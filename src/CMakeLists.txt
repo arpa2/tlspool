@@ -53,9 +53,16 @@ target_link_libraries(tlspool-daemon
     ${com_err_LIBRARIES}
 )
 
+configure_file(${CMAKE_SOURCE_DIR}/etc/tlspool.conf.in ${CMAKE_CURRENT_BINARY_DIR}/tlspool.conf @ONLY)
+
 install(
     TARGETS tlspool-daemon
     DESTINATION ${CMAKE_INSTALL_SBINDIR}
+)
+
+install(
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/tlspool.conf
+    DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}
 )
 
 install(
