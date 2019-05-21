@@ -49,7 +49,7 @@ krb5_error_code KRB5_CALLCONV krb5_decrypt_tkt_part(krb5_context,
 #endif
 
 
-#include <quick-der/api.h>
+#include <arpa2/quick-der.h>
 #include <quick-der/rfc4120.h>
 typedef DER_OVLY_rfc4120_Ticket ticket_t;
 typedef DER_OVLY_rfc4120_Authenticator authenticator_t;
@@ -5640,7 +5640,9 @@ static bool starttls_info_iteration (uint16_t len, uint8_t *buf, struct dercurso
 		return false;
 	}
 	if (der_iterate_first (&findings, &finding)) do {
-		if (starttls_info_query (&len, buf, finding.derlen, finding.derptr)) {
+		struct dercursor single_finding = finding;
+		der_focus (&single_finding);
+		if (starttls_info_query (&len, buf, single_finding.derlen, single_finding.derptr)) {
 			return true;
 		}
 	} while (der_iterate_next (&finding));
@@ -5677,7 +5679,7 @@ static bool starttls_info_walk (struct command *cmd, struct ctlkeynode *node,
 		crs.derptr = cert_datum->data;
 		crs.derlen = cert_datum->size;
 		ok = ok && (der_walk (&crs, walkpath) == 0);
-		// ok = ok && (der_focus (&crs) == 0);
+		ok = ok && (der_focus (&crs) == 0);
 		uint8_t tag;
 		uint8_t hlen;
 		size_t len;
@@ -5782,7 +5784,7 @@ void starttls_info_cert_subjectaltname (struct command *cmd, struct ctlkeynode *
 		//TODO// DER_WALK_SKIP  | DER_TAG_CONTEXT(2),	// UniqueIdentifier, the subjectUniqueId
 		DER_WALK_ENTER | DER_TAG_CONTEXT(3),	// Extenions with tag [3] EXPLICIT
 							// It is optional, so we may get an error
-		//NOTHERE// DER_WALK_ENTER | DER_TAG_SEQUENCE,	// The SEQUENCE inside [3] is also visible
+		DER_WALK_ENTER | DER_TAG_SEQUENCE,	// The SEQUENCE inside [3] scopes extension iteration
 		DER_WALK_END
 	};
 	static const uint8_t oid_san [] = { 0x06, 0x03, 0x55, 0x1d, 0x11 };
@@ -5794,11 +5796,9 @@ void starttls_info_cert_subjectaltname (struct command *cmd, struct ctlkeynode *
 	// Iterate over extensions
 	struct dercursor iter;
 	bool done = false;
-	ok = ok && (der_enter (&exts) == 0);
 	if (ok && der_iterate_first (&exts, &iter)) do {
 		struct dercursor ext = iter;
-		// ok = ok && (der_focus (&ext) == 0) && (der_enter (&ext) == 0);
-		ok = ok && (der_focus (&ext) == 0);
+		ok = ok && (der_focus (&ext) == 0) && (der_enter (&ext) == 0);
 		tlog (TLOG_CERT, LOG_DEBUG, "Found an extension sized %d -- 0x%02x 0x%02x 0x%02x...\n",
 				ext.derlen, ext.derptr [0], ext.derptr [1], ext.derptr [2]);
 		bool extok = ok;
@@ -5813,7 +5813,7 @@ void starttls_info_cert_subjectaltname (struct command *cmd, struct ctlkeynode *
 		struct dercursor saniter;
 		if (extok && der_iterate_first (&ext, &saniter)) do {
 			struct dercursor general_name = saniter;
-			extok = extok && (der_enter (&general_name) == 0);
+			extok = extok && (der_focus (&general_name) == 0);
 			if (extok && starttls_info_query (&len, buf,
 					general_name.derlen, general_name.derptr)) {
 				done = true;

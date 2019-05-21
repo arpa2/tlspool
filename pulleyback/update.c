@@ -16,7 +16,7 @@
 
 #include <db.h>
 
-#include <quick-der/api.h>
+#include <arpa2/quick-der.h>
 
 #include "api.h"
 #include "poolback.h"
