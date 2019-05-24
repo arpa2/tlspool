@@ -39,6 +39,7 @@
 
 #include <libtasn1.h>
 
+#define COPYCAT_CLOSE_TIMEOUT 120L
 
 #ifdef HAVE_TLS_KDH
 #include <krb5.h>
@@ -1024,40 +1025,48 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 	bool remote_shutdown_done = false;
 	fd_set rset;
 	fd_set eset;
+	int maxfd = local > remote ? local : remote;
+	struct timeval close_timeout = { COPYCAT_CLOSE_TIMEOUT, 0 };
 
 	tlog (TLOG_COPYCAT, LOG_DEBUG, "Starting copycat cycle for local=%d, remote=%d, control=%d", local, remote, client);
+	// set exception file descriptor set
+	FD_ZERO (&eset);
+	FD_SET (local, &eset);
+	FD_SET (remote, &eset);
+	if (client >= 0) {
+		FD_SET (client, &eset);
+		if (client > maxfd) {
+			maxfd = client;
+		}
+	}
+
 	while (!local_shutdown_done || !remote_shutdown_done) {
-		int rc;
 		assert (pthread_setcancelstate (PTHREAD_CANCEL_ENABLE,  NULL) == 0);
 		pthread_testcancel ();	// Efficiency & Certainty
-		FD_ZERO(&rset);
-		int maxfd = -1;
+		FD_ZERO (&rset);
 		if (!local_shutdown_done) {
-			FD_SET(local, &rset);
-			if (local > maxfd) {
-				maxfd = local;
-			}
+			FD_SET (local, &rset);
 		}
 		if (!remote_shutdown_done) {
-			FD_SET(remote, &rset);
-			if (remote > maxfd) {
-				maxfd = remote;
-			}
+			FD_SET (remote, &rset);
 		}
-		FD_ZERO(&eset);
-		if (client >= 0) {
-			FD_SET(client, &eset);
-			if (client > maxfd) {
-				maxfd = client;
-			}
+		struct timeval *timeout = (local_shutdown_done || remote_shutdown_done) ? &close_timeout : NULL;
+		if (timeout) {
+			tlog (TLOG_COPYCAT, LOG_DEBUG, "calling select with timeout of %ld seconds", timeout->tv_sec);
+		} else {
+			tlog (TLOG_COPYCAT, LOG_DEBUG, "calling select without timeout");
 		}
-		rc = select(maxfd + 1, &rset, NULL, &eset, NULL);
+		int rc = select (maxfd + 1, &rset, NULL, &eset, timeout);
 		assert (pthread_setcancelstate (PTHREAD_CANCEL_DISABLE, NULL) == 0);
 		if (rc == -1) {
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat select returned an error");
 			break;	// Select sees an error
+		} else if (rc == 0) {
+			tlog (TLOG_COPYCAT, LOG_DEBUG, "timeout on select");
+			break;	// Select timed out
 		}
-		if (FD_ISSET(local, &rset)) {
+		// rc > 0
+		if (FD_ISSET (local, &rset)) {
 			// Read local and encrypt to remote
 			sz = recv (local, buf, sizeof (buf), RECV_FLAGS);
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat received %d local bytes (or error<0) from %d", (int) sz, local);
@@ -1077,7 +1086,7 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 				tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat sent %d bytes to remote %d", (int) sz, remote);
 			}
 		}
-		if (FD_ISSET(remote, &rset)) {
+		if (FD_ISSET (remote, &rset)) {
 			// Read remote and decrypt to local
 			gnutls_packet_t packet;
 			sz = gnutls_record_recv_packet (wrapped, &packet);
@@ -1101,16 +1110,16 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 				remote_shutdown_done = true;
 			} else { /* sz > 0 */
 				gnutls_datum_t data;
-				gnutls_packet_get(packet, &data, NULL);
+				gnutls_packet_get (packet, &data, NULL);
 				sz = send (local, data.data, data.size, RECV_FLAGS);
-				gnutls_packet_deinit(packet);
+				gnutls_packet_deinit (packet);
 				if (sz != data.size) {
 					break;	// communication error
 				}
 				tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat sent %d bytes to local %d", (int) sz, local);
 			}
 		}
-		if (FD_ISSET(client, &eset)) {
+		if (FD_ISSET (local, &eset) || FD_ISSET (remote, &eset) || FD_ISSET (client, &eset)) {
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat control connection polling returned a special condition");
 			break;
 		}
