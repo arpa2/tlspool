@@ -39,6 +39,7 @@
 
 #include <libtasn1.h>
 
+#define COPYCAT_CLOSE_TIMEOUT 120L
 
 #ifdef HAVE_TLS_KDH
 #include <krb5.h>
@@ -1016,68 +1017,68 @@ void cleanup_starttls (void) {
  */
 static int copycat (int local, int remote, gnutls_session_t wrapped, int client) {
 	char buf [1024];
-	struct pollfd inout [3];
 	ssize_t sz;
 	struct linger linger = { 1, 10 };
 	int have_client;
 	int retval = GNUTLS_E_SUCCESS;
 	bool local_shutdown_done = false;
 	bool remote_shutdown_done = false;
-	
-	client = -1;
-	inout [0].fd = local;
-	inout [1].fd = remote;
-#ifdef WINDOWS_PORT
-	have_client = 0;
-#else
-	inout [2].fd = client;
-	have_client = inout [2].fd >= 0;
-#endif
-	if (!have_client) {
-		inout [2].revents = 0;	// Will not be written by poll
-		//FORK!=DETACH// inout [2].fd = ctlkey_signalling_fd;
-	}
-	inout [0].events = POLLIN;
-	inout [1].events = POLLIN;
-	inout [2].events = 0;	// error events only
+	fd_set rset;
+	fd_set eset;
+	int maxfd = local > remote ? local : remote;
+	struct timeval close_timeout = { COPYCAT_CLOSE_TIMEOUT, 0 };
+
 	tlog (TLOG_COPYCAT, LOG_DEBUG, "Starting copycat cycle for local=%d, remote=%d, control=%d", local, remote, client);
-	while (((inout [0].events | inout [1].events) & POLLIN) != 0) {
-		int polled;
+	if (client >= 0) {
+		if (client > maxfd) {
+			maxfd = client;
+		}
+	}
+	while (!local_shutdown_done || !remote_shutdown_done) {
 		assert (pthread_setcancelstate (PTHREAD_CANCEL_ENABLE,  NULL) == 0);
 		pthread_testcancel ();	// Efficiency & Certainty
-		polled = poll (inout, have_client? 3: 2, -1);
-		assert (pthread_setcancelstate (PTHREAD_CANCEL_DISABLE, NULL) == 0);
-		if (polled == -1) {
-			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat polling returned an error");
-			break;	// Polling sees an error
+		FD_ZERO (&eset);
+		FD_SET (local, &eset);
+		FD_SET (remote, &eset);
+		if (client >= 0) {
+			FD_SET (client, &eset);
 		}
-		tlog (TLOG_COPYCAT, LOG_DEBUG, "inout [0].revents 0x%04x", inout [0].revents);
-		tlog (TLOG_COPYCAT, LOG_DEBUG, "inout [1].revents 0x%04x", inout [1].revents);
-		if (inout [0].revents & (POLLIN | POLLHUP)) {
+		FD_ZERO (&rset);
+		if (!local_shutdown_done) {
+			FD_SET (local, &rset);
+		}
+		if (!remote_shutdown_done) {
+			FD_SET (remote, &rset);
+		}
+		struct timeval *timeout = (local_shutdown_done || remote_shutdown_done) ? &close_timeout : NULL;
+		if (timeout) {
+			tlog (TLOG_COPYCAT, LOG_DEBUG, "calling select with timeout of %ld seconds", timeout->tv_sec);
+		} else {
+			tlog (TLOG_COPYCAT, LOG_DEBUG, "calling select without timeout");
+		}
+		int rc = select (maxfd + 1, &rset, NULL, &eset, timeout);
+		assert (pthread_setcancelstate (PTHREAD_CANCEL_DISABLE, NULL) == 0);
+		if (rc == -1) {
+			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat select returned an error");
+			break;	// Select sees an error
+		} else if (rc == 0) {
+			tlog (TLOG_COPYCAT, LOG_DEBUG, "timeout on select");
+			break;	// Select timed out
+		}
+		// rc > 0
+		if (FD_ISSET (local, &rset)) {
 			// Read local and encrypt to remote
-			sz = 0;
-			if ((inout [0].revents & POLLIN) || !local_shutdown_done) {
-				sz = recv (local, buf, sizeof (buf), RECV_FLAGS);
-			}
+			sz = recv (local, buf, sizeof (buf), RECV_FLAGS);
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat received %d local bytes (or error<0) from %d", (int) sz, local);
 			if (sz == -1) {
 				tlog (TLOG_COPYCAT, LOG_ERR, "Error while receiving: %s", strerror (errno));
 				break;	// stream error
 			} else if (sz == 0) {
-				inout [0].events &= ~POLLIN;
-				if (local_shutdown_done) {
-					tlog (TLOG_COPYCAT, LOG_DEBUG, "already done local shutdown");
-				} else {
-					shutdown (local, SHUT_RD);
-#ifdef WINDOWS_PORT
-					setsockopt (remote, SOL_SOCKET, SO_LINGER, (const char *) &linger, sizeof (linger));
-#else /* WINDOWS_PORT */
-					setsockopt (remote, SOL_SOCKET, SO_LINGER, &linger, sizeof (linger));
-#endif /* WINDOWS_PORT */
-					tlog (TLOG_COPYCAT, LOG_DEBUG, "Sending gnutls_bye");
-					gnutls_bye (wrapped, GNUTLS_SHUT_WR);
-					local_shutdown_done = true;
-				}
+				shutdown (local, SHUT_RD);
+				setsockopt (remote, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof (linger));
+				tlog (TLOG_COPYCAT, LOG_DEBUG, "Sending gnutls_bye");
+				gnutls_bye (wrapped, GNUTLS_SHUT_WR);
+				local_shutdown_done = true;
 			} else if (gnutls_record_send (wrapped, buf, sz) != sz) {
 				tlog (TLOG_COPYCAT, LOG_ERR, "gnutls_record_send() failed to pass on the requested bytes");
 				break;	// communication error
@@ -1085,13 +1086,10 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 				tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat sent %d bytes to remote %d", (int) sz, remote);
 			}
 		}
-		if (inout [1].revents & (POLLIN | POLLHUP)) {
+		if (FD_ISSET (remote, &rset)) {
 			// Read remote and decrypt to local
 			gnutls_packet_t packet;
-			sz = 0;
-			if ((inout [1].revents & POLLIN) || !remote_shutdown_done) {
-				sz = gnutls_record_recv_packet (wrapped, &packet);
-			}
+			sz = gnutls_record_recv_packet (wrapped, &packet);
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat received %d remote bytes from %d (or error if <0)", (int) sz, remote);
 			if (sz < 0) {
 				//TODO// Process GNUTLS_E_REHANDSHAKE
@@ -1106,50 +1104,25 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 					tlog (TLOG_TLS, LOG_INFO, "GnuTLS recoverable error: %s", gnutls_strerror (sz));
 				}
 			} else if (sz == 0) {
-				inout [1].events &= ~POLLIN;
-				if (remote_shutdown_done) {
-					tlog (TLOG_COPYCAT, LOG_DEBUG, "already done remote shutdown");
-				} else {
-					shutdown (remote, SHUT_RD);
-					setsockopt (local, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof (linger));
-					shutdown (local, SHUT_WR);
-					remote_shutdown_done = true;
-				}
+				shutdown (remote, SHUT_RD);
+				setsockopt (local, SOL_SOCKET, SO_LINGER, (void *) &linger, sizeof (linger));
+				shutdown (local, SHUT_WR);
+				remote_shutdown_done = true;
 			} else { /* sz > 0 */
 				gnutls_datum_t data;
-				gnutls_packet_get(packet, &data, NULL);
+				gnutls_packet_get (packet, &data, NULL);
 				sz = send (local, data.data, data.size, RECV_FLAGS);
-				gnutls_packet_deinit(packet);
+				gnutls_packet_deinit (packet);
 				if (sz != data.size) {
 					break;	// communication error
 				}
 				tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat sent %d bytes to local %d", (int) sz, local);
 			}
 		}
-		inout [0].revents &= ~(POLLIN | POLLHUP); // Thy copying cat?
-		inout [1].revents &= ~(POLLIN | POLLHUP); // Retract thee claws!
-		if ((inout [0].revents | inout [1].revents) & ~POLLIN) {
-			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat data connection polling returned a special condition");
-			break;	// Apparently, one of POLLERR, POLLHUP, POLLNVAL
+		if (FD_ISSET (local, &eset) || FD_ISSET (remote, &eset) || FD_ISSET (client, &eset)) {
+			tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat control connection polling returned a special condition");
+			break;
 		}
-#ifndef WINDOWS_PORT
-		if (inout [2].revents & ~POLLIN) {
-			if (have_client) {
-				// This case is currently not ever triggered
-				tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat control connection polling returned a special condition");
-				break;	// Apparently, one of POLLERR, POLLHUP, POLLNVAL
-			} else {
-				inout [2].fd = client;
-				have_client = inout [2].fd >= 0;
-				if (have_client) {
-					tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat signalling_fd polling raised a signal to set control fd to %d", inout [2].fd);
-				} else {
-					tlog (TLOG_COPYCAT, LOG_DEBUG, "Copycat signalling_fd polling raised a signal that could be ignored");
-				}
-				continue;
-			}
-		}
-#endif /* !WINDOWS_PORT */
 	}
 	tlog (TLOG_COPYCAT, LOG_DEBUG, "Ending copycat cycle for local=%d, remote=%d", local, remote);
 	return retval;
@@ -6042,4 +6015,3 @@ fprintf (stderr, "DEBUG: otfcert export to PEM failed with %d, gtls_errno alread
 	// Return the overall result that might have stopped otf halfway
 	return gtls_errno;
 }
-
