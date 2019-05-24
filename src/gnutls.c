@@ -1029,20 +1029,20 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 	struct timeval close_timeout = { COPYCAT_CLOSE_TIMEOUT, 0 };
 
 	tlog (TLOG_COPYCAT, LOG_DEBUG, "Starting copycat cycle for local=%d, remote=%d, control=%d", local, remote, client);
-	// set exception file descriptor set
-	FD_ZERO (&eset);
-	FD_SET (local, &eset);
-	FD_SET (remote, &eset);
 	if (client >= 0) {
-		FD_SET (client, &eset);
 		if (client > maxfd) {
 			maxfd = client;
 		}
 	}
-
 	while (!local_shutdown_done || !remote_shutdown_done) {
 		assert (pthread_setcancelstate (PTHREAD_CANCEL_ENABLE,  NULL) == 0);
 		pthread_testcancel ();	// Efficiency & Certainty
+		FD_ZERO (&eset);
+		FD_SET (local, &eset);
+		FD_SET (remote, &eset);
+		if (client >= 0) {
+			FD_SET (client, &eset);
+		}
 		FD_ZERO (&rset);
 		if (!local_shutdown_done) {
 			FD_SET (local, &rset);
