@@ -1026,7 +1026,7 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 	fd_set rset;
 	fd_set eset;
 	int maxfd = local > remote ? local : remote;
-	struct timeval close_timeout = { COPYCAT_CLOSE_TIMEOUT, 0 };
+	struct timeval close_timeout;
 
 	tlog (TLOG_COPYCAT, LOG_DEBUG, "Starting copycat cycle for local=%d, remote=%d, control=%d", local, remote, client);
 	if (client >= 0) {
@@ -1050,7 +1050,15 @@ static int copycat (int local, int remote, gnutls_session_t wrapped, int client)
 		if (!remote_shutdown_done) {
 			FD_SET (remote, &rset);
 		}
-		struct timeval *timeout = (local_shutdown_done || remote_shutdown_done) ? &close_timeout : NULL;
+
+		struct timeval *timeout;
+		if (local_shutdown_done || remote_shutdown_done) {
+			timeout = &close_timeout;
+			close_timeout.tv_sec = COPYCAT_CLOSE_TIMEOUT;
+			close_timeout.tv_usec = 0;
+		} else {
+			timeout = NULL;
+		}
 		if (timeout) {
 			tlog (TLOG_COPYCAT, LOG_DEBUG, "calling select with timeout of %ld seconds", timeout->tv_sec);
 		} else {
