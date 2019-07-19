@@ -57,6 +57,8 @@ void readcert (void) {
  * case when we decide to look at the client name after all.
  */
 void readpgpkey (void) {
+	printf ("Note: PGP was removed from TLS 1.3 and the keys are not read\n");
+	return;
 	int ok = 1;
 	int fd = open ("tlspool-test-client-pubkey.pgp", O_RDONLY);
 	ok = ok && (fd >= 0);

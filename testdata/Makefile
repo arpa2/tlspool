@@ -124,7 +124,7 @@ endif
 #
 
 TARGET_PKCS11=$(PRIVKEYGEN)
-TARGET_CERT=tlspool-test-client-cert.der tlspool-test-server-cert.der tlspool-test-ca-cert.der tlspool-test-flying-signer.der tlspool-test-webhost-cert.der tlspool-test-playground-cert.der tlspool-test-srp
+TARGET_CERT=tlspool-test-client-cert.der tlspool-test-server-cert.der tlspool-test-ca-cert.der tlspool-test-flying-signer.der tlspool-test-webhost-cert.der tlspool-test-playground-cert.der tlspool-test-srp client.p12
 TARGET_PGP=tlspool-test-client-pubkey.pgp tlspool-test-server-pubkey.pgp
 TARGET_DB=localid.db disclose.db trust.db
 TARGET_DBE=tlspool.env
@@ -171,7 +171,9 @@ fill-cert: $(TARGET_CERT)
 clean-pgp:
 	rm -f $(TARGET_PGP)
 
-fill-pgp: $(TARGET_PGP)
+# fill-pgp: $(TARGET_PGP)
+fill-pgp:
+	echo "NOTE: PGP is not part of TLS 1.3 anymore and has been removed from the testdata"
 
 clean-db:
 	if pidof tlspool ; then echo First stop TLS Pool ; exit 1 ; fi
@@ -290,6 +292,12 @@ tlspool-test-playground-cert.der: tlspool-test-playground-cert.template tlspool-
 	echo Using PRIVKEY8, '$(PRIVKEY8)'
 	$(CERTTOOL) --outfile $@ --outder --generate-certificate --load-ca-certificate=tlspool-test-ca-cert.pem --load-ca-privkey='$(PRIVKEY5)' --load-privkey='$(PRIVKEY8)' --template=$<
 
+# Client .p12 Certificate
+client.p12: tlspool-test-client-cert.template tlspool-test-ca-cert.der
+	certtool --generate-privkey --outfile client.key --rsa
+	GNUTLS_PIN=$(P11PIN) certtool --generate-request --load-privkey=client.key --outfile client.csr --template=$<
+	GNUTLS_PIN=$(P11PIN) certtool --generate-certificate --load-request client.csr --outfile client.pem --load-ca-certificate=tlspool-test-ca-cert.pem --load-ca-privkey='pkcs11:model=SoftHSM%20v2;manufacturer=SoftHSM%20project;token=TLS_Pool_dev_data;object=obj5label;type=private' --template=$<
+	openssl pkcs12 -export -inkey client.key -in client.pem -passout pass:$(P11PIN) -name client -out client.p12
 
 # Turn a .der into a .keyid
 %.keyid: %.der
@@ -314,8 +322,8 @@ tlspool.env:
 	chown $(DMNUSR):$(DMNGRP) $@
 
 localid.db: tlspool.env
-	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) testcli@tlspool.arpa2.lab OpenPGP,client '$(PRIVKEY1)' tlspool-test-client-pubkey.pgp
-	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) testsrv@tlspool.arpa2.lab OpenPGP,server '$(PRIVKEY2)' tlspool-test-server-pubkey.pgp
+	#DROPPED-IN-TLS-1.3# $(TOOLDIR)/tlspool-localid-set $(CONFFILE) testcli@tlspool.arpa2.lab OpenPGP,client '$(PRIVKEY1)' tlspool-test-client-pubkey.pgp
+	#DROPPED-IN-TLS-1.3# $(TOOLDIR)/tlspool-localid-set $(CONFFILE) testsrv@tlspool.arpa2.lab OpenPGP,server '$(PRIVKEY2)' tlspool-test-server-pubkey.pgp
 	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) testcli@tlspool.arpa2.lab x.509,client '$(PRIVKEY3)' tlspool-test-client-cert.der
 	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) testsrv@tlspool.arpa2.lab x.509,server '$(PRIVKEY4)' tlspool-test-server-cert.der
 	$(TOOLDIR)/tlspool-localid-set $(CONFFILE) testcli@tlspool.arpa2.lab kerberos,client,server 'pkcs11:some;place' /dev/null
@@ -334,8 +342,8 @@ disclose.db: tlspool.env localid.db
 	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
 
 trust.db: tlspool.env tlspool-test-ca-cert.der tlspool-test-ca-cert.keyid tlspool-test-flying-signer.der tlspool-test-flying-signer.keyid
-	$(TOOLDIR)/tlspool-trust-set $(CONFFILE) x509,client,server `cat tlspool-test-ca-cert.keyid` 1 tlspool-test-ca-cert.der
-	$(TOOLDIR)/tlspool-trust-set $(CONFFILE) x509,client,server `cat tlspool-test-flying-signer.keyid` 1 tlspool-test-flying-signer.der
+	$(TOOLDIR)/tlspool-trust-set $(CONFFILE) x509,client,server `cat tlspool-test-ca-cert.keyid | head -n 1` 1 tlspool-test-ca-cert.der
+	$(TOOLDIR)/tlspool-trust-set $(CONFFILE) x509,client,server `cat tlspool-test-flying-signer.keyid | head -n 1` 1 tlspool-test-flying-signer.der
 	chown $(DMNUSR):$(DMNGRP) $(BDBENV)/* $@
 
 clean: clean-db
