@@ -1,3 +1,5 @@
+message(FATAL_ERROR "This repository has moved to GitLab\n\nGet TLSPool from\n\thttps://gitlab.com/arpa2/tlspool/\n")
+
 cmake_minimum_required(VERSION 3.1 FATAL_ERROR)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_SOURCE_DIR}/cmake)
 
